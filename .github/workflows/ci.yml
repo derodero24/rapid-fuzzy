@@ -1,0 +1,161 @@
+name: CI
+
+on:
+  push:
+    branches: [develop]
+  pull_request:
+    branches: [develop]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run check
+      - run: pnpm run build
+      - run: pnpm run typecheck
+
+  rust-lint:
+    name: Rust Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt -- --check
+      - run: cargo clippy -- -W clippy::all
+
+  rust-test:
+    name: Rust Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test
+
+  build:
+    name: Build - ${{ matrix.settings.target }}
+    runs-on: ${{ matrix.settings.host }}
+    strategy:
+      fail-fast: false
+      matrix:
+        settings:
+          - host: macos-latest
+            target: x86_64-apple-darwin
+          - host: macos-latest
+            target: aarch64-apple-darwin
+          - host: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - host: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+          - host: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+          - host: ubuntu-latest
+            target: aarch64-unknown-linux-musl
+          - host: windows-latest
+            target: x86_64-pc-windows-msvc
+          - host: windows-latest
+            target: aarch64-pc-windows-msvc
+          - host: ubuntu-latest
+            target: wasm32-wasip1-threads
+
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.settings.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: build-${{ matrix.settings.target }}
+      - run: pnpm install --frozen-lockfile
+
+      # Linux cross-compilation setup
+      - name: Install cross-compilation tools (aarch64-gnu)
+        if: matrix.settings.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+
+      - name: Install cross-compilation tools (x86_64-musl)
+        if: matrix.settings.target == 'x86_64-unknown-linux-musl'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+
+      - name: Install cross-compilation tools (aarch64-musl)
+        if: matrix.settings.target == 'aarch64-unknown-linux-musl'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu musl-tools
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+
+      - name: Build native
+        if: matrix.settings.target != 'wasm32-wasip1-threads'
+        run: pnpm run build --target ${{ matrix.settings.target }}
+
+      - name: Build WASM
+        if: matrix.settings.target == 'wasm32-wasip1-threads'
+        run: pnpm run build --target wasm32-wasip1-threads
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: bindings-${{ matrix.settings.target }}
+          path: |
+            *.node
+            index.js
+            index.d.ts
+          if-no-files-found: ignore
+
+      - name: Upload WASM artifact
+        if: matrix.settings.target == 'wasm32-wasip1-threads'
+        uses: actions/upload-artifact@v6
+        with:
+          name: bindings-wasm32
+          path: "*.wasm"
+          if-no-files-found: ignore
+
+  test:
+    name: Test - Node ${{ matrix.node }}
+    needs: [build]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22, 24]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Download x86_64 linux artifact
+        uses: actions/download-artifact@v6
+        with:
+          name: bindings-x86_64-unknown-linux-gnu
+          path: .
+      - run: pnpm test
