@@ -123,7 +123,10 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: bindings-${{ matrix.settings.target }}
-          path: "*.node"
+          path: |
+            *.node
+            index.js
+            index.d.ts
           if-no-files-found: ignore
 
       - name: Upload WASM artifact
