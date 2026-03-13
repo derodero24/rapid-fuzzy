@@ -1,0 +1,26 @@
+[workspace]
+members = ["crates/core"]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/derodero24/rapid-fuzzy"
+
+[workspace.dependencies]
+# napi-rs
+napi = { version = "3", default-features = false, features = ["napi6"] }
+napi-build = "2"
+napi-derive = { version = "3", default-features = false, features = ["type-def"] }
+
+# String distance algorithms
+strsim = "0.11"
+
+# Fuzzy matching (Helix editor's matcher, faster than fzf/skim)
+nucleo-matcher = "0.3"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+strip = "symbols"
