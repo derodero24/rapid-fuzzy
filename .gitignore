@@ -1,0 +1,48 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+target/
+dist/
+*.node
+
+# napi-rs generated files (build output)
+index.js
+index.d.ts
+browser.js
+*.wasm
+*.wasi.cjs
+*.wasi-browser.js
+wasi-worker.mjs
+wasi-worker-browser.mjs
+
+# napi-rs generated platform packages
+npm/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Coverage
+coverage/
+*.lcov
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.*
+
+# Internal docs (local only)
+docs/
+
+# Claude Code (local development only)
+CLAUDE.md
+.claude/
