@@ -6,6 +6,11 @@
 
 <!-- Closes #123 -->
 
+## Breaking changes / Deprecations
+
+<!-- If this PR introduces a breaking change or deprecates an export, document it here. -->
+<!-- Write N/A if not applicable -->
+
 ## Checklist
 
 - [ ] Lint passes (`pnpm run check`)
