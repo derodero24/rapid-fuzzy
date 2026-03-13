@@ -1,0 +1,18 @@
+[package]
+name = "rapid-fuzzy-bench"
+version = "0.0.0"
+edition.workspace = true
+publish = false
+
+[dev-dependencies]
+criterion = { version = "0.8", features = ["html_reports"] }
+strsim = { workspace = true }
+nucleo-matcher = { workspace = true }
+
+[[bench]]
+name = "distance"
+harness = false
+
+[[bench]]
+name = "search"
+harness = false
