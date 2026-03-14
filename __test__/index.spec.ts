@@ -543,6 +543,10 @@ describe('token-based matching', () => {
       expect(result[0]).toBe(1.0);
       expect(result[1]).toBeLessThan(0.5);
     });
+
+    it('should return empty array for empty input', () => {
+      expect(tokenSortRatioBatch([])).toEqual([]);
+    });
   });
 
   describe('tokenSortRatioMany', () => {
@@ -581,6 +585,10 @@ describe('token-based matching', () => {
       ]);
       expect(result[0]).toBe(1.0);
       expect(result[1]).toBeLessThan(0.5);
+    });
+
+    it('should return empty array for empty input', () => {
+      expect(tokenSetRatioBatch([])).toEqual([]);
     });
   });
 
@@ -627,6 +635,10 @@ describe('token-based matching', () => {
       expect(result[0]).toBe(1.0);
       expect(result[1]).toBeLessThan(0.5);
     });
+
+    it('should return empty array for empty input', () => {
+      expect(partialRatioBatch([])).toEqual([]);
+    });
   });
 
   describe('partialRatioMany', () => {
@@ -669,6 +681,10 @@ describe('token-based matching', () => {
       ]);
       expect(result[0]).toBe(1.0);
       expect(result[1]).toBeLessThan(0.5);
+    });
+
+    it('should return empty array for empty input', () => {
+      expect(weightedRatioBatch([])).toEqual([]);
     });
   });
 
