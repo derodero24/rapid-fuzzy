@@ -82,6 +82,8 @@
     "bench": "vitest bench",
     "publint": "publint",
     "bench:rust": "cargo bench -p rapid-fuzzy-bench",
+    "verify": "pnpm run check && cargo clippy -- -W clippy::all && cargo test && pnpm run build && pnpm run typecheck && pnpm test",
+    "clean": "rm -rf target coverage *.node *.wasm",
     "prepare": "lefthook install"
   },
   "devDependencies": {
