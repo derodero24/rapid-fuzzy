@@ -24,6 +24,10 @@ pub struct FuzzyIndex {
     utf32_items: Vec<Utf32String>,
     char_masks: Vec<u64>,
     matcher: RefCell<Matcher>,
+    /// Incremental search cache: the query from the last search.
+    last_query: RefCell<String>,
+    /// Incremental search cache: indices of all items that matched the last query.
+    last_matching_indices: RefCell<Vec<u32>>,
 }
 
 #[napi]
@@ -41,6 +45,8 @@ impl FuzzyIndex {
             utf32_items,
             char_masks,
             matcher: RefCell::new(Matcher::new(Config::DEFAULT)),
+            last_query: RefCell::new(String::new()),
+            last_matching_indices: RefCell::new(Vec::new()),
         }
     }
 
@@ -95,6 +101,7 @@ impl FuzzyIndex {
         self.utf32_items.push(Utf32String::from(item.as_str()));
         self.char_masks.push(compute_char_mask(&item));
         self.items.push(item);
+        self.invalidate_cache();
     }
 
     /// Add multiple items to the index at once.
@@ -105,6 +112,7 @@ impl FuzzyIndex {
             self.char_masks.push(compute_char_mask(item));
         }
         self.items.extend(items);
+        self.invalidate_cache();
     }
 
     /// Remove the item at the given index.
@@ -117,6 +125,7 @@ impl FuzzyIndex {
             self.items.swap_remove(idx);
             self.utf32_items.swap_remove(idx);
             self.char_masks.swap_remove(idx);
+            self.invalidate_cache();
             true
         } else {
             false
@@ -129,6 +138,7 @@ impl FuzzyIndex {
         self.items = Vec::new();
         self.utf32_items = Vec::new();
         self.char_masks = Vec::new();
+        self.invalidate_cache();
     }
 
     fn search_impl(
@@ -139,20 +149,53 @@ impl FuzzyIndex {
         include_positions: bool,
         case_matching: CaseMatching,
     ) -> Vec<SearchResult> {
+        // Determine if we can narrow the search to cached matching indices.
+        // Conditions: new query is a prefix extension of the cached query,
+        // the cache has a non-empty candidate set, and neither query uses
+        // inverted terms (which break monotonicity).
+        let candidates: Option<Vec<u32>> = {
+            let last_q = self.last_query.borrow();
+            let last_idx = self.last_matching_indices.borrow();
+            if !last_q.is_empty()
+                && !last_idx.is_empty()
+                && query.len() > last_q.len()
+                && query.starts_with(last_q.as_str())
+                && !query.contains('!')
+                && !last_q.contains('!')
+            {
+                Some(last_idx.clone())
+            } else {
+                None
+            }
+        };
+
         let ctx = PrecomputedSearch {
             items: &self.items,
             utf32_items: &self.utf32_items,
             char_masks: &self.char_masks,
+            candidate_indices: candidates.as_deref(),
             matcher: &self.matcher,
         };
-        search_over_precomputed(
+
+        let outcome = search_over_precomputed(
             query,
             &ctx,
             max_results,
             min_score,
             include_positions,
             case_matching,
-        )
+        );
+
+        // Update incremental cache.
+        *self.last_query.borrow_mut() = query.to_owned();
+        *self.last_matching_indices.borrow_mut() = outcome.all_matching_indices;
+
+        outcome.results
+    }
+
+    fn invalidate_cache(&self) {
+        self.last_query.borrow_mut().clear();
+        self.last_matching_indices.borrow_mut().clear();
     }
 }
 
