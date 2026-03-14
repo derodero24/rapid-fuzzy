@@ -76,7 +76,7 @@ levenshteinBatch([
   ['hello', 'help'],
   ['foo', 'bar'],
 ]);
-// → [3, 1, 3]
+// → [3, 2, 3]
 
 // Compare one string against many candidates
 levenshteinMany('kitten', ['sitting', 'kittens', 'kitchen']);
