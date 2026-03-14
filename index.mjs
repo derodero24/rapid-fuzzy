@@ -42,4 +42,4 @@ export const {
   highlightRanges,
 } = { ...binding, ...require('./highlight.js') };
 
-export const { searchObjects } = require('./objects.js');
+export const { searchObjects, FuzzyObjectIndex } = require('./objects.js');
