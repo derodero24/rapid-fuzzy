@@ -119,6 +119,30 @@ export declare function normalizedLevenshteinBatch(pairs: Array<Array<string>>):
 export declare function normalizedLevenshteinMany(reference: string, candidates: Array<string>): Array<number>
 
 /**
+ * Compute the partial ratio between two strings.
+ *
+ * Finds the best matching substring of the shorter string within the longer string
+ * using a sliding window approach. Returns the highest normalized Levenshtein
+ * similarity across all windows. Useful for matching when one string is a
+ * substring or abbreviation of the other. Returns a value between 0.0 and 1.0.
+ */
+export declare function partialRatio(a: string, b: string): number
+
+/**
+ * Compute the partial ratio for multiple pairs of strings in a single call.
+ *
+ * Returns an array of similarity scores in the same order as the input pairs.
+ */
+export declare function partialRatioBatch(pairs: Array<Array<string>>): Array<number>
+
+/**
+ * Compute the partial ratio from one reference string to many candidates.
+ *
+ * Returns an array of similarity scores, one per candidate, in the same order as the input.
+ */
+export declare function partialRatioMany(reference: string, candidates: Array<string>): Array<number>
+
+/**
  * Perform fuzzy search over a list of strings.
  *
  * Returns matches sorted by score (best match first).
@@ -170,3 +194,75 @@ export declare function sorensenDiceBatch(pairs: Array<Array<string>>): Array<nu
  * Returns an array of similarity scores, one per candidate, in the same order as the input.
  */
 export declare function sorensenDiceMany(reference: string, candidates: Array<string>): Array<number>
+
+/**
+ * Compute the token set ratio between two strings.
+ *
+ * Compares the intersection and differences of token sets from both strings.
+ * Returns the maximum similarity among comparisons of the intersection with
+ * each remainder. Highly effective for strings with shared tokens but
+ * different lengths. Returns a value between 0.0 and 1.0.
+ */
+export declare function tokenSetRatio(a: string, b: string): number
+
+/**
+ * Compute the token set ratio for multiple pairs of strings in a single call.
+ *
+ * Returns an array of similarity scores in the same order as the input pairs.
+ */
+export declare function tokenSetRatioBatch(pairs: Array<Array<string>>): Array<number>
+
+/**
+ * Compute the token set ratio from one reference string to many candidates.
+ *
+ * Returns an array of similarity scores, one per candidate, in the same order as the input.
+ */
+export declare function tokenSetRatioMany(reference: string, candidates: Array<string>): Array<number>
+
+/**
+ * Compute the token sort ratio between two strings.
+ *
+ * Splits both strings into tokens, sorts them alphabetically, then computes
+ * the normalized Levenshtein similarity. This makes the comparison
+ * order-independent, ideal for matching names or addresses where word order varies.
+ * Returns a value between 0.0 (completely different) and 1.0 (identical after sorting).
+ */
+export declare function tokenSortRatio(a: string, b: string): number
+
+/**
+ * Compute the token sort ratio for multiple pairs of strings in a single call.
+ *
+ * Returns an array of similarity scores in the same order as the input pairs.
+ */
+export declare function tokenSortRatioBatch(pairs: Array<Array<string>>): Array<number>
+
+/**
+ * Compute the token sort ratio from one reference string to many candidates.
+ *
+ * Returns an array of similarity scores, one per candidate, in the same order as the input.
+ */
+export declare function tokenSortRatioMany(reference: string, candidates: Array<string>): Array<number>
+
+/**
+ * Compute the weighted ratio between two strings.
+ *
+ * Returns the maximum score across normalized Levenshtein, token sort ratio,
+ * token set ratio, and partial ratio. This provides a single "best effort"
+ * similarity score that automatically selects the most appropriate algorithm.
+ * Returns a value between 0.0 and 1.0.
+ */
+export declare function weightedRatio(a: string, b: string): number
+
+/**
+ * Compute the weighted ratio for multiple pairs of strings in a single call.
+ *
+ * Returns an array of similarity scores in the same order as the input pairs.
+ */
+export declare function weightedRatioBatch(pairs: Array<Array<string>>): Array<number>
+
+/**
+ * Compute the weighted ratio from one reference string to many candidates.
+ *
+ * Returns an array of similarity scores, one per candidate, in the same order as the input.
+ */
+export declare function weightedRatioMany(reference: string, candidates: Array<string>): Array<number>

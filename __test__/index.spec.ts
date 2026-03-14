@@ -17,10 +17,22 @@ import {
   normalizedLevenshtein,
   normalizedLevenshteinBatch,
   normalizedLevenshteinMany,
+  partialRatio,
+  partialRatioBatch,
+  partialRatioMany,
   search,
   sorensenDice,
   sorensenDiceBatch,
   sorensenDiceMany,
+  tokenSetRatio,
+  tokenSetRatioBatch,
+  tokenSetRatioMany,
+  tokenSortRatio,
+  tokenSortRatioBatch,
+  tokenSortRatioMany,
+  weightedRatio,
+  weightedRatioBatch,
+  weightedRatioMany,
 } from '../index.js';
 
 describe('distance', () => {
@@ -370,6 +382,181 @@ describe('closest', () => {
   });
 });
 
+describe('token-based matching', () => {
+  describe('tokenSortRatio', () => {
+    it('should return 1.0 for reordered tokens', () => {
+      expect(tokenSortRatio('New York Mets', 'Mets New York')).toBe(1.0);
+    });
+
+    it('should be case-insensitive', () => {
+      expect(tokenSortRatio('john smith', 'SMITH JOHN')).toBe(1.0);
+    });
+
+    it('should return high score for similar reordered strings', () => {
+      const score = tokenSortRatio('John A. Smith', 'Smith, John A');
+      expect(score).toBeGreaterThan(0.8);
+    });
+
+    it('should return 1.0 for identical strings', () => {
+      expect(tokenSortRatio('hello world', 'hello world')).toBe(1.0);
+    });
+
+    it('should return 1.0 for both empty', () => {
+      expect(tokenSortRatio('', '')).toBe(1.0);
+    });
+
+    it('should return 0.0 for one empty', () => {
+      expect(tokenSortRatio('hello', '')).toBe(0.0);
+    });
+  });
+
+  describe('tokenSortRatioBatch', () => {
+    it('should compute scores for multiple pairs', () => {
+      const result = tokenSortRatioBatch([
+        ['New York Mets', 'Mets New York'],
+        ['abc', 'xyz'],
+      ]);
+      expect(result[0]).toBe(1.0);
+      expect(result[1]).toBeLessThan(0.5);
+    });
+  });
+
+  describe('tokenSortRatioMany', () => {
+    it('should compute scores from reference to candidates', () => {
+      const result = tokenSortRatioMany('New York Mets', ['Mets New York', 'completely different']);
+      expect(result[0]).toBe(1.0);
+      expect(result[1]).toBeLessThan(0.5);
+    });
+  });
+
+  describe('tokenSetRatio', () => {
+    it('should return 1.0 for reordered tokens', () => {
+      expect(tokenSetRatio('Mariners vs Yankees', 'Yankees vs Mariners')).toBe(1.0);
+    });
+
+    it('should handle subset tokens gracefully', () => {
+      const score = tokenSetRatio('Great Gatsby', 'The Great Gatsby by Fitzgerald');
+      expect(score).toBeGreaterThan(0.7);
+    });
+
+    it('should return 1.0 for both empty', () => {
+      expect(tokenSetRatio('', '')).toBe(1.0);
+    });
+
+    it('should return low score for no shared tokens', () => {
+      const score = tokenSetRatio('abc def', 'xyz uvw');
+      expect(score).toBeLessThan(0.5);
+    });
+  });
+
+  describe('tokenSetRatioBatch', () => {
+    it('should compute scores for multiple pairs', () => {
+      const result = tokenSetRatioBatch([
+        ['Mariners vs Yankees', 'Yankees vs Mariners'],
+        ['abc', 'xyz'],
+      ]);
+      expect(result[0]).toBe(1.0);
+      expect(result[1]).toBeLessThan(0.5);
+    });
+  });
+
+  describe('tokenSetRatioMany', () => {
+    it('should compute scores from reference to candidates', () => {
+      const result = tokenSetRatioMany('Mariners vs Yankees', [
+        'Yankees vs Mariners',
+        'something else',
+      ]);
+      expect(result[0]).toBe(1.0);
+      expect(result[1]).toBeLessThan(0.5);
+    });
+  });
+
+  describe('partialRatio', () => {
+    it('should return 1.0 for substring match', () => {
+      expect(partialRatio('hello', 'hello world')).toBe(1.0);
+    });
+
+    it('should return 1.0 for identical strings', () => {
+      expect(partialRatio('hello', 'hello')).toBe(1.0);
+    });
+
+    it('should return high score for partial overlap', () => {
+      const score = partialRatio('cat', 'scattered');
+      expect(score).toBeGreaterThan(0.5);
+    });
+
+    it('should return 1.0 for both empty', () => {
+      expect(partialRatio('', '')).toBe(1.0);
+    });
+
+    it('should return 0.0 for one empty', () => {
+      expect(partialRatio('hello', '')).toBe(0.0);
+    });
+  });
+
+  describe('partialRatioBatch', () => {
+    it('should compute scores for multiple pairs', () => {
+      const result = partialRatioBatch([
+        ['hello', 'hello world'],
+        ['abc', 'xyz'],
+      ]);
+      expect(result[0]).toBe(1.0);
+      expect(result[1]).toBeLessThan(0.5);
+    });
+  });
+
+  describe('partialRatioMany', () => {
+    it('should compute scores from reference to candidates', () => {
+      const result = partialRatioMany('hello', ['hello world', 'xyz']);
+      expect(result[0]).toBe(1.0);
+      expect(result[1]).toBeLessThan(0.5);
+    });
+  });
+
+  describe('weightedRatio', () => {
+    it('should return 1.0 for identical strings', () => {
+      expect(weightedRatio('hello', 'hello')).toBe(1.0);
+    });
+
+    it('should return 1.0 for reordered tokens', () => {
+      expect(weightedRatio('New York Mets', 'Mets New York')).toBe(1.0);
+    });
+
+    it('should return 1.0 for substring match', () => {
+      expect(weightedRatio('hello', 'hello world')).toBe(1.0);
+    });
+
+    it('should be at least as good as normalizedLevenshtein', () => {
+      const a = 'test string';
+      const b = 'testing strings';
+      expect(weightedRatio(a, b)).toBeGreaterThanOrEqual(normalizedLevenshtein(a, b));
+    });
+
+    it('should return low score for completely different strings', () => {
+      expect(weightedRatio('abc', 'xyz')).toBeLessThan(0.5);
+    });
+  });
+
+  describe('weightedRatioBatch', () => {
+    it('should compute scores for multiple pairs', () => {
+      const result = weightedRatioBatch([
+        ['hello', 'hello'],
+        ['abc', 'xyz'],
+      ]);
+      expect(result[0]).toBe(1.0);
+      expect(result[1]).toBeLessThan(0.5);
+    });
+  });
+
+  describe('weightedRatioMany', () => {
+    it('should compute scores from reference to candidates', () => {
+      const result = weightedRatioMany('hello', ['hello', 'xyz']);
+      expect(result[0]).toBe(1.0);
+      expect(result[1]).toBeLessThan(0.5);
+    });
+  });
+});
+
 describe('unicode', () => {
   describe('CJK characters', () => {
     it('should compute distance for CJK strings', () => {
@@ -428,6 +615,21 @@ describe('unicode', () => {
       expect(result).toHaveLength(2);
       expect(result[0]).toBe(2);
       expect(result[1]).toBe(1);
+    });
+  });
+
+  describe('token-based with Unicode', () => {
+    it('should sort CJK tokens correctly', () => {
+      expect(tokenSortRatio('東京 日本', '日本 東京')).toBe(1.0);
+    });
+
+    it('should handle emoji tokens', () => {
+      expect(tokenSortRatio('🎉 🎊', '🎊 🎉')).toBe(1.0);
+    });
+
+    it('should compute partial ratio for CJK substrings', () => {
+      const score = partialRatio('東京', '東京タワー');
+      expect(score).toBeGreaterThan(0.5);
     });
   });
 
