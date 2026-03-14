@@ -43,8 +43,9 @@ coverage/
 .env
 .env.*
 
-# Internal docs (local only)
-docs/
+# Internal docs (local only, except migration guides)
+docs/*
+!docs/migration/
 
 # Claude Code (local development only)
 CLAUDE.md

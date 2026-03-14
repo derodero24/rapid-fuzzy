@@ -158,6 +158,14 @@ cargo bench           # Rust internal benchmarks
 | **Browser support** | Yes (WASM) | Yes | Yes | Yes |
 | **TypeScript** | Full (auto-generated) | Full | Yes | Yes |
 
+## Migration Guides
+
+Switching from another library? These guides provide API mapping tables, code examples, and performance comparisons:
+
+- [**From string-similarity**](docs/migration/from-string-similarity.md) — Same Dice coefficient algorithm, now maintained and faster
+- [**From fuse.js**](docs/migration/from-fuse-js.md) — 13–41x faster fuzzy search with a simpler API
+- [**From leven / fastest-levenshtein**](docs/migration/from-leven.md) — Multi-algorithm upgrade with batch APIs
+
 ## License
 
 MIT
