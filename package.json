@@ -70,7 +70,8 @@
   },
   "packageManager": "pnpm@10.32.1",
   "scripts": {
-    "build": "napi build --manifest-path crates/core/Cargo.toml --platform --release --js index.js --dts index.d.ts --output-dir . && node scripts/patch-binding.js",
+    "build": "napi build --manifest-path crates/core/Cargo.toml --platform --release --js index.js --dts index.d.ts --output-dir .",
+    "postbuild": "node scripts/patch-binding.js",
     "build:debug": "napi build --manifest-path crates/core/Cargo.toml --platform --js index.js --dts index.d.ts --output-dir .",
     "build:wasm": "napi build --manifest-path crates/core/Cargo.toml --platform --release --js index.js --dts index.d.ts --output-dir . --target wasm32-wasip1-threads",
     "artifacts": "napi artifacts",
