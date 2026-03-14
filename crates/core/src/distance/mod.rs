@@ -299,4 +299,134 @@ mod tests {
         assert!(result[0] > 0.0 && result[0] < 1.0);
         assert_eq!(result[1], 1.0);
     }
+
+    mod proptest_distance {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            // --- Levenshtein properties ---
+
+            #[test]
+            fn levenshtein_identity(a in ".*") {
+                prop_assert_eq!(levenshtein(a.clone(), a), 0);
+            }
+
+            #[test]
+            fn levenshtein_symmetry(a in ".*", b in ".*") {
+                prop_assert_eq!(
+                    levenshtein(a.clone(), b.clone()),
+                    levenshtein(b, a)
+                );
+            }
+
+            #[test]
+            fn levenshtein_triangle_inequality(a in ".{0,20}", b in ".{0,20}", c in ".{0,20}") {
+                let ab = levenshtein(a.clone(), b.clone());
+                let bc = levenshtein(b, c.clone());
+                let ac = levenshtein(a, c);
+                prop_assert!(ac <= ab + bc, "triangle inequality violated: d(a,c)={} > d(a,b)={} + d(b,c)={}", ac, ab, bc);
+            }
+
+            // --- Damerau-Levenshtein properties ---
+
+            #[test]
+            fn damerau_levenshtein_identity(a in ".*") {
+                prop_assert_eq!(damerau_levenshtein(a.clone(), a), 0);
+            }
+
+            #[test]
+            fn damerau_levenshtein_symmetry(a in ".*", b in ".*") {
+                prop_assert_eq!(
+                    damerau_levenshtein(a.clone(), b.clone()),
+                    damerau_levenshtein(b, a)
+                );
+            }
+
+            // --- Normalized Levenshtein properties ---
+
+            #[test]
+            fn normalized_levenshtein_bounded(a in ".*", b in ".*") {
+                let score = normalized_levenshtein(a, b);
+                prop_assert!(score >= 0.0 && score <= 1.0, "score {} out of [0, 1]", score);
+            }
+
+            #[test]
+            fn normalized_levenshtein_identity(a in ".+") {
+                let score = normalized_levenshtein(a.clone(), a);
+                prop_assert_eq!(score, 1.0);
+            }
+
+            #[test]
+            fn normalized_levenshtein_symmetry(a in ".*", b in ".*") {
+                let ab = normalized_levenshtein(a.clone(), b.clone());
+                let ba = normalized_levenshtein(b, a);
+                prop_assert!((ab - ba).abs() < f64::EPSILON, "symmetry violated: {} != {}", ab, ba);
+            }
+
+            // --- Jaro properties ---
+
+            #[test]
+            fn jaro_bounded(a in ".*", b in ".*") {
+                let score = jaro(a, b);
+                prop_assert!(score >= 0.0 && score <= 1.0, "score {} out of [0, 1]", score);
+            }
+
+            #[test]
+            fn jaro_identity(a in ".+") {
+                let score = jaro(a.clone(), a);
+                prop_assert_eq!(score, 1.0);
+            }
+
+            #[test]
+            fn jaro_symmetry(a in ".*", b in ".*") {
+                let ab = jaro(a.clone(), b.clone());
+                let ba = jaro(b, a);
+                prop_assert!((ab - ba).abs() < f64::EPSILON, "symmetry violated: {} != {}", ab, ba);
+            }
+
+            // --- Jaro-Winkler properties ---
+
+            #[test]
+            fn jaro_winkler_bounded(a in ".*", b in ".*") {
+                let score = jaro_winkler(a, b);
+                prop_assert!(score >= 0.0 && score <= 1.0, "score {} out of [0, 1]", score);
+            }
+
+            #[test]
+            fn jaro_winkler_identity(a in ".+") {
+                let score = jaro_winkler(a.clone(), a);
+                prop_assert_eq!(score, 1.0);
+            }
+
+            #[test]
+            fn jaro_winkler_ge_jaro(a in ".*", b in ".*") {
+                let jw = jaro_winkler(a.clone(), b.clone());
+                let j = jaro(a, b);
+                prop_assert!(jw >= j - f64::EPSILON, "jaro_winkler({}) < jaro({})", jw, j);
+            }
+
+            // --- Sorensen-Dice properties ---
+
+            #[test]
+            fn sorensen_dice_bounded(a in ".*", b in ".*") {
+                let score = sorensen_dice(a, b);
+                prop_assert!(score >= 0.0 && score <= 1.0, "score {} out of [0, 1]", score);
+            }
+
+            #[test]
+            fn sorensen_dice_identity(a in ".{2,}") {
+                // Sorensen-Dice uses bigrams, so needs at least 2 chars for meaningful identity
+                let score = sorensen_dice(a.clone(), a);
+                prop_assert_eq!(score, 1.0);
+            }
+
+            #[test]
+            fn sorensen_dice_symmetry(a in ".*", b in ".*") {
+                let ab = sorensen_dice(a.clone(), b.clone());
+                let ba = sorensen_dice(b, a);
+                prop_assert!((ab - ba).abs() < f64::EPSILON, "symmetry violated: {} != {}", ab, ba);
+            }
+        }
+    }
 }
