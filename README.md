@@ -112,6 +112,38 @@ searchObjects('john', users, {
 searchObjects('new york', items, { keys: ['address.city'] });
 ```
 
+### Persistent Index
+
+For applications that search the same dataset repeatedly (autocomplete, file finders, etc.), use `FuzzyIndex` or `FuzzyObjectIndex` to keep data on the Rust side and eliminate per-search FFI overhead:
+
+```typescript
+import { FuzzyIndex, FuzzyObjectIndex } from 'rapid-fuzzy';
+
+// String search index — up to 5x faster than standalone search()
+const index = new FuzzyIndex(['TypeScript', 'JavaScript', 'Python', ...]);
+
+index.search('typscript', { maxResults: 5 });
+index.closest('tsc');
+
+// Mutate the index without rebuilding
+index.add('Rust');
+index.remove(2); // swap-remove by index
+
+// Object search index — keeps objects on the JS side, keys on the Rust side
+const userIndex = new FuzzyObjectIndex(users, {
+  keys: [
+    { name: 'name', weight: 2.0 },
+    { name: 'email', weight: 1.0 },
+  ],
+});
+
+userIndex.search('john', { maxResults: 10 });
+
+// Free Rust-side memory when done
+index.destroy();
+userIndex.destroy();
+```
+
 ### Match Highlighting
 
 Convert matched positions into highlighted markup for UI rendering:
@@ -189,37 +221,52 @@ Measured on Apple M-series with Node.js v22 using [Vitest bench](https://vitest.
 
 ### Distance Functions
 
+<img src=".github/assets/bench-distance.svg" alt="Distance function performance chart" width="680" />
+
+<details>
+<summary>Raw numbers</summary>
+
 | Function | rapid-fuzzy | fastest-levenshtein | leven | string-similarity |
 |---|---:|---:|---:|---:|
-| Levenshtein | 193,593 ops/s | **774,820 ops/s** | 204,047 ops/s | — |
-| Normalized Levenshtein | **136,854 ops/s** | — | — | — |
-| Sorensen-Dice | **144,698 ops/s** | — | — | 84,108 ops/s |
-| Jaro-Winkler | **291,673 ops/s** | — | — | — |
-| Damerau-Levenshtein | **72,238 ops/s** | — | — | — |
+| Levenshtein | 528,195 ops/s | **739,107 ops/s** | 221,817 ops/s | — |
+| Normalized Levenshtein | **534,231 ops/s** | — | — | — |
+| Sorensen-Dice | **149,567 ops/s** | — | — | 82,908 ops/s |
+| Jaro-Winkler | **278,554 ops/s** | — | — | — |
+| Damerau-Levenshtein | **112,370 ops/s** | — | — | — |
 
-> **Note**: For single-pair Levenshtein distance, fastest-levenshtein is faster due to its highly optimized pure-JS implementation that avoids FFI overhead. rapid-fuzzy provides broader algorithm coverage and excels in batch / search scenarios.
+</details>
+
+> **Note**: For single-pair Levenshtein, fastest-levenshtein is ~1.4x faster due to its optimized pure-JS implementation that avoids FFI overhead. rapid-fuzzy is **2.4x faster** than leven, and provides broader algorithm coverage plus batch / search scenarios.
 
 ### Search Performance
 
-| Dataset size | rapid-fuzzy | fuse.js | fuzzysort |
-|---|---:|---:|---:|
-| Small (20 items) | 179,222 ops/s | 109,059 ops/s | **2,501,773 ops/s** |
-| Medium (1K items) | 6,614 ops/s | 381 ops/s | **63,032 ops/s** |
-| Large (10K items) | 794 ops/s | 20 ops/s | **28,616 ops/s** |
+<img src=".github/assets/bench-search.svg" alt="Search performance chart — rapid-fuzzy vs fuse.js vs fuzzysort" width="680" />
+
+<details>
+<summary>Raw numbers</summary>
+
+| Dataset size | rapid-fuzzy | FuzzyIndex | fuse.js | fuzzysort |
+|---|---:|---:|---:|---:|
+| Small (20 items) | 174,812 ops/s | 406,269 ops/s | 127,167 ops/s | **2,502,299 ops/s** |
+| Medium (1K items) | 6,531 ops/s | 22,014 ops/s | 395 ops/s | **62,845 ops/s** |
+| Large (10K items) | 794 ops/s | 3,985 ops/s | 20 ops/s | **28,846 ops/s** |
+
+</details>
 
 ### Closest Match (Levenshtein-based)
 
-| Dataset size | rapid-fuzzy | fastest-levenshtein |
-|---|---:|---:|
-| Medium (1K items) | 8,416 ops/s | **8,762 ops/s** |
-| Large (10K items) | **905 ops/s** | 662 ops/s |
+| Dataset size | rapid-fuzzy | FuzzyIndex | fastest-levenshtein |
+|---|---:|---:|---:|
+| Medium (1K items) | 8,304 ops/s | **60,469 ops/s** | 8,946 ops/s |
+| Large (10K items) | 757 ops/s | **4,103 ops/s** | 604 ops/s |
 
-> rapid-fuzzy is up to **1.4x faster** than fastest-levenshtein for closest-match lookups on large datasets.
+> With `FuzzyIndex`, rapid-fuzzy is up to **6.8x faster** than fastest-levenshtein for closest-match lookups.
 
 ### Why these numbers matter
 
 - **vs fuse.js**: rapid-fuzzy is **17x faster** on medium datasets and **40x faster** on large datasets for fuzzy search.
-- **vs fastest-levenshtein**: rapid-fuzzy wins on closest-match at scale where batch FFI overhead is amortized.
+- **FuzzyIndex**: Pre-computing string data on the Rust side gives an additional **3–5x speedup** over standalone `search()`, making it the recommended approach for repeated searches.
+- **vs fastest-levenshtein**: With `FuzzyIndex`, closest-match is **6.8x faster** at scale. Even standalone `closest()` wins on large datasets.
 - **fuzzysort** uses a different (substring-based) matching algorithm that is extremely fast but produces different ranking results. Choose based on your matching needs.
 
 Run benchmarks yourself:
@@ -241,6 +288,7 @@ cargo bench           # Rust internal benchmarks
 | Substring / abbreviation matching | `partialRatio` | Finds best partial match within longer strings |
 | Best-effort similarity | `weightedRatio` | Picks the best score across all methods automatically |
 | Interactive fuzzy search | `search`, `closest` | Nucleo algorithm (same as Helix editor) |
+| Repeated search on same data | `FuzzyIndex`, `FuzzyObjectIndex` | Persistent Rust-side index, 3–5x faster than standalone |
 
 **Return types:**
 
@@ -252,17 +300,18 @@ cargo bench           # Rust internal benchmarks
 ## Why rapid-fuzzy?
 
 | | rapid-fuzzy | fuse.js | fastest-levenshtein | fuzzysort |
-|---|---|---|---|---|
-| **Algorithms** | Levenshtein, Jaro-Winkler, Sorensen-Dice, Damerau-Levenshtein, token sort/set, partial ratio, fuzzy search | Bitap-based fuzzy | Levenshtein only | Substring fuzzy |
-| **Runtime** | Rust (native + WASM) | Pure JS | Pure JS | Pure JS |
-| **Object search** | Yes (searchObjects with weighted keys) | Yes (keys option) | No | Yes (keys) |
-| **Score threshold** | Yes (minScore) | Yes (threshold) | No | Yes (threshold) |
-| **Match positions** | Yes (includePositions) | Yes | No | Yes |
-| **Highlight utility** | Yes (highlight, highlightRanges) | No (manual) | No | Yes (highlight) |
-| **Batch API** | Yes | No | No | No |
-| **Node.js native** | Yes (napi-rs) | No | No | No |
-| **Browser support** | Yes (WASM) | Yes | Yes | Yes |
-| **TypeScript** | Full (auto-generated) | Full | Yes | Yes |
+|---|:---:|:---:|:---:|:---:|
+| **Algorithms** | 9 (Levenshtein, Jaro, Dice, …) | Bitap | Levenshtein | Substring |
+| **Runtime** | Rust native + WASM | Pure JS | Pure JS | Pure JS |
+| **Object search** | ✅ weighted keys | ✅ | — | ✅ |
+| **Persistent index** | ✅ FuzzyIndex / FuzzyObjectIndex | — | — | ✅ prepared targets |
+| **Score threshold** | ✅ | ✅ | — | ✅ |
+| **Match positions** | ✅ | ✅ | — | ✅ |
+| **Highlight utility** | ✅ | — | — | ✅ |
+| **Batch API** | ✅ | — | — | — |
+| **Node.js native** | ✅ napi-rs | — | — | — |
+| **Browser** | ✅ WASM | ✅ | ✅ | ✅ |
+| **TypeScript** | ✅ full | ✅ full | ✅ | ✅ |
 
 ## Migration Guides
 

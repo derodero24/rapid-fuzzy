@@ -135,36 +135,38 @@ if (damerauSuite) {
   distLines.push(`| Damerau-Levenshtein | ${cell(dl, true)} | — | — | — |`);
 }
 
-// Search table
+// Search table (includes FuzzyIndex column)
 const searchLines: string[] = [];
-searchLines.push('| Dataset size | rapid-fuzzy | fuse.js | fuzzysort |');
-searchLines.push('|---|---:|---:|---:|');
+searchLines.push('| Dataset size | rapid-fuzzy | FuzzyIndex | fuse.js | fuzzysort |');
+searchLines.push('|---|---:|---:|---:|---:|');
 
 for (const size of ['Small (20 items)', 'Medium (1K items)', 'Large (10K items)']) {
   const s = findSuite(`Fuzzy Search — ${size}`);
   if (!s) continue;
   const rf = s.get('rapid-fuzzy') ?? null;
+  const fi = s.get('rapid-fuzzy (FuzzyIndex)') ?? null;
   const fj = s.get('fuse.js') ?? null;
   const fs = s.get('fuzzysort') ?? null;
-  const b = best([rf, fj, fs]);
+  const b = best([rf, fi, fj, fs]);
   searchLines.push(
-    `| ${size.replace(/\s*\(/, ' (').replace(' items)', ' items)')} | ${cell(rf, rf === b)} | ${cell(fj, fj === b)} | ${cell(fs, fs === b)} |`,
+    `| ${size.replace(/\s*\(/, ' (').replace(' items)', ' items)')} | ${cell(rf, rf === b)} | ${cell(fi, fi === b)} | ${cell(fj, fj === b)} | ${cell(fs, fs === b)} |`,
   );
 }
 
-// Closest table
+// Closest table (includes FuzzyIndex column)
 const closestLines: string[] = [];
-closestLines.push('| Dataset size | rapid-fuzzy | fastest-levenshtein |');
-closestLines.push('|---|---:|---:|');
+closestLines.push('| Dataset size | rapid-fuzzy | FuzzyIndex | fastest-levenshtein |');
+closestLines.push('|---|---:|---:|---:|');
 
 for (const size of ['Medium (1K items)', 'Large (10K items)']) {
   const s = findSuite(`Closest Match — ${size}`);
   if (!s) continue;
   const rf = s.get('rapid-fuzzy') ?? null;
+  const fi = s.get('rapid-fuzzy (FuzzyIndex)') ?? null;
   const fl = s.get('fastest-levenshtein') ?? null;
-  const b = best([rf, fl].filter((v): v is number => v !== null));
+  const b = best([rf, fi, fl].filter((v): v is number => v !== null));
   closestLines.push(
-    `| ${size} | ${cell(rf, rf !== null && rf >= b)} | ${cell(fl, fl !== null && fl >= b)} |`,
+    `| ${size} | ${cell(rf, rf !== null && rf >= b)} | ${cell(fi, fi !== null && fi >= b)} | ${cell(fl, fl !== null && fl >= b)} |`,
   );
 }
 
@@ -211,7 +213,7 @@ readme = replaceSection(
 readme = replaceSection(
   readme,
   '### Closest Match (Levenshtein-based)',
-  '> rapid-fuzzy is',
+  '> With `FuzzyIndex`',
   closestLines.join('\n'),
 );
 

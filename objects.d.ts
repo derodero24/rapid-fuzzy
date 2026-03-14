@@ -14,6 +14,11 @@ export interface ObjectSearchResult<T> {
   index: number;
   score: number;
   keyScores: Array<number>;
+  /**
+   * Indices of matched characters in the best-matching key string.
+   * Empty unless `includePositions` is set to true in ObjectSearchOptions.
+   */
+  positions: Array<number>;
 }
 
 /**
@@ -40,3 +45,60 @@ export declare function searchObjects<T>(
   items: Array<T>,
   options: ObjectSearchOptions,
 ): Array<ObjectSearchResult<T>>;
+
+export interface ObjectIndexOptions {
+  keys: Array<string | KeyConfig>;
+}
+
+export interface ObjectIndexSearchOptions {
+  maxResults?: number;
+  minScore?: number;
+  isCaseSensitive?: boolean;
+}
+
+/**
+ * A persistent fuzzy search index for object collections with weighted keys.
+ *
+ * Pre-computes key texts and stores them on the Rust side for fast repeated
+ * searches. Use this when searching the same collection multiple times.
+ *
+ * @example
+ * ```typescript
+ * const index = new FuzzyObjectIndex(users, {
+ *   keys: [{ name: 'name', weight: 2.0 }, 'email'],
+ * });
+ *
+ * const results = index.search('john');
+ * // results[0].item → { name: 'John Smith', ... }
+ *
+ * index.add({ name: 'New User', email: 'new@example.com' });
+ * index.destroy(); // free Rust-side memory
+ * ```
+ */
+export declare class FuzzyObjectIndex<T> {
+  constructor(items: Array<T>, options: ObjectIndexOptions);
+
+  /** Number of items in the index. */
+  get size(): number;
+
+  /** Search for objects matching the query. */
+  search(
+    query: string,
+    options?: ObjectIndexSearchOptions,
+  ): Array<Omit<ObjectSearchResult<T>, 'positions'>>;
+
+  /** Find the closest matching object, or null if no match. */
+  closest(query: string, minScore?: number): T | null;
+
+  /** Add a single item to the index. */
+  add(item: T): void;
+
+  /** Add multiple items at once. */
+  addMany(items: Array<T>): void;
+
+  /** Remove the item at the given index (swap-remove semantics). */
+  remove(index: number): boolean;
+
+  /** Free all internal data. */
+  destroy(): void;
+}

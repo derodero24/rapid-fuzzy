@@ -1,19 +1,27 @@
+use std::cell::RefCell;
+
 use napi::Either;
 use napi_derive::napi;
-use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
-use nucleo_matcher::{Config, Matcher};
+use nucleo_matcher::pattern::CaseMatching;
+use nucleo_matcher::{Config, Matcher, Utf32String};
 
-use super::{SearchOptions, SearchResult, compute_max_score, resolve_case_matching};
+use super::{
+    PrecomputedSearch, SearchOptions, SearchResult, resolve_case_matching, search_over_precomputed,
+};
 
 /// A persistent fuzzy search index backed by Rust-side data.
 ///
 /// Holds items in memory on the Rust side, avoiding repeated FFI overhead
 /// for applications that search the same dataset multiple times.
+/// Pre-computes Utf32String representations for each item, eliminating
+/// per-search string conversion overhead.
 /// Memory is freed when the JavaScript garbage collector collects the instance
 /// or when `destroy()` is called explicitly.
 #[napi]
 pub struct FuzzyIndex {
     items: Vec<String>,
+    utf32_items: Vec<Utf32String>,
+    matcher: RefCell<Matcher>,
 }
 
 #[napi]
@@ -21,7 +29,15 @@ impl FuzzyIndex {
     /// Create a new FuzzyIndex from an array of strings.
     #[napi(constructor)]
     pub fn new(items: Vec<String>) -> Self {
-        Self { items }
+        let utf32_items: Vec<Utf32String> = items
+            .iter()
+            .map(|s| Utf32String::from(s.as_str()))
+            .collect();
+        Self {
+            items,
+            utf32_items,
+            matcher: RefCell::new(Matcher::new(Config::DEFAULT)),
+        }
     }
 
     /// Return the number of items in the index.
@@ -72,12 +88,16 @@ impl FuzzyIndex {
     /// Add a single item to the index.
     #[napi]
     pub fn add(&mut self, item: String) {
+        self.utf32_items.push(Utf32String::from(item.as_str()));
         self.items.push(item);
     }
 
     /// Add multiple items to the index at once.
     #[napi]
     pub fn add_many(&mut self, items: Vec<String>) {
+        for item in &items {
+            self.utf32_items.push(Utf32String::from(item.as_str()));
+        }
         self.items.extend(items);
     }
 
@@ -89,6 +109,7 @@ impl FuzzyIndex {
         let idx = index as usize;
         if idx < self.items.len() {
             self.items.swap_remove(idx);
+            self.utf32_items.swap_remove(idx);
             true
         } else {
             false
@@ -99,6 +120,7 @@ impl FuzzyIndex {
     #[napi]
     pub fn destroy(&mut self) {
         self.items = Vec::new();
+        self.utf32_items = Vec::new();
     }
 
     fn search_impl(
@@ -109,61 +131,19 @@ impl FuzzyIndex {
         include_positions: bool,
         case_matching: CaseMatching,
     ) -> Vec<SearchResult> {
-        if query.is_empty() || self.items.is_empty() {
-            return Vec::new();
-        }
-
-        let mut matcher = Matcher::new(Config::DEFAULT);
-        let pattern = Pattern::parse(query, case_matching, Normalization::Smart);
-        let max_score = compute_max_score(query, &pattern, &mut matcher);
-        let threshold = min_score.unwrap_or(0.0);
-
-        let mut buf = Vec::new();
-
-        let mut results: Vec<SearchResult> = self
-            .items
-            .iter()
-            .enumerate()
-            .filter_map(|(index, item)| {
-                buf.clear();
-                let atoms = nucleo_matcher::Utf32Str::new(item, &mut buf);
-
-                let (raw_score, positions) = if include_positions {
-                    let mut indices = Vec::new();
-                    let score = pattern.indices(atoms, &mut matcher, &mut indices)?;
-                    indices.sort_unstable();
-                    indices.dedup();
-                    (score, indices)
-                } else {
-                    let score = pattern.score(atoms, &mut matcher)?;
-                    (score, Vec::new())
-                };
-
-                let normalized = (raw_score as f64 / max_score).min(1.0);
-                if normalized >= threshold {
-                    Some(SearchResult {
-                        item: item.clone(),
-                        score: normalized,
-                        index: index as u32,
-                        positions,
-                    })
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        results.sort_unstable_by(|a, b| {
-            b.score
-                .partial_cmp(&a.score)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-
-        if let Some(max) = max_results {
-            results.truncate(max as usize);
-        }
-
-        results
+        let ctx = PrecomputedSearch {
+            items: &self.items,
+            utf32_items: &self.utf32_items,
+            matcher: &self.matcher,
+        };
+        search_over_precomputed(
+            query,
+            &ctx,
+            max_results,
+            min_score,
+            include_positions,
+            case_matching,
+        )
     }
 }
 

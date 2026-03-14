@@ -267,5 +267,21 @@ describe.skipIf(!wasmExists)('wasm', () => {
       ];
       expect(wasm.levenshteinBatch(pairs)).toEqual(native.levenshteinBatch(pairs));
     });
+
+    it('searchKeys results should match native', () => {
+      const names = ['John Smith', 'Jane Doe', 'Bob Johnson'];
+      const emails = ['john@example.com', 'jane@example.com', 'bob@test.com'];
+      const weights = [1, 1];
+
+      const wasmResults = wasm.searchKeys('john', [names, emails], weights);
+      const nativeResults = native.searchKeys('john', [names, emails], weights);
+
+      expect(wasmResults.length).toBe(nativeResults.length);
+      for (let i = 0; i < wasmResults.length; i++) {
+        expect(wasmResults[i]?.index).toBe(nativeResults[i]?.index);
+        expect(wasmResults[i]?.score).toBeCloseTo(nativeResults[i]?.score ?? 0);
+        expect(wasmResults[i]?.keyScores).toHaveLength(nativeResults[i]?.keyScores.length ?? 0);
+      }
+    });
   });
 });

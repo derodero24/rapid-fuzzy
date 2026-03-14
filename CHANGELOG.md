@@ -1,5 +1,19 @@
 # rapid-fuzzy
 
+## 0.5.0
+
+### Minor Changes
+
+- 3de4f98: Add `FuzzyObjectIndex` class for persistent indexed search over object collections with weighted keys
+- db3d8ea: Adopt bit-parallel algorithm (Myers' method) for Levenshtein and Damerau-Levenshtein distance functions via the `rapidfuzz` crate, significantly improving performance for string distance computations
+
+### Patch Changes
+
+- 5695bb9: Add `positions` field to `ObjectSearchResult` type for match position tracking
+- 7b11d57: Use score-based early termination in partial_ratio sliding window to skip windows that cannot beat the current best score
+- e5a6a27: Optimize search result construction with two-pass scoring to reduce heap allocations
+- 20d1aba: Replace duplicated highlight.mjs implementation with ESM re-export from highlight.js to eliminate manual sync requirement
+
 ## 0.4.0
 
 ### Minor Changes

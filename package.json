@@ -1,6 +1,6 @@
 {
   "name": "rapid-fuzzy",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Rust-powered fuzzy search and string distance for JavaScript/TypeScript. 10-50x faster than fuse.js/leven.",
   "license": "MIT",
   "author": "derodero24",
@@ -92,6 +92,7 @@
     "test:watch": "vitest watch",
     "bench": "vitest bench",
     "bench:readme": "npx tsx scripts/update-bench-readme.ts",
+    "bench:charts": "npx tsx scripts/generate-bench-charts.ts",
     "publint": "publint",
     "bench:rust": "cargo bench -p rapid-fuzzy-bench",
     "verify": "pnpm run check && cargo clippy -- -W clippy::all && cargo test && pnpm run build && pnpm run typecheck && pnpm test",

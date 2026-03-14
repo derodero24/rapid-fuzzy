@@ -4,7 +4,7 @@ import Fuse from 'fuse.js';
 import fuzzysort from 'fuzzysort';
 import { bench, describe } from 'vitest';
 
-import { closest, search } from '../index.js';
+import { closest, FuzzyIndex, search } from '../index.js';
 
 // --- Test data ---
 
@@ -90,9 +90,20 @@ const fuseLarge = new Fuse(largeItems, { threshold: 0.4 });
 const fuzzysortMediumPrepared = mediumItems.map((item) => fuzzysort.prepare(item));
 const fuzzysortLargePrepared = largeItems.map((item) => fuzzysort.prepare(item));
 
+// Pre-initialize FuzzyIndex instances (recommended pattern for repeated searches)
+const fuzzyIndexSmall = new FuzzyIndex(smallItems);
+const fuzzyIndexMedium = new FuzzyIndex(mediumItems);
+const fuzzyIndexLarge = new FuzzyIndex(largeItems);
+const fuzzyIndexClosestMedium = new FuzzyIndex(mediumItems);
+const fuzzyIndexClosestLarge = new FuzzyIndex(largeItems);
+
 describe('Fuzzy Search — Small (20 items)', () => {
   bench('rapid-fuzzy', () => {
     search('aple', smallItems, 5);
+  });
+
+  bench('rapid-fuzzy (FuzzyIndex)', () => {
+    fuzzyIndexSmall.search('aple', { maxResults: 5 });
   });
 
   bench('fuse.js', () => {
@@ -109,6 +120,10 @@ describe('Fuzzy Search — Medium (1K items)', () => {
     search('utils config', mediumItems, 10);
   });
 
+  bench('rapid-fuzzy (FuzzyIndex)', () => {
+    fuzzyIndexMedium.search('utils config', { maxResults: 10 });
+  });
+
   bench('fuse.js', () => {
     fuseMedium.search('utils config', { limit: 10 });
   });
@@ -121,6 +136,10 @@ describe('Fuzzy Search — Medium (1K items)', () => {
 describe('Fuzzy Search — Large (10K items)', () => {
   bench('rapid-fuzzy', () => {
     search('handler middleware', largeItems, 10);
+  });
+
+  bench('rapid-fuzzy (FuzzyIndex)', () => {
+    fuzzyIndexLarge.search('handler middleware', { maxResults: 10 });
   });
 
   bench('fuse.js', () => {
@@ -137,6 +156,10 @@ describe('Closest Match — Medium (1K items)', () => {
     closest('src/utils42.ts', mediumItems);
   });
 
+  bench('rapid-fuzzy (FuzzyIndex)', () => {
+    fuzzyIndexClosestMedium.closest('src/utils42.ts');
+  });
+
   bench('fastest-levenshtein', () => {
     fastestLevenshteinClosest('src/utils42.ts', mediumItems);
   });
@@ -145,6 +168,10 @@ describe('Closest Match — Medium (1K items)', () => {
 describe('Closest Match — Large (10K items)', () => {
   bench('rapid-fuzzy', () => {
     closest('handler_middleware_500', largeItems);
+  });
+
+  bench('rapid-fuzzy (FuzzyIndex)', () => {
+    fuzzyIndexClosestLarge.closest('handler_middleware_500');
   });
 
   bench('fastest-levenshtein', () => {

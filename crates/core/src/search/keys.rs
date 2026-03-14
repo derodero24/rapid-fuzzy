@@ -91,16 +91,14 @@ pub fn search_keys(
         per_key_scores.push(scores);
     }
 
-    // Combine weighted scores per item
-    let mut results: Vec<KeySearchResult> = (0..num_items)
+    // Pass 1: Compute combined scores, collect (index, score) only.
+    let mut scored: Vec<(u32, f64)> = (0..num_items)
         .filter_map(|i| {
             let mut weighted_sum = 0.0;
             let mut matched_any = false;
-            let mut key_scores = Vec::with_capacity(num_keys);
 
             for k in 0..num_keys {
                 let score = per_key_scores[k][i];
-                key_scores.push(score);
                 if score > 0.0 {
                     weighted_sum += score * weights[k];
                     matched_any = true;
@@ -113,28 +111,34 @@ pub fn search_keys(
 
             let combined = weighted_sum / total_weight;
             if combined >= threshold {
-                Some(KeySearchResult {
-                    index: i as u32,
-                    score: combined,
-                    key_scores,
-                })
+                Some((i as u32, combined))
             } else {
                 None
             }
         })
         .collect();
 
-    results.sort_unstable_by(|a, b| {
-        b.score
-            .partial_cmp(&a.score)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
+    scored.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
     if let Some(max) = max_results {
-        results.truncate(max as usize);
+        scored.truncate(max as usize);
     }
 
-    results
+    // Pass 2: Construct KeySearchResult only for the final top-k items.
+    scored
+        .into_iter()
+        .map(|(index, score)| {
+            let key_scores: Vec<f64> = per_key_scores
+                .iter()
+                .map(|scores| scores[index as usize])
+                .collect();
+            KeySearchResult {
+                index,
+                score,
+                key_scores,
+            }
+        })
+        .collect()
 }
 
 #[cfg(test)]

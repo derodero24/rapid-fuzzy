@@ -12,6 +12,7 @@ crate-type = ["cdylib"]
 napi = { workspace = true }
 napi-derive = { workspace = true }
 strsim = { workspace = true }
+rapidfuzz = { workspace = true }
 nucleo-matcher = { workspace = true }
 
 [dev-dependencies]

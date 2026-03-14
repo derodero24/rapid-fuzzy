@@ -1,13 +1,17 @@
 mod index;
+mod keyed_index;
 mod keys;
 
 pub use index::FuzzyIndex;
+pub use keyed_index::KeyedFuzzyIndex;
 pub use keys::search_keys;
+
+use std::cell::RefCell;
 
 use napi::Either;
 use napi_derive::napi;
 use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
-use nucleo_matcher::{Config, Matcher};
+use nucleo_matcher::{Config, Matcher, Utf32String};
 
 /// A single fuzzy search result with the matched item and its score.
 #[napi(object)]
@@ -53,10 +57,13 @@ pub(crate) fn resolve_case_matching(is_case_sensitive: Option<bool>) -> CaseMatc
     }
 }
 
-/// Internal search implementation used by both the napi export and tests.
-pub(crate) fn search_impl(
-    query: String,
-    items: Vec<String>,
+/// Shared search logic over a borrowed slice of items.
+///
+/// Both the standalone `search_impl` and `FuzzyIndex::search_impl` delegate
+/// to this function, which contains the core scoring/filtering/sorting logic.
+pub(crate) fn search_over_items(
+    query: &str,
+    items: &[String],
     max_results: Option<u32>,
     min_score: Option<f64>,
     include_positions: bool,
@@ -67,55 +74,155 @@ pub(crate) fn search_impl(
     }
 
     let mut matcher = Matcher::new(Config::DEFAULT);
-    let pattern = Pattern::parse(&query, case_matching, Normalization::Smart);
-    let max_score = compute_max_score(&query, &pattern, &mut matcher);
+    let pattern = Pattern::parse(query, case_matching, Normalization::Smart);
+    let max_score = compute_max_score(query, &pattern, &mut matcher);
     let threshold = min_score.unwrap_or(0.0);
 
     let mut buf = Vec::new();
 
-    let mut results: Vec<SearchResult> = items
+    // Pass 1: Score all items, collect (index, score) only — no String cloning.
+    let mut scored: Vec<(u32, f64)> = items
         .iter()
         .enumerate()
         .filter_map(|(index, item)| {
             buf.clear();
             let atoms = nucleo_matcher::Utf32Str::new(item, &mut buf);
-
-            let (raw_score, positions) = if include_positions {
-                let mut indices = Vec::new();
-                let score = pattern.indices(atoms, &mut matcher, &mut indices)?;
-                indices.sort_unstable();
-                indices.dedup();
-                (score, indices)
-            } else {
-                let score = pattern.score(atoms, &mut matcher)?;
-                (score, Vec::new())
-            };
-
+            let raw_score = pattern.score(atoms, &mut matcher)?;
             let normalized = (raw_score as f64 / max_score).min(1.0);
             if normalized >= threshold {
-                Some(SearchResult {
-                    item: item.clone(),
-                    score: normalized,
-                    index: index as u32,
-                    positions,
-                })
+                Some((index as u32, normalized))
             } else {
                 None
             }
         })
         .collect();
 
-    results.sort_unstable_by(|a, b| {
-        b.score
-            .partial_cmp(&a.score)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
+    scored.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
     if let Some(max) = max_results {
-        results.truncate(max as usize);
+        scored.truncate(max as usize);
     }
 
-    results
+    // Pass 2: Construct results only for the final top-k items.
+    scored
+        .into_iter()
+        .map(|(index, score)| {
+            let positions = if include_positions {
+                buf.clear();
+                let atoms = nucleo_matcher::Utf32Str::new(&items[index as usize], &mut buf);
+                let mut indices = Vec::new();
+                pattern.indices(atoms, &mut matcher, &mut indices);
+                indices.sort_unstable();
+                indices.dedup();
+                indices
+            } else {
+                Vec::new()
+            };
+
+            SearchResult {
+                item: items[index as usize].clone(),
+                score,
+                index,
+                positions,
+            }
+        })
+        .collect()
+}
+
+/// Pre-computed search context for FuzzyIndex.
+pub(crate) struct PrecomputedSearch<'a> {
+    pub items: &'a [String],
+    pub utf32_items: &'a [Utf32String],
+    pub matcher: &'a RefCell<Matcher>,
+}
+
+/// Search over pre-computed Utf32String items with a reusable Matcher.
+///
+/// Used by FuzzyIndex to avoid per-search string conversion and Matcher allocation.
+pub(crate) fn search_over_precomputed(
+    query: &str,
+    ctx: &PrecomputedSearch<'_>,
+    max_results: Option<u32>,
+    min_score: Option<f64>,
+    include_positions: bool,
+    case_matching: CaseMatching,
+) -> Vec<SearchResult> {
+    let items = ctx.items;
+    let utf32_items = ctx.utf32_items;
+    let matcher_cell = ctx.matcher;
+    if query.is_empty() || items.is_empty() {
+        return Vec::new();
+    }
+
+    let mut matcher = matcher_cell.borrow_mut();
+    let pattern = Pattern::parse(query, case_matching, Normalization::Smart);
+    let max_score = compute_max_score(query, &pattern, &mut matcher);
+    let threshold = min_score.unwrap_or(0.0);
+
+    // Pass 1: Score all items, collect (index, score) only — no String cloning.
+    let mut scored: Vec<(u32, f64)> = utf32_items
+        .iter()
+        .enumerate()
+        .filter_map(|(index, utf32_item)| {
+            let atoms = utf32_item.slice(..);
+            let raw_score = pattern.score(atoms, &mut matcher)?;
+            let normalized = (raw_score as f64 / max_score).min(1.0);
+            if normalized >= threshold {
+                Some((index as u32, normalized))
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    scored.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    if let Some(max) = max_results {
+        scored.truncate(max as usize);
+    }
+
+    // Pass 2: Construct results only for the final top-k items.
+    scored
+        .into_iter()
+        .map(|(index, score)| {
+            let positions = if include_positions {
+                let atoms = utf32_items[index as usize].slice(..);
+                let mut indices = Vec::new();
+                pattern.indices(atoms, &mut matcher, &mut indices);
+                indices.sort_unstable();
+                indices.dedup();
+                indices
+            } else {
+                Vec::new()
+            };
+
+            SearchResult {
+                item: items[index as usize].clone(),
+                score,
+                index,
+                positions,
+            }
+        })
+        .collect()
+}
+
+/// Internal search implementation used by both the napi export and tests.
+pub(crate) fn search_impl(
+    query: String,
+    items: Vec<String>,
+    max_results: Option<u32>,
+    min_score: Option<f64>,
+    include_positions: bool,
+    case_matching: CaseMatching,
+) -> Vec<SearchResult> {
+    search_over_items(
+        &query,
+        &items,
+        max_results,
+        min_score,
+        include_positions,
+        case_matching,
+    )
 }
 
 /// Perform fuzzy search over a list of strings.

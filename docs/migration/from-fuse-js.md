@@ -148,12 +148,26 @@ highlight(results[0].item, results[0].positions, '<b>', '</b>');
 
 rapid-fuzzy is significantly faster than fuse.js for fuzzy search:
 
-| Dataset size | rapid-fuzzy | fuse.js | Speedup |
-|---|---:|---:|---:|
-| 1,000 items | 6,614 ops/s | 381 ops/s | **17x** |
-| 10,000 items | 794 ops/s | 20 ops/s | **40x** |
+| Dataset size | rapid-fuzzy | FuzzyIndex | fuse.js | Speedup |
+|---|---:|---:|---:|---:|
+| 1,000 items | 6,531 ops/s | 22,014 ops/s | 395 ops/s | **17x / 56x** |
+| 10,000 items | 794 ops/s | 3,985 ops/s | 20 ops/s | **40x / 199x** |
 
 The performance advantage grows with dataset size because rapid-fuzzy's Rust-based nucleo engine scales better than fuse.js's pure JavaScript implementation.
+
+For repeated searches against the same dataset, use `FuzzyIndex` (for string arrays) or `FuzzyObjectIndex` (for object arrays with keys) to get even greater speedups. These work similarly to fuse.js's constructor — build once, search many times:
+
+```typescript
+import { FuzzyIndex, FuzzyObjectIndex } from 'rapid-fuzzy';
+
+// String search — replaces new Fuse(strings).search(query)
+const index = new FuzzyIndex(strings);
+const results = index.search('query');
+
+// Object search — replaces new Fuse(objects, { keys }).search(query)
+const objIndex = new FuzzyObjectIndex(users, { keys: ['name', 'email'] });
+const results = objIndex.search('john');
+```
 
 ## Additional Capabilities
 
