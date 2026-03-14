@@ -9,7 +9,7 @@
 
 Rust-powered fuzzy search and string distance for JavaScript/TypeScript.
 
-> **Status**: Work in progress. Not yet published to npm.
+> **Status**: Early release (v0.x). API may change between minor versions.
 
 ## Features
 
@@ -49,19 +49,41 @@ sorensenDice('night', 'nacht');       // 0.25
 ```typescript
 import { search, closest } from 'rapid-fuzzy';
 
-// Find matches sorted by relevance
+// Find matches sorted by relevance (scores normalized to 0.0-1.0)
 const results = search('typscript', [
   'TypeScript',
   'JavaScript',
   'Python',
   'TypeSpec',
 ]);
-// → [{ item: 'TypeScript', score: 89, index: 0 }, ...]
+// → [{ item: 'TypeScript', score: 0.85, index: 0 }, ...]
 
 // Find the single best match
 closest('tsc', ['TypeScript', 'JavaScript', 'Python']);
 // → 'TypeScript'
 ```
+
+### Batch Operations
+
+All distance functions have `Batch` and `Many` variants that amortize FFI overhead:
+
+```typescript
+import { levenshteinBatch, levenshteinMany } from 'rapid-fuzzy';
+
+// Compute distances for multiple pairs at once
+levenshteinBatch([
+  ['kitten', 'sitting'],
+  ['hello', 'help'],
+  ['foo', 'bar'],
+]);
+// → [3, 2, 3]
+
+// Compare one string against many candidates
+levenshteinMany('kitten', ['sitting', 'kittens', 'kitchen']);
+// → [3, 1, 2]
+```
+
+> **Tip**: Prefer batch/many variants over calling single-pair functions in a loop — they are significantly faster for multiple comparisons.
 
 ## Benchmarks
 
@@ -108,6 +130,22 @@ Run benchmarks yourself:
 pnpm run bench        # JavaScript benchmarks
 cargo bench           # Rust internal benchmarks
 ```
+
+## Choosing an Algorithm
+
+| Use case | Recommended | Why |
+|---|---|---|
+| Typo detection / spell check | `levenshtein`, `damerauLevenshtein` | Counts edits; Damerau adds transposition support |
+| Name / address matching | `jaroWinkler` | Prefix-weighted similarity for short strings |
+| Document / text similarity | `sorensenDice` | Bigram-based; handles longer text well |
+| Normalized comparison (0–1) | `normalizedLevenshtein` | Length-independent similarity score |
+| Interactive fuzzy search | `search`, `closest` | Nucleo algorithm (same as Helix editor) |
+
+**Return types:**
+
+- `levenshtein`, `damerauLevenshtein` → integer (edit count)
+- `jaro`, `jaroWinkler`, `sorensenDice`, `normalizedLevenshtein` → float between 0.0 (no match) and 1.0 (identical)
+- `search` → array of `{ item, score, index }` sorted by relevance (score: 0.0–1.0)
 
 ## Why rapid-fuzzy?
 

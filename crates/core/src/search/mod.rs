@@ -7,15 +7,24 @@ use nucleo_matcher::{Config, Matcher};
 pub struct SearchResult {
     /// The original string that matched.
     pub item: String,
-    /// The match score (higher is better). 0 means no match.
-    pub score: u32,
+    /// The match score normalized to 0.0-1.0 range (1.0 is a perfect match).
+    pub score: f64,
     /// The index of the item in the original input array.
     pub index: u32,
+}
+
+/// Compute the maximum possible score for a given pattern by scoring
+/// the query against itself (exact match = theoretical maximum).
+fn compute_max_score(query: &str, pattern: &Pattern, matcher: &mut Matcher) -> f64 {
+    let mut buf = Vec::new();
+    let atoms = nucleo_matcher::Utf32Str::new(query, &mut buf);
+    pattern.score(atoms, matcher).unwrap_or(1) as f64
 }
 
 /// Perform fuzzy search over a list of strings.
 ///
 /// Returns matches sorted by score (best match first).
+/// Scores are normalized to a 0.0-1.0 range where 1.0 is a perfect match.
 /// Uses the nucleo algorithm (same as Helix editor), which is
 /// significantly faster than fzf/skim for large datasets.
 #[napi]
@@ -26,6 +35,7 @@ pub fn search(query: String, items: Vec<String>, max_results: Option<u32>) -> Ve
 
     let mut matcher = Matcher::new(Config::DEFAULT);
     let pattern = Pattern::parse(&query, CaseMatching::Smart, Normalization::Smart);
+    let max_score = compute_max_score(&query, &pattern, &mut matcher);
 
     let mut results: Vec<SearchResult> = items
         .iter()
@@ -33,17 +43,22 @@ pub fn search(query: String, items: Vec<String>, max_results: Option<u32>) -> Ve
         .filter_map(|(index, item)| {
             let mut buf = Vec::new();
             let atoms = nucleo_matcher::Utf32Str::new(item, &mut buf);
-            pattern
-                .score(atoms, &mut matcher)
-                .map(|score| SearchResult {
+            pattern.score(atoms, &mut matcher).map(|raw_score| {
+                let normalized = (raw_score as f64 / max_score).min(1.0);
+                SearchResult {
                     item: item.clone(),
-                    score,
+                    score: normalized,
                     index: index as u32,
-                })
+                }
+            })
         })
         .collect();
 
-    results.sort_by(|a, b| b.score.cmp(&a.score));
+    results.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     if let Some(max) = max_results {
         results.truncate(max as usize);
@@ -96,6 +111,51 @@ mod tests {
         assert!(result.is_some());
     }
 
+    #[test]
+    fn test_scores_normalized_range() {
+        let items = vec![
+            "apple".to_string(),
+            "application".to_string(),
+            "banana".to_string(),
+            "grape".to_string(),
+        ];
+        let results = search("apple".to_string(), items, None);
+        for r in &results {
+            assert!(
+                r.score >= 0.0 && r.score <= 1.0,
+                "score {} out of 0.0-1.0 range for '{}'",
+                r.score,
+                r.item
+            );
+        }
+    }
+
+    #[test]
+    fn test_exact_match_scores_one() {
+        let items = vec!["hello".to_string(), "world".to_string()];
+        let results = search("hello".to_string(), items, None);
+        let exact = results.iter().find(|r| r.item == "hello").unwrap();
+        assert!(
+            (exact.score - 1.0).abs() < f64::EPSILON,
+            "exact match should score 1.0, got {}",
+            exact.score
+        );
+    }
+
+    #[test]
+    fn test_partial_match_scores_below_one() {
+        let items = vec!["TypeScript".to_string(), "JavaScript".to_string()];
+        let results = search("type".to_string(), items, None);
+        for r in &results {
+            assert!(
+                r.score > 0.0 && r.score <= 1.0,
+                "partial match score {} should be in (0.0, 1.0] for '{}'",
+                r.score,
+                r.item
+            );
+        }
+    }
+
     mod proptest_search {
         use super::*;
         use proptest::prelude::*;
@@ -128,6 +188,21 @@ mod tests {
             }
 
             #[test]
+            fn search_scores_normalized(
+                query in "[a-z]{1,5}",
+                items in prop::collection::vec("[a-z]{1,10}", 1..20),
+            ) {
+                let results = search(query, items, None);
+                for r in &results {
+                    prop_assert!(
+                        r.score >= 0.0 && r.score <= 1.0,
+                        "score {} out of 0.0-1.0 range",
+                        r.score
+                    );
+                }
+            }
+
+            #[test]
             fn closest_in_search_results(
                 query in "[a-z]{1,5}",
                 items in prop::collection::vec("[a-z]{1,10}", 1..20),
@@ -150,6 +225,104 @@ mod tests {
             fn search_indices_valid(
                 query in "[a-z]{1,5}",
                 items in prop::collection::vec("[a-z]{1,10}", 1..20),
+            ) {
+                let len = items.len();
+                let results = search(query, items, None);
+                for r in &results {
+                    prop_assert!((r.index as usize) < len, "index {} out of bounds (len={})", r.index, len);
+                }
+            }
+        }
+    }
+
+    mod unicode_tests {
+        use super::*;
+
+        #[test]
+        fn test_search_cjk() {
+            let items = vec!["東京".to_string(), "大阪".to_string(), "京都".to_string()];
+            let results = search("東".to_string(), items, None);
+            assert!(!results.is_empty());
+        }
+
+        #[test]
+        fn test_search_emoji() {
+            let items = vec![
+                "🎉 party".to_string(),
+                "🎊 celebration".to_string(),
+                "work".to_string(),
+            ];
+            let results = search("party".to_string(), items, None);
+            assert!(!results.is_empty());
+            assert!(results[0].item.contains("party"));
+        }
+
+        #[test]
+        fn test_search_accented() {
+            let items = vec![
+                "café".to_string(),
+                "resume".to_string(),
+                "naïve".to_string(),
+            ];
+            let results = search("cafe".to_string(), items, None);
+            assert!(!results.is_empty());
+        }
+
+        #[test]
+        fn test_closest_cjk() {
+            let items = vec!["大阪".to_string(), "京都".to_string(), "東京都".to_string()];
+            let result = closest("東京".to_string(), items);
+            assert!(result.is_some());
+        }
+
+        #[test]
+        fn test_search_mixed_scripts() {
+            let items = vec![
+                "hello世界".to_string(),
+                "goodbye世間".to_string(),
+                "test".to_string(),
+            ];
+            let results = search("hello".to_string(), items, None);
+            assert!(!results.is_empty());
+            assert!(results[0].item.contains("hello"));
+        }
+    }
+
+    mod proptest_unicode {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn search_unicode_max_results_respected(
+                query in "\\PC{1,5}",
+                items in prop::collection::vec("\\PC{1,10}", 1..20),
+                max in 1u32..10
+            ) {
+                let results = search(query, items, Some(max));
+                prop_assert!(results.len() <= max as usize);
+            }
+
+            #[test]
+            fn search_unicode_scores_sorted_descending(
+                query in "\\PC{1,5}",
+                items in prop::collection::vec("\\PC{1,10}", 1..20),
+            ) {
+                let results = search(query, items, None);
+                for window in results.windows(2) {
+                    prop_assert!(
+                        window[0].score >= window[1].score,
+                        "results not sorted: {} < {}",
+                        window[0].score,
+                        window[1].score
+                    );
+                }
+            }
+
+            #[test]
+            fn search_unicode_indices_valid(
+                query in "\\PC{1,5}",
+                items in prop::collection::vec("\\PC{1,10}", 1..20),
             ) {
                 let len = items.len();
                 let results = search(query, items, None);

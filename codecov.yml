@@ -2,10 +2,11 @@ coverage:
   status:
     project:
       default:
-        informational: true
+        target: auto
+        threshold: 5%
     patch:
       default:
-        informational: true
+        target: 70%
 
 comment:
   layout: 'condensed_header, condensed_files, condensed_footer'

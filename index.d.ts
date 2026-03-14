@@ -121,6 +121,7 @@ export declare function normalizedLevenshteinMany(reference: string, candidates:
  * Perform fuzzy search over a list of strings.
  *
  * Returns matches sorted by score (best match first).
+ * Scores are normalized to a 0.0-1.0 range where 1.0 is a perfect match.
  * Uses the nucleo algorithm (same as Helix editor), which is
  * significantly faster than fzf/skim for large datasets.
  */
@@ -130,7 +131,7 @@ export declare function search(query: string, items: Array<string>, maxResults?:
 export interface SearchResult {
   /** The original string that matched. */
   item: string
-  /** The match score (higher is better). 0 means no match. */
+  /** The match score normalized to 0.0-1.0 range (1.0 is a perfect match). */
   score: number
   /** The index of the item in the original input array. */
   index: number

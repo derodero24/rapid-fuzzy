@@ -1,6 +1,6 @@
 {
   "name": "rapid-fuzzy",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Rust-powered fuzzy search and string distance for JavaScript/TypeScript. 10-50x faster than fuse.js/leven.",
   "license": "MIT",
   "author": "derodero24",
@@ -69,6 +69,7 @@
   "scripts": {
     "build": "napi build --manifest-path crates/core/Cargo.toml --platform --release --js index.js --dts index.d.ts --output-dir .",
     "build:debug": "napi build --manifest-path crates/core/Cargo.toml --platform --js index.js --dts index.d.ts --output-dir .",
+    "build:wasm": "napi build --manifest-path crates/core/Cargo.toml --platform --release --js index.js --dts index.d.ts --output-dir . --target wasm32-wasip1-threads",
     "artifacts": "napi artifacts",
     "prepublishOnly": "napi prepublish -t npm",
     "version": "napi version",
@@ -78,10 +79,13 @@
     "lint:fix": "biome check --write",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:wasm": "vitest run __test__/wasm.spec.ts",
     "test:watch": "vitest watch",
     "bench": "vitest bench",
     "publint": "publint",
     "bench:rust": "cargo bench -p rapid-fuzzy-bench",
+    "verify": "pnpm run check && cargo clippy -- -W clippy::all && cargo test && pnpm run build && pnpm run typecheck && pnpm test",
+    "clean": "rm -rf target coverage *.node *.wasm",
     "prepare": "lefthook install"
   },
   "devDependencies": {
@@ -92,6 +96,7 @@
     "@emnapi/core": "^1.9.0",
     "@emnapi/runtime": "^1.9.0",
     "@napi-rs/cli": "^3.5.1",
+    "@napi-rs/wasm-runtime": "^1.1.1",
     "@tybys/wasm-util": "^0.10.1",
     "@types/node": "^24.0.0",
     "@types/string-similarity": "^4.0.2",

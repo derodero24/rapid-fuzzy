@@ -17,9 +17,10 @@
       "automerge": true
     },
     {
-      "description": "Automerge non-major GitHub Actions updates",
+      "description": "Pin GitHub Actions digests and automerge non-major updates",
       "matchManagers": ["github-actions"],
       "matchUpdateTypes": ["minor", "patch", "digest"],
+      "pinDigests": true,
       "automerge": true
     },
     {
