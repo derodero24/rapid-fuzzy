@@ -1,8 +1,7 @@
 name: Release
 
 on:
-  push:
-    branches: [develop]
+  workflow_dispatch: # Manual trigger only — see #48 for full release CI setup
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
