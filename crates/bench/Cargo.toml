@@ -6,7 +6,7 @@ license.workspace = true
 publish = false
 
 [dev-dependencies]
-criterion = { version = "0.8", features = ["html_reports"] }
+criterion = { version = "4.4.1", package = "codspeed-criterion-compat" }
 strsim = { workspace = true }
 nucleo-matcher = { workspace = true }
 
