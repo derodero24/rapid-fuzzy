@@ -41,3 +41,5 @@ export const {
   highlight,
   highlightRanges,
 } = { ...binding, ...require('./highlight.js') };
+
+export const { searchObjects } = require('./objects.js');
