@@ -25,16 +25,33 @@
       "recommended": true,
       "correctness": {
         "noUnusedImports": "error",
-        "noUnusedVariables": "error"
+        "noUnusedVariables": "error",
+        "noUndeclaredDependencies": "error"
+      },
+      "suspicious": {
+        "noConsole": "error",
+        "useAwait": "error"
+      },
+      "complexity": {
+        "noForEach": "error",
+        "noExcessiveCognitiveComplexity": {
+          "level": "warn",
+          "options": { "maxAllowedComplexity": 15 }
+        }
       },
       "performance": {
-        "noAccumulatingSpread": "error"
+        "noAccumulatingSpread": "error",
+        "noBarrelFile": "error",
+        "noReExportAll": "error",
+        "noDelete": "warn"
       },
       "style": {
         "noDefaultExport": "error",
         "useConst": "error",
         "useExportType": "error",
-        "useImportType": "error"
+        "useImportType": "error",
+        "useForOf": "error",
+        "noNamespace": "error"
       }
     }
   },
@@ -45,6 +62,26 @@
         "rules": {
           "style": {
             "noDefaultExport": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["__test__/**/*.bench.ts", "__test__/esm-import.mjs"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noConsole": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["index.d.mts"],
+      "linter": {
+        "rules": {
+          "performance": {
+            "noReExportAll": "off"
           }
         }
       }
