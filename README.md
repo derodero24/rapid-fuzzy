@@ -9,7 +9,7 @@
 
 Rust-powered fuzzy search and string distance for JavaScript/TypeScript.
 
-> **Status**: Work in progress. Not yet published to npm.
+> **Status**: Early release (v0.x). API may change between minor versions.
 
 ## Features
 
