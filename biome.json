@@ -77,6 +77,19 @@
       }
     },
     {
+      "includes": ["scripts/**"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noConsole": "off"
+          },
+          "style": {
+            "noDefaultExport": "off"
+          }
+        }
+      }
+    },
+    {
       "includes": ["index.d.mts"],
       "linter": {
         "rules": {
