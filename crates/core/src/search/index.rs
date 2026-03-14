@@ -1,18 +1,27 @@
+use std::cell::RefCell;
+
 use napi::Either;
 use napi_derive::napi;
 use nucleo_matcher::pattern::CaseMatching;
+use nucleo_matcher::{Config, Matcher, Utf32String};
 
-use super::{SearchOptions, SearchResult, resolve_case_matching, search_over_items};
+use super::{
+    PrecomputedSearch, SearchOptions, SearchResult, resolve_case_matching, search_over_precomputed,
+};
 
 /// A persistent fuzzy search index backed by Rust-side data.
 ///
 /// Holds items in memory on the Rust side, avoiding repeated FFI overhead
 /// for applications that search the same dataset multiple times.
+/// Pre-computes Utf32String representations for each item, eliminating
+/// per-search string conversion overhead.
 /// Memory is freed when the JavaScript garbage collector collects the instance
 /// or when `destroy()` is called explicitly.
 #[napi]
 pub struct FuzzyIndex {
     items: Vec<String>,
+    utf32_items: Vec<Utf32String>,
+    matcher: RefCell<Matcher>,
 }
 
 #[napi]
@@ -20,7 +29,15 @@ impl FuzzyIndex {
     /// Create a new FuzzyIndex from an array of strings.
     #[napi(constructor)]
     pub fn new(items: Vec<String>) -> Self {
-        Self { items }
+        let utf32_items: Vec<Utf32String> = items
+            .iter()
+            .map(|s| Utf32String::from(s.as_str()))
+            .collect();
+        Self {
+            items,
+            utf32_items,
+            matcher: RefCell::new(Matcher::new(Config::DEFAULT)),
+        }
     }
 
     /// Return the number of items in the index.
@@ -71,12 +88,16 @@ impl FuzzyIndex {
     /// Add a single item to the index.
     #[napi]
     pub fn add(&mut self, item: String) {
+        self.utf32_items.push(Utf32String::from(item.as_str()));
         self.items.push(item);
     }
 
     /// Add multiple items to the index at once.
     #[napi]
     pub fn add_many(&mut self, items: Vec<String>) {
+        for item in &items {
+            self.utf32_items.push(Utf32String::from(item.as_str()));
+        }
         self.items.extend(items);
     }
 
@@ -88,6 +109,7 @@ impl FuzzyIndex {
         let idx = index as usize;
         if idx < self.items.len() {
             self.items.swap_remove(idx);
+            self.utf32_items.swap_remove(idx);
             true
         } else {
             false
@@ -98,6 +120,7 @@ impl FuzzyIndex {
     #[napi]
     pub fn destroy(&mut self) {
         self.items = Vec::new();
+        self.utf32_items = Vec::new();
     }
 
     fn search_impl(
@@ -108,9 +131,14 @@ impl FuzzyIndex {
         include_positions: bool,
         case_matching: CaseMatching,
     ) -> Vec<SearchResult> {
-        search_over_items(
+        let ctx = PrecomputedSearch {
+            items: &self.items,
+            utf32_items: &self.utf32_items,
+            matcher: &self.matcher,
+        };
+        search_over_precomputed(
             query,
-            &self.items,
+            &ctx,
             max_results,
             min_score,
             include_positions,
