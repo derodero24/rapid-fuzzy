@@ -58,6 +58,12 @@ pub fn search_keys(
     };
 
     let threshold = min_score.unwrap_or(0.0);
+
+    // Reject negative, NaN, or infinite weights to guarantee scores stay in [0.0, 1.0]
+    if weights.iter().any(|w| !w.is_finite() || *w < 0.0) {
+        return Vec::new();
+    }
+
     let total_weight: f64 = weights.iter().sum();
     if total_weight <= 0.0 {
         return Vec::new();
@@ -201,6 +207,30 @@ mod tests {
         let key_texts = vec![vec!["a".to_string()]];
         let weights = vec![1.0, 2.0]; // more weights than keys
         let results = search_keys("a".to_string(), key_texts, weights, None);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_negative_weight_rejected() {
+        let key_texts = vec![vec!["apple".to_string()]];
+        let weights = vec![-1.0];
+        let results = search_keys("apple".to_string(), key_texts, weights, None);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_nan_weight_rejected() {
+        let key_texts = vec![vec!["apple".to_string()]];
+        let weights = vec![f64::NAN];
+        let results = search_keys("apple".to_string(), key_texts, weights, None);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_infinity_weight_rejected() {
+        let key_texts = vec![vec!["apple".to_string()]];
+        let weights = vec![f64::INFINITY];
+        let results = search_keys("apple".to_string(), key_texts, weights, None);
         assert!(results.is_empty());
     }
 
