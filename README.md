@@ -322,6 +322,7 @@ cargo bench           # Rust internal benchmarks
 | **Object search** | ✅ weighted keys | ✅ | — | ✅ |
 | **Persistent index** | ✅ FuzzyIndex / FuzzyObjectIndex | — | — | ✅ prepared targets |
 | **Query syntax** | ✅ exclude, prefix, suffix, exact | ✅ extended search | — | — |
+| **Out-of-order matching** | ✅ automatic | — | — | — |
 | **Diacritics** | ✅ automatic | ✅ option | — | ✅ auto |
 | **Score threshold** | ✅ | ✅ | — | ✅ |
 | **Match positions** | ✅ | ✅ | — | ✅ |
