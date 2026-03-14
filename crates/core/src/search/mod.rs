@@ -1,3 +1,7 @@
+mod index;
+
+pub use index::FuzzyIndex;
+
 use napi::Either;
 use napi_derive::napi;
 use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
@@ -30,7 +34,7 @@ pub struct SearchOptions {
 
 /// Compute the maximum possible score for a given pattern by scoring
 /// the query against itself (exact match = theoretical maximum).
-fn compute_max_score(query: &str, pattern: &Pattern, matcher: &mut Matcher) -> f64 {
+pub(crate) fn compute_max_score(query: &str, pattern: &Pattern, matcher: &mut Matcher) -> f64 {
     let mut buf = Vec::new();
     let atoms = nucleo_matcher::Utf32Str::new(query, &mut buf);
     pattern.score(atoms, matcher).unwrap_or(1) as f64

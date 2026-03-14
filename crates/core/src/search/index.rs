@@ -1,0 +1,317 @@
+use napi::Either;
+use napi_derive::napi;
+use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
+use nucleo_matcher::{Config, Matcher};
+
+use super::{SearchOptions, SearchResult, compute_max_score};
+
+/// A persistent fuzzy search index backed by Rust-side data.
+///
+/// Holds items in memory on the Rust side, avoiding repeated FFI overhead
+/// for applications that search the same dataset multiple times.
+/// Memory is freed when the JavaScript garbage collector collects the instance
+/// or when `destroy()` is called explicitly.
+#[napi]
+pub struct FuzzyIndex {
+    items: Vec<String>,
+}
+
+#[napi]
+impl FuzzyIndex {
+    /// Create a new FuzzyIndex from an array of strings.
+    #[napi(constructor)]
+    pub fn new(items: Vec<String>) -> Self {
+        Self { items }
+    }
+
+    /// Return the number of items in the index.
+    #[napi(getter)]
+    pub fn size(&self) -> u32 {
+        self.items.len() as u32
+    }
+
+    /// Search the index for items matching the query.
+    ///
+    /// Returns matches sorted by score (best match first).
+    /// Scores are normalized to a 0.0-1.0 range where 1.0 is a perfect match.
+    #[napi]
+    pub fn search(
+        &self,
+        query: String,
+        options: Option<Either<u32, SearchOptions>>,
+    ) -> Vec<SearchResult> {
+        let (max_results, min_score, include_positions) = match options {
+            Some(Either::A(max)) => (Some(max), None, false),
+            Some(Either::B(opts)) => (
+                opts.max_results,
+                opts.min_score,
+                opts.include_positions.unwrap_or(false),
+            ),
+            None => (None, None, false),
+        };
+        self.search_impl(&query, max_results, min_score, include_positions)
+    }
+
+    /// Find the closest matching string in the index.
+    ///
+    /// Returns the best match, or null if no match is found.
+    /// If minScore is provided, returns null when the best match scores below the threshold.
+    #[napi]
+    pub fn closest(&self, query: String, min_score: Option<f64>) -> Option<String> {
+        let results = self.search_impl(&query, Some(1), min_score, false);
+        results.into_iter().next().map(|r| r.item)
+    }
+
+    /// Add a single item to the index.
+    #[napi]
+    pub fn add(&mut self, item: String) {
+        self.items.push(item);
+    }
+
+    /// Add multiple items to the index at once.
+    #[napi]
+    pub fn add_many(&mut self, items: Vec<String>) {
+        self.items.extend(items);
+    }
+
+    /// Remove the item at the given index.
+    ///
+    /// Returns false if the index is out of bounds.
+    #[napi]
+    pub fn remove(&mut self, index: u32) -> bool {
+        let idx = index as usize;
+        if idx < self.items.len() {
+            self.items.swap_remove(idx);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Free the internal data. After calling this, the index is empty.
+    #[napi]
+    pub fn destroy(&mut self) {
+        self.items = Vec::new();
+    }
+
+    fn search_impl(
+        &self,
+        query: &str,
+        max_results: Option<u32>,
+        min_score: Option<f64>,
+        include_positions: bool,
+    ) -> Vec<SearchResult> {
+        if query.is_empty() || self.items.is_empty() {
+            return Vec::new();
+        }
+
+        let mut matcher = Matcher::new(Config::DEFAULT);
+        let pattern = Pattern::parse(query, CaseMatching::Smart, Normalization::Smart);
+        let max_score = compute_max_score(query, &pattern, &mut matcher);
+        let threshold = min_score.unwrap_or(0.0);
+
+        let mut results: Vec<SearchResult> = self
+            .items
+            .iter()
+            .enumerate()
+            .filter_map(|(index, item)| {
+                let mut buf = Vec::new();
+                let atoms = nucleo_matcher::Utf32Str::new(item, &mut buf);
+
+                let (raw_score, positions) = if include_positions {
+                    let mut indices = Vec::new();
+                    let score = pattern.indices(atoms, &mut matcher, &mut indices)?;
+                    indices.sort_unstable();
+                    indices.dedup();
+                    (score, indices)
+                } else {
+                    let score = pattern.score(atoms, &mut matcher)?;
+                    (score, Vec::new())
+                };
+
+                let normalized = (raw_score as f64 / max_score).min(1.0);
+                if normalized >= threshold {
+                    Some(SearchResult {
+                        item: item.clone(),
+                        score: normalized,
+                        index: index as u32,
+                        positions,
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        if let Some(max) = max_results {
+            results.truncate(max as usize);
+        }
+
+        results
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new_and_size() {
+        let index = FuzzyIndex::new(vec!["apple".into(), "banana".into()]);
+        assert_eq!(index.size(), 2);
+    }
+
+    #[test]
+    fn test_empty_index() {
+        let index = FuzzyIndex::new(vec![]);
+        assert_eq!(index.size(), 0);
+        let results = index.search_impl("test", None, None, false);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_search_basic() {
+        let index = FuzzyIndex::new(vec![
+            "TypeScript".into(),
+            "JavaScript".into(),
+            "Python".into(),
+        ]);
+        let results = index.search_impl("typscript", None, None, false);
+        assert!(!results.is_empty());
+        assert_eq!(results[0].item, "TypeScript");
+    }
+
+    #[test]
+    fn test_search_max_results() {
+        let index = FuzzyIndex::new(vec![
+            "apple".into(),
+            "application".into(),
+            "appetizer".into(),
+        ]);
+        let results = index.search_impl("app", Some(2), None, false);
+        assert!(results.len() <= 2);
+    }
+
+    #[test]
+    fn test_search_min_score() {
+        let index = FuzzyIndex::new(vec!["apple".into(), "xyz".into()]);
+        let results = index.search_impl("apple", None, Some(0.5), false);
+        for r in &results {
+            assert!(r.score >= 0.5);
+        }
+    }
+
+    #[test]
+    fn test_search_with_positions() {
+        let index = FuzzyIndex::new(vec!["hello".into()]);
+        let results = index.search_impl("hello", None, None, true);
+        assert!(!results.is_empty());
+        assert_eq!(results[0].positions, vec![0, 1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn test_closest() {
+        let index = FuzzyIndex::new(vec!["apple".into(), "banana".into()]);
+        let result = index.closest("app".into(), None);
+        assert_eq!(result, Some("apple".into()));
+    }
+
+    #[test]
+    fn test_closest_with_min_score() {
+        let index = FuzzyIndex::new(vec!["xyz".into()]);
+        let result = index.closest("hello".into(), Some(0.99));
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_add() {
+        let mut index = FuzzyIndex::new(vec!["apple".into()]);
+        assert_eq!(index.size(), 1);
+        index.add("banana".into());
+        assert_eq!(index.size(), 2);
+        let result = index.closest("banana".into(), None);
+        assert_eq!(result, Some("banana".into()));
+    }
+
+    #[test]
+    fn test_add_many() {
+        let mut index = FuzzyIndex::new(vec![]);
+        index.add_many(vec!["apple".into(), "banana".into(), "grape".into()]);
+        assert_eq!(index.size(), 3);
+    }
+
+    #[test]
+    fn test_remove() {
+        let mut index = FuzzyIndex::new(vec!["apple".into(), "banana".into(), "grape".into()]);
+        assert!(index.remove(1)); // remove "banana"
+        assert_eq!(index.size(), 2);
+        assert!(!index.remove(10)); // out of bounds
+    }
+
+    #[test]
+    fn test_remove_swap_semantics() {
+        let mut index = FuzzyIndex::new(vec!["a".into(), "b".into(), "c".into()]);
+        index.remove(0); // removes "a", swaps "c" into position 0
+        assert_eq!(index.size(), 2);
+        // After swap_remove(0): ["c", "b"]
+        let results = index.search_impl("c", None, None, false);
+        assert!(!results.is_empty());
+    }
+
+    #[test]
+    fn test_destroy() {
+        let mut index = FuzzyIndex::new(vec!["apple".into(), "banana".into()]);
+        index.destroy();
+        assert_eq!(index.size(), 0);
+        let results = index.search_impl("apple", None, None, false);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_scores_normalized() {
+        let index = FuzzyIndex::new(vec!["apple".into(), "application".into(), "banana".into()]);
+        let results = index.search_impl("apple", None, None, false);
+        for r in &results {
+            assert!(r.score >= 0.0 && r.score <= 1.0);
+        }
+    }
+
+    #[test]
+    fn test_results_sorted_descending() {
+        let index = FuzzyIndex::new(vec![
+            "apple".into(),
+            "application".into(),
+            "appetizer".into(),
+            "banana".into(),
+        ]);
+        let results = index.search_impl("apple", None, None, false);
+        for window in results.windows(2) {
+            assert!(window[0].score >= window[1].score);
+        }
+    }
+
+    #[test]
+    fn test_consistent_with_standalone_search() {
+        let items = vec![
+            "apple".into(),
+            "application".into(),
+            "banana".into(),
+            "grape".into(),
+        ];
+        let index = FuzzyIndex::new(items.clone());
+        let index_results = index.search_impl("apple", None, None, false);
+        let standalone_results =
+            crate::search::search_impl("apple".into(), items, None, None, false);
+        assert_eq!(index_results.len(), standalone_results.len());
+        for (a, b) in index_results.iter().zip(standalone_results.iter()) {
+            assert_eq!(a.item, b.item);
+            assert!((a.score - b.score).abs() < f64::EPSILON);
+        }
+    }
+}
