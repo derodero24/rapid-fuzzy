@@ -57,11 +57,13 @@ pub(crate) fn search_impl(
     let max_score = compute_max_score(&query, &pattern, &mut matcher);
     let threshold = min_score.unwrap_or(0.0);
 
+    let mut buf = Vec::new();
+
     let mut results: Vec<SearchResult> = items
         .iter()
         .enumerate()
         .filter_map(|(index, item)| {
-            let mut buf = Vec::new();
+            buf.clear();
             let atoms = nucleo_matcher::Utf32Str::new(item, &mut buf);
 
             let (raw_score, positions) = if include_positions {
@@ -89,7 +91,7 @@ pub(crate) fn search_impl(
         })
         .collect();
 
-    results.sort_by(|a, b| {
+    results.sort_unstable_by(|a, b| {
         b.score
             .partial_cmp(&a.score)
             .unwrap_or(std::cmp::Ordering::Equal)
