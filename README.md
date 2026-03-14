@@ -81,6 +81,22 @@ closest('xyz', items, 0.5);
 // → null
 ```
 
+### Query Syntax
+
+Queries support extended syntax powered by the [nucleo](https://github.com/helix-editor/nucleo) pattern parser:
+
+| Pattern | Match type | Example |
+|---|---|---|
+| `foo bar` | AND (order-independent) | `john smith` matches "Smith, John" |
+| `!term` | Exclude | `apple !pie` excludes "apple pie" |
+| `^term` | Starts with | `^app` matches "apple" but not "pineapple" |
+| `term$` | Ends with | `pie$` matches "apple pie" |
+| `'term` | Exact substring | `'pie` matches "pie" literally |
+
+Diacritics are handled automatically — `cafe` matches `café`, `uber` matches `über`, and `naive` matches `naïve` with no configuration needed.
+
+> **Note**: These patterns apply to all search functions: `search()`, `closest()`, `FuzzyIndex.search()`, `FuzzyObjectIndex.search()`, and `searchObjects()`. They do **not** apply to distance functions (`levenshtein`, `jaro`, etc.).
+
 ### Object Search
 
 Search across object properties with weighted keys — a drop-in replacement for fuse.js's `keys` option:
@@ -305,6 +321,8 @@ cargo bench           # Rust internal benchmarks
 | **Runtime** | Rust native + WASM | Pure JS | Pure JS | Pure JS |
 | **Object search** | ✅ weighted keys | ✅ | — | ✅ |
 | **Persistent index** | ✅ FuzzyIndex / FuzzyObjectIndex | — | — | ✅ prepared targets |
+| **Query syntax** | ✅ exclude, prefix, suffix, exact | ✅ extended search | — | — |
+| **Diacritics** | ✅ automatic | ✅ option | — | ✅ auto |
 | **Score threshold** | ✅ | ✅ | — | ✅ |
 | **Match positions** | ✅ | ✅ | — | ✅ |
 | **Highlight utility** | ✅ | — | — | ✅ |
