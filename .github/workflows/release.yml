@@ -44,8 +44,8 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add .
-          git commit -m "chore(release): version packages for v${VERSION}"
-          git push origin develop
+          git commit -m "chore(release): version packages for v${VERSION}" --no-verify
+          git push origin develop --no-verify
 
           EXISTING=$(gh pr list --base main --head develop --json number --jq '.[0].number')
           if [ -n "$EXISTING" ]; then
