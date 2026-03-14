@@ -25,4 +25,4 @@ pre-push:
     cargo-test:
       run: $HOME/.cargo/bin/cargo test
     cargo-deny:
-      run: $HOME/.cargo/bin/cargo-deny check
+      run: PATH="$HOME/.cargo/bin:$PATH" $HOME/.cargo/bin/cargo-deny check
