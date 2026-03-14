@@ -1,5 +1,17 @@
 # rapid-fuzzy
 
+## 0.4.0
+
+### Minor Changes
+
+- 4645a6d: Add FuzzyIndex class for persistent indexed search.
+
+  A Rust-backed class that holds items in memory, eliminating repeated FFI overhead for applications searching the same dataset multiple times. Supports search with all existing options (maxResults, minScore, includePositions), closest match, and incremental updates via add/addMany/remove methods.
+
+### Patch Changes
+
+- ca38f81: Optimize search performance by reusing UTF-32 conversion buffers across items and switching to unstable sort. Reduces allocations in the hot scoring loop, yielding ~30% improvement on medium-sized datasets (1K items).
+
 ## 0.3.0
 
 ### Minor Changes
