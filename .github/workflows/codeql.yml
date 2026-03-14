@@ -9,8 +9,8 @@ on:
       - '**/*.json'
       - '**/*.rs'
       - 'pnpm-lock.yaml'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
+      - '**/Cargo.toml'
+      - '**/Cargo.lock'
       - '.github/workflows/codeql.yml'
   pull_request:
     branches: [develop]
@@ -20,8 +20,8 @@ on:
       - '**/*.json'
       - '**/*.rs'
       - 'pnpm-lock.yaml'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
+      - '**/Cargo.toml'
+      - '**/Cargo.lock'
       - '.github/workflows/codeql.yml'
   schedule:
     - cron: '0 6 * * 1' # Weekly Monday 6 AM UTC
