@@ -20,7 +20,6 @@ allow = [
 
 [bans]
 multiple-versions = "warn"
-wildcards = "allow"
 
 [sources]
 unknown-registry = "warn"
