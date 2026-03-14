@@ -7,6 +7,7 @@ on:
       - "crates/**"
       - "__test__/**/*.bench.ts"
       - "vitest.config.ts"
+      - "vitest.bench.config.mts"
       - ".github/workflows/codspeed.yml"
   pull_request:
     branches: [develop]
@@ -14,7 +15,9 @@ on:
       - "crates/**"
       - "__test__/**/*.bench.ts"
       - "vitest.config.ts"
+      - "vitest.bench.config.mts"
       - ".github/workflows/codspeed.yml"
+  workflow_dispatch:
 
 concurrency:
   group: codspeed-${{ github.ref }}
@@ -37,11 +40,15 @@ jobs:
           shared-key: bench
 
       - run: pnpm install --frozen-lockfile
+      - name: Install cargo-codspeed
+        run: cargo install cargo-codspeed --locked
       - name: Build native module
         run: pnpm run build
+      - name: Build Rust benchmarks for CodSpeed
+        run: cargo codspeed build -p rapid-fuzzy-bench
 
       - name: Run CodSpeed benchmarks
         uses: CodSpeedHQ/action@281164b0f014a4e7badd2c02cecad9b595b70537 # v4
         with:
           mode: simulation
-          run: cargo codspeed run -p rapid-fuzzy-bench && pnpm vitest bench --config vitest.bench.config.mts
+          run: cargo codspeed run && pnpm vitest bench --run --config vitest.bench.config.mts
