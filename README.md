@@ -9,7 +9,7 @@
 
 Rust-powered fuzzy search and string distance for JavaScript/TypeScript.
 
-> **Status**: Work in progress. Not yet published to npm.
+Status: Published on npm (v0.1.0): https://www.npmjs.com/package/rapid-fuzzy
 
 ## Features
 
