@@ -247,7 +247,11 @@ describe('search', () => {
   it('should return results sorted by score (best first)', () => {
     const results = search('an', items);
     for (let i = 1; i < results.length; i++) {
-      expect(results[i - 1].score).toBeGreaterThanOrEqual(results[i].score);
+      const prev = results[i - 1];
+      const curr = results[i];
+      if (prev && curr) {
+        expect(prev.score).toBeGreaterThanOrEqual(curr.score);
+      }
     }
   });
 
