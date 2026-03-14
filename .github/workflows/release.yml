@@ -162,6 +162,7 @@ jobs:
             -w /build
           run: |
             set -e
+            npm install -g corepack@latest
             corepack enable
             corepack install
             rustup target add ${{ matrix.settings.target }}
