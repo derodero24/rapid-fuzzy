@@ -95,4 +95,68 @@ mod tests {
         let result = closest("app".to_string(), items);
         assert!(result.is_some());
     }
+
+    mod proptest_search {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn search_max_results_respected(
+                query in "[a-z]{1,5}",
+                items in prop::collection::vec("[a-z]{1,10}", 1..20),
+                max in 1u32..10
+            ) {
+                let results = search(query, items, Some(max));
+                prop_assert!(results.len() <= max as usize);
+            }
+
+            #[test]
+            fn search_scores_sorted_descending(
+                query in "[a-z]{1,5}",
+                items in prop::collection::vec("[a-z]{1,10}", 1..20),
+            ) {
+                let results = search(query, items, None);
+                for window in results.windows(2) {
+                    prop_assert!(
+                        window[0].score >= window[1].score,
+                        "results not sorted: {} < {}",
+                        window[0].score,
+                        window[1].score
+                    );
+                }
+            }
+
+            #[test]
+            fn closest_in_search_results(
+                query in "[a-z]{1,5}",
+                items in prop::collection::vec("[a-z]{1,10}", 1..20),
+            ) {
+                let closest_result = closest(query.clone(), items.clone());
+                let search_results = search(query, items, None);
+
+                match (closest_result, search_results.first()) {
+                    (Some(c), Some(first)) => {
+                        prop_assert_eq!(c, first.item.clone());
+                    }
+                    (None, None) => {} // both empty is fine
+                    (Some(_), None) | (None, Some(_)) => {
+                        prop_assert!(false, "closest and search disagree on match existence");
+                    }
+                }
+            }
+
+            #[test]
+            fn search_indices_valid(
+                query in "[a-z]{1,5}",
+                items in prop::collection::vec("[a-z]{1,10}", 1..20),
+            ) {
+                let len = items.len();
+                let results = search(query, items, None);
+                for r in &results {
+                    prop_assert!((r.index as usize) < len, "index {} out of bounds (len={})", r.index, len);
+                }
+            }
+        }
+    }
 }
