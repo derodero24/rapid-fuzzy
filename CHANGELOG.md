@@ -1,28 +1,20 @@
 # rapid-fuzzy
 
-## 0.5.0
-
-### Minor Changes
-
-- 0b29f3f: Add match highlight positions to search results.
-
-  SearchResult now includes a `positions` field containing indices of matched characters. Enable by setting `includePositions: true` in SearchOptions. Positions are computed via nucleo-matcher's indices API, sorted and deduplicated. When not requested, positions is an empty array with zero overhead.
-
-## 0.4.0
-
-### Minor Changes
-
-- dcc313c: Add token-based matching algorithms inspired by Python's RapidFuzz.
-
-  Four new similarity functions: tokenSortRatio (order-independent via sorted tokens), tokenSetRatio (set intersection-based), partialRatio (best substring match via sliding window), and weightedRatio (maximum across all methods). Each includes batch and many variants for efficient bulk comparisons.
-
 ## 0.3.0
 
 ### Minor Changes
 
-- a98d757: Add score threshold filtering to search() and closest() functions.
+- Add score threshold filtering to search() and closest() functions.
 
   search() now accepts a SearchOptions object with maxResults and minScore fields, while maintaining backward compatibility with the existing number argument for maxResults. closest() accepts an optional minScore parameter to return null when the best match is below the threshold.
+
+- Add token-based matching algorithms inspired by Python's RapidFuzz.
+
+  Four new similarity functions: tokenSortRatio (order-independent via sorted tokens), tokenSetRatio (set intersection-based), partialRatio (best substring match via sliding window), and weightedRatio (maximum across all methods). Each includes batch and many variants for efficient bulk comparisons.
+
+- Add match highlight positions to search results.
+
+  SearchResult now includes a `positions` field containing indices of matched characters. Enable by setting `includePositions: true` in SearchOptions. Positions are computed via nucleo-matcher's indices API, sorted and deduplicated. When not requested, positions is an empty array with zero overhead.
 
 ## 0.2.0
 
