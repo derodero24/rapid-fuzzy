@@ -4,10 +4,12 @@ mod keys;
 pub use index::FuzzyIndex;
 pub use keys::search_keys;
 
+use std::cell::RefCell;
+
 use napi::Either;
 use napi_derive::napi;
 use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
-use nucleo_matcher::{Config, Matcher};
+use nucleo_matcher::{Config, Matcher, Utf32String};
 
 /// A single fuzzy search result with the matched item and its score.
 #[napi(object)]
@@ -82,6 +84,81 @@ pub(crate) fn search_over_items(
         .filter_map(|(index, item)| {
             buf.clear();
             let atoms = nucleo_matcher::Utf32Str::new(item, &mut buf);
+
+            let (raw_score, positions) = if include_positions {
+                let mut indices = Vec::new();
+                let score = pattern.indices(atoms, &mut matcher, &mut indices)?;
+                indices.sort_unstable();
+                indices.dedup();
+                (score, indices)
+            } else {
+                let score = pattern.score(atoms, &mut matcher)?;
+                (score, Vec::new())
+            };
+
+            let normalized = (raw_score as f64 / max_score).min(1.0);
+            if normalized >= threshold {
+                Some(SearchResult {
+                    item: item.clone(),
+                    score: normalized,
+                    index: index as u32,
+                    positions,
+                })
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    results.sort_unstable_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    if let Some(max) = max_results {
+        results.truncate(max as usize);
+    }
+
+    results
+}
+
+/// Pre-computed search context for FuzzyIndex.
+pub(crate) struct PrecomputedSearch<'a> {
+    pub items: &'a [String],
+    pub utf32_items: &'a [Utf32String],
+    pub matcher: &'a RefCell<Matcher>,
+}
+
+/// Search over pre-computed Utf32String items with a reusable Matcher.
+///
+/// Used by FuzzyIndex to avoid per-search string conversion and Matcher allocation.
+pub(crate) fn search_over_precomputed(
+    query: &str,
+    ctx: &PrecomputedSearch<'_>,
+    max_results: Option<u32>,
+    min_score: Option<f64>,
+    include_positions: bool,
+    case_matching: CaseMatching,
+) -> Vec<SearchResult> {
+    let items = ctx.items;
+    let utf32_items = ctx.utf32_items;
+    let matcher_cell = ctx.matcher;
+    if query.is_empty() || items.is_empty() {
+        return Vec::new();
+    }
+
+    let mut matcher = matcher_cell.borrow_mut();
+    let pattern = Pattern::parse(query, case_matching, Normalization::Smart);
+    let max_score = compute_max_score(query, &pattern, &mut matcher);
+    let threshold = min_score.unwrap_or(0.0);
+
+    let mut results: Vec<SearchResult> = items
+        .iter()
+        .zip(utf32_items.iter())
+        .enumerate()
+        .filter_map(|(index, (item, utf32_item))| {
+            let atoms = utf32_item.slice(..);
 
             let (raw_score, positions) = if include_positions {
                 let mut indices = Vec::new();
