@@ -40,17 +40,21 @@ function parseSearchTable(): ChartData {
   const lines = readme.split('\n');
 
   for (const line of lines) {
-    // Match rows like: | Small (20 items) | 179,222 ops/s | 109,059 ops/s | ...
-    const m = line.match(/\|\s*(Small|Medium|Large)\s*\([^)]+\)\s*\|([^|]+)\|([^|]+)\|([^|]+)\|/);
+    // Match rows: | Small (20 items) | rf | fi | fj | fs |
+    const m = line.match(
+      /\|\s*(Small|Medium|Large)\s*\([^)]+\)\s*\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|/,
+    );
     if (!m) continue;
 
     const groupLabel = m[1];
     const rf = parseOps(m[2]);
-    const fj = parseOps(m[3]);
-    const fs = parseOps(m[4]);
+    const fi = parseOps(m[3]);
+    const fj = parseOps(m[4]);
+    const fs = parseOps(m[5]);
 
     const bars: BarEntry[] = [];
     if (rf !== null) bars.push({ label: 'rapid-fuzzy', value: rf });
+    if (fi !== null) bars.push({ label: 'FuzzyIndex', value: fi });
     if (fj !== null) bars.push({ label: 'fuse.js', value: fj });
     if (fs !== null) bars.push({ label: 'fuzzysort', value: fs });
 
@@ -94,6 +98,7 @@ function parseDistanceTable(): ChartData {
 
 const COLORS: Record<string, string> = {
   'rapid-fuzzy': '#3b82f6',
+  FuzzyIndex: '#60a5fa',
   'fuse.js': '#94a3b8',
   fuzzysort: '#94a3b8',
   'fastest-levenshtein': '#94a3b8',
@@ -167,7 +172,7 @@ function generateSvg(data: ChartData): string {
     for (const bar of sorted) {
       const barWidth = Math.max(4, (bar.value / groupMax) * barAreaWidth);
       const color = COLORS[bar.label] ?? '#94a3b8';
-      const isRapidFuzzy = bar.label === 'rapid-fuzzy';
+      const isRapidFuzzy = bar.label === 'rapid-fuzzy' || bar.label === 'FuzzyIndex';
       const x = paddingX + labelWidth;
 
       // Label
