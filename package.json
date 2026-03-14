@@ -6,7 +6,7 @@
   "author": "derodero24",
   "repository": {
     "type": "git",
-    "url": "https://github.com/derodero24/rapid-fuzzy"
+    "url": "git+https://github.com/derodero24/rapid-fuzzy.git"
   },
   "homepage": "https://github.com/derodero24/rapid-fuzzy",
   "keywords": [
@@ -22,6 +22,7 @@
     "search",
     "fuse"
   ],
+  "sideEffects": false,
   "type": "commonjs",
   "main": "index.js",
   "browser": "browser.js",
@@ -63,6 +64,7 @@
     "test": "vitest run",
     "test:watch": "vitest watch",
     "bench": "vitest bench",
+    "publint": "publint",
     "bench:rust": "cargo bench -p rapid-fuzzy-bench",
     "prepare": "lefthook install"
   },
@@ -83,6 +85,7 @@
     "lefthook": "^2.1.4",
     "leven": "^4.1.0",
     "string-similarity": "^4.0.4",
+    "publint": "^0.3.18",
     "typescript": "^5.9.3",
     "vitest": "^4.1.0"
   },
