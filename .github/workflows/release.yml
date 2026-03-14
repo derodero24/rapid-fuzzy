@@ -1,20 +1,141 @@
 name: Release
 
 on:
-  workflow_dispatch: # Manual trigger only — see #48 for full release CI setup
+  push:
+    branches: [develop]
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
 jobs:
-  release:
-    name: Release
+  # On push to develop: create or update Version Packages PR via changesets
+  version:
+    name: Version
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Create Release Pull Request
+        uses: changesets/action@v1
+        with:
+          version: pnpm changeset version
+          commit: 'chore(release): version packages'
+          title: 'chore(release): version packages'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # On workflow_dispatch: build native binaries for all platforms
+  build:
+    name: Build - ${{ matrix.settings.target }}
+    if: github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        settings:
+          - host: macos-13
+            target: x86_64-apple-darwin
+          - host: macos-latest
+            target: aarch64-apple-darwin
+          - host: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            use-cross: true
+          - host: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-alpine
+          - host: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            use-cross: true
+          - host: ubuntu-latest
+            target: aarch64-unknown-linux-musl
+            docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-alpine
+          - host: windows-latest
+            target: x86_64-pc-windows-msvc
+          - host: windows-latest
+            target: aarch64-pc-windows-msvc
+          - host: ubuntu-latest
+            target: wasm32-wasip1-threads
+    runs-on: ${{ matrix.settings.host }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v4
+        if: ${{ !matrix.settings.docker }}
+      - uses: actions/setup-node@v6
+        if: ${{ !matrix.settings.docker }}
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        if: ${{ !matrix.settings.docker }}
+        with:
+          targets: ${{ matrix.settings.target }}
+      - uses: Swatinem/rust-cache@v2
+        if: ${{ !matrix.settings.docker }}
+        with:
+          shared-key: release-${{ matrix.settings.target }}
+
+      - run: pnpm install --frozen-lockfile
+        if: ${{ !matrix.settings.docker }}
+
+      - name: Build
+        if: ${{ !matrix.settings.docker }}
+        run: >-
+          pnpm build
+          --target ${{ matrix.settings.target }}
+          ${{ matrix.settings.use-cross && '--use-napi-cross' || '' }}
+
+      - name: Build in Docker
+        if: ${{ matrix.settings.docker }}
+        uses: addnab/docker-run-action@v3
+        with:
+          image: ${{ matrix.settings.docker }}
+          options: >-
+            --user 0:0
+            -v ${{ github.workspace }}/.cargo-cache/git/db:/usr/local/cargo/git/db
+            -v ${{ github.workspace }}/.cargo/registry/cache:/usr/local/cargo/registry/cache
+            -v ${{ github.workspace }}/.cargo/registry/index:/usr/local/cargo/registry/index
+            -v ${{ github.workspace }}:/build
+            -w /build
+          run: |
+            set -e
+            corepack enable
+            corepack install
+            rustup target add ${{ matrix.settings.target }}
+            pnpm install --frozen-lockfile
+            pnpm build --target ${{ matrix.settings.target }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: bindings-${{ matrix.settings.target }}
+          path: |
+            rapid-fuzzy.*.node
+            rapid-fuzzy.*.wasm
+            rapid-fuzzy.wasi*.cjs
+            rapid-fuzzy.wasi*.js
+            wasi-worker*.mjs
+          if-no-files-found: error
+
+  # Publish to npm after all builds succeed
+  publish:
+    name: Publish
+    needs: build
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v4
@@ -25,19 +146,33 @@ jobs:
           registry-url: https://registry.npmjs.org/
       - run: pnpm install --frozen-lockfile
 
-      - name: Create Release Pull Request or Publish
-        id: changesets
-        uses: changesets/action@v1
+      - name: Download all artifacts
+        uses: actions/download-artifact@v8
         with:
-          version: pnpm changeset version
-          publish: pnpm changeset publish
+          path: artifacts
+
+      - name: Move artifacts to platform packages
+        run: pnpm napi artifacts --dir artifacts
+
+      - name: List packages
+        run: |
+          echo "=== Platform packages ==="
+          for dir in npm/*/; do
+            echo "$dir"
+            ls -la "$dir" 2>/dev/null
+            echo ""
+          done
+
+      - name: Publish to npm
+        run: |
+          npm config set provenance true
+          npm publish --access public --provenance
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Fast-forward main
-        if: steps.changesets.outputs.published == 'true'
         run: |
           git fetch origin main
           git push origin develop:main
