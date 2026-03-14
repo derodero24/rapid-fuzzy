@@ -24,3 +24,5 @@ pre-push:
       run: $HOME/.cargo/bin/cargo clippy -- -W clippy::all
     cargo-test:
       run: $HOME/.cargo/bin/cargo test
+    cargo-deny:
+      run: $HOME/.cargo/bin/cargo-deny check
