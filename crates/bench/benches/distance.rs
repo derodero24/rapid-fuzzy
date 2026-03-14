@@ -1,6 +1,6 @@
 use std::hint::black_box;
 
-use criterion::{Criterion, criterion_group, criterion_main};
+use codspeed_criterion_compat::{Criterion, criterion_group, criterion_main};
 
 const PAIRS: &[(&str, &str)] = &[
     ("kitten", "sitting"),

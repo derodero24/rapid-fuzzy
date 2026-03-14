@@ -57,7 +57,7 @@
   },
   "overrides": [
     {
-      "includes": ["vitest.config.ts", "commitlint.config.ts"],
+      "includes": ["vitest.config.ts", "vitest.bench.config.mts", "commitlint.config.ts"],
       "linter": {
         "rules": {
           "style": {

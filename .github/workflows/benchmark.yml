@@ -191,7 +191,8 @@ jobs:
           # Comment on PRs with comparison
           comment-on-alert: true
           comment-always: ${{ github.event_name == 'pull_request' }}
-          # Alert if >10% regression
-          alert-threshold: '110%'
+          # Alert if >30% regression (wall-time on shared runners has ~3% CoV,
+          # which causes frequent false positives at lower thresholds)
+          alert-threshold: '130%'
           fail-on-alert: false
           benchmark-data-dir-path: bench
