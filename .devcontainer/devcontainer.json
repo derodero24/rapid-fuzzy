@@ -9,7 +9,10 @@
   "postCreateCommand": "corepack enable && pnpm install --ignore-scripts && pnpm run build",
   "customizations": {
     "vscode": {
-      "extensions": ["rust-lang.rust-analyzer", "biomejs.biome"]
+      "extensions": [
+        "rust-lang.rust-analyzer",
+        "biomejs.biome"
+      ]
     }
   }
 }
