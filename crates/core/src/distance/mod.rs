@@ -305,10 +305,12 @@ fn partial_ratio_impl(a: &str, b: &str) -> f64 {
 
     for start in 0..=(long_len - short_len) {
         let window = long_chars[start..start + short_len].iter().copied();
-        let score = scorer.normalized_similarity(window);
-        best = f64::max(best, score);
-        if best == 1.0 {
-            break;
+        let args = rapid_lev::Args::default().score_cutoff(best);
+        if let Some(score) = scorer.normalized_similarity_with_args(window, &args) {
+            best = score;
+            if best == 1.0 {
+                break;
+            }
         }
     }
 
