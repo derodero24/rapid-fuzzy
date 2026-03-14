@@ -25,11 +25,27 @@
   "sideEffects": false,
   "type": "commonjs",
   "main": "index.js",
+  "module": "index.mjs",
   "browser": "browser.js",
   "types": "index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./index.d.mts",
+        "default": "./index.mjs"
+      },
+      "require": {
+        "types": "./index.d.ts",
+        "default": "./index.js"
+      },
+      "browser": "./browser.js"
+    }
+  },
   "files": [
     "index.js",
+    "index.mjs",
     "index.d.ts",
+    "index.d.mts",
     "browser.js"
   ],
   "napi": {
