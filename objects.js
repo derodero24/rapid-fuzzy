@@ -43,12 +43,7 @@ function searchObjects(query, items, options) {
   const keyTexts = normalizedKeys.map((k) => items.map((item) => getNestedValue(item, k.name)));
   const weights = normalizedKeys.map((k) => k.weight);
 
-  const nativeOpts =
-    searchOpts.maxResults != null ||
-    searchOpts.minScore != null ||
-    searchOpts.isCaseSensitive != null
-      ? searchOpts
-      : undefined;
+  const nativeOpts = Object.keys(searchOpts).length > 0 ? searchOpts : undefined;
 
   const results = searchKeys(query, keyTexts, weights, nativeOpts);
 
