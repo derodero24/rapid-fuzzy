@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 427" width="680" height="427">
+<style>
+  text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .title { font-size: 16px; font-weight: 600; fill: #1f2937; }
+  .subtitle { font-size: 12px; fill: #6b7280; }
+  .group-label { font-size: 13px; font-weight: 600; fill: #374151; }
+  .bar-label { font-size: 12px; fill: #4b5563; }
+  .bar-value { font-size: 12px; fill: #374151; font-weight: 500; }
+  .multiplier { font-size: 11px; fill: #059669; font-weight: 600; }
+</style>
+<rect width="680" height="427" rx="8" fill="#ffffff" />
+<rect x="0.5" y="0.5" width="679" height="426" rx="8" fill="none" stroke="#e5e7eb" />
+<text x="20" y="28" class="title">Fuzzy Search Performance</text>
+<text x="20" y="44" class="subtitle">ops/s (higher is better)</text>
+<text x="20" y="66" class="group-label">Small</text>
+<text x="172" y="91" class="bar-label" text-anchor="end">fuzzysort</text>
+<rect x="180" y="74" width="460" height="26" rx="4" fill="#94a3b8" opacity="0.6" />
+<text x="632" y="91" class="bar-value" text-anchor="end">2,501,773 ops/s</text>
+<text x="172" y="122" class="bar-label" text-anchor="end">rapid-fuzzy</text>
+<rect x="180" y="105" width="32.953477393832294" height="26" rx="4" fill="#3b82f6" opacity="1" />
+<text x="220.9534773938323" y="122" class="bar-value" text-anchor="start">179,222 ops/s — 2x vs fuse.js</text>
+<text x="172" y="153" class="bar-label" text-anchor="end">fuse.js</text>
+<rect x="180" y="136" width="20.052634671490978" height="26" rx="4" fill="#94a3b8" opacity="0.6" />
+<text x="208.05263467149098" y="153" class="bar-value" text-anchor="start">109,059 ops/s</text>
+<text x="20" y="200" class="group-label">Medium</text>
+<text x="172" y="225" class="bar-label" text-anchor="end">fuzzysort</text>
+<rect x="180" y="208" width="460" height="26" rx="4" fill="#94a3b8" opacity="0.6" />
+<text x="632" y="225" class="bar-value" text-anchor="end">63,032 ops/s</text>
+<text x="172" y="256" class="bar-label" text-anchor="end">rapid-fuzzy</text>
+<rect x="180" y="239" width="48.26818124127427" height="26" rx="4" fill="#3b82f6" opacity="1" />
+<text x="236.26818124127428" y="256" class="bar-value" text-anchor="start">6,614 ops/s — 17x vs fuse.js</text>
+<text x="172" y="287" class="bar-label" text-anchor="end">fuse.js</text>
+<rect x="180" y="270" width="4" height="26" rx="4" fill="#94a3b8" opacity="0.6" />
+<text x="192" y="287" class="bar-value" text-anchor="start">381 ops/s</text>
+<text x="20" y="334" class="group-label">Large</text>
+<text x="172" y="359" class="bar-label" text-anchor="end">fuzzysort</text>
+<rect x="180" y="342" width="460" height="26" rx="4" fill="#94a3b8" opacity="0.6" />
+<text x="632" y="359" class="bar-value" text-anchor="end">28,616 ops/s</text>
+<text x="172" y="390" class="bar-label" text-anchor="end">rapid-fuzzy</text>
+<rect x="180" y="373" width="12.763488957226727" height="26" rx="4" fill="#3b82f6" opacity="1" />
+<text x="200.76348895722674" y="390" class="bar-value" text-anchor="start">794 ops/s — 40x vs fuse.js</text>
+<text x="172" y="421" class="bar-label" text-anchor="end">fuse.js</text>
+<rect x="180" y="404" width="4" height="26" rx="4" fill="#94a3b8" opacity="0.6" />
+<text x="192" y="421" class="bar-value" text-anchor="start">20 ops/s</text>
+</svg>

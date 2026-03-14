@@ -189,6 +189,11 @@ Measured on Apple M-series with Node.js v22 using [Vitest bench](https://vitest.
 
 ### Distance Functions
 
+<img src=".github/assets/bench-distance.svg" alt="Distance function performance chart" width="680" />
+
+<details>
+<summary>Raw numbers</summary>
+
 | Function | rapid-fuzzy | fastest-levenshtein | leven | string-similarity |
 |---|---:|---:|---:|---:|
 | Levenshtein | 193,593 ops/s | **774,820 ops/s** | 204,047 ops/s | — |
@@ -197,15 +202,24 @@ Measured on Apple M-series with Node.js v22 using [Vitest bench](https://vitest.
 | Jaro-Winkler | **291,673 ops/s** | — | — | — |
 | Damerau-Levenshtein | **72,238 ops/s** | — | — | — |
 
+</details>
+
 > **Note**: For single-pair Levenshtein distance, fastest-levenshtein is faster due to its highly optimized pure-JS implementation that avoids FFI overhead. rapid-fuzzy provides broader algorithm coverage and excels in batch / search scenarios.
 
 ### Search Performance
+
+<img src=".github/assets/bench-search.svg" alt="Search performance chart — rapid-fuzzy vs fuse.js vs fuzzysort" width="680" />
+
+<details>
+<summary>Raw numbers</summary>
 
 | Dataset size | rapid-fuzzy | fuse.js | fuzzysort |
 |---|---:|---:|---:|
 | Small (20 items) | 179,222 ops/s | 109,059 ops/s | **2,501,773 ops/s** |
 | Medium (1K items) | 6,614 ops/s | 381 ops/s | **63,032 ops/s** |
 | Large (10K items) | 794 ops/s | 20 ops/s | **28,616 ops/s** |
+
+</details>
 
 ### Closest Match (Levenshtein-based)
 
@@ -252,17 +266,17 @@ cargo bench           # Rust internal benchmarks
 ## Why rapid-fuzzy?
 
 | | rapid-fuzzy | fuse.js | fastest-levenshtein | fuzzysort |
-|---|---|---|---|---|
-| **Algorithms** | Levenshtein, Jaro-Winkler, Sorensen-Dice, Damerau-Levenshtein, token sort/set, partial ratio, fuzzy search | Bitap-based fuzzy | Levenshtein only | Substring fuzzy |
-| **Runtime** | Rust (native + WASM) | Pure JS | Pure JS | Pure JS |
-| **Object search** | Yes (searchObjects with weighted keys) | Yes (keys option) | No | Yes (keys) |
-| **Score threshold** | Yes (minScore) | Yes (threshold) | No | Yes (threshold) |
-| **Match positions** | Yes (includePositions) | Yes | No | Yes |
-| **Highlight utility** | Yes (highlight, highlightRanges) | No (manual) | No | Yes (highlight) |
-| **Batch API** | Yes | No | No | No |
-| **Node.js native** | Yes (napi-rs) | No | No | No |
-| **Browser support** | Yes (WASM) | Yes | Yes | Yes |
-| **TypeScript** | Full (auto-generated) | Full | Yes | Yes |
+|---|:---:|:---:|:---:|:---:|
+| **Algorithms** | 9 (Levenshtein, Jaro, Dice, …) | Bitap | Levenshtein | Substring |
+| **Runtime** | Rust native + WASM | Pure JS | Pure JS | Pure JS |
+| **Object search** | ✅ weighted keys | ✅ | — | ✅ |
+| **Score threshold** | ✅ | ✅ | — | ✅ |
+| **Match positions** | ✅ | ✅ | — | ✅ |
+| **Highlight utility** | ✅ | — | — | ✅ |
+| **Batch API** | ✅ | — | — | — |
+| **Node.js native** | ✅ napi-rs | — | — | — |
+| **Browser** | ✅ WASM | ✅ | ✅ | ✅ |
+| **TypeScript** | ✅ full | ✅ full | ✅ | ✅ |
 
 ## Migration Guides
 
