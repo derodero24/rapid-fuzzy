@@ -1,21 +1,51 @@
 {
   "name": "rapid-fuzzy",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Rust-powered fuzzy search and string distance for JavaScript/TypeScript. 10-50x faster than fuse.js/leven.",
   "license": "MIT",
   "author": "derodero24",
   "repository": {
     "type": "git",
-    "url": "https://github.com/derodero24/rapid-fuzzy"
+    "url": "git+https://github.com/derodero24/rapid-fuzzy.git"
   },
   "homepage": "https://github.com/derodero24/rapid-fuzzy",
+  "keywords": [
+    "fuzzy",
+    "fuzzy-search",
+    "string-distance",
+    "levenshtein",
+    "jaro-winkler",
+    "rust",
+    "napi",
+    "wasm",
+    "typescript",
+    "search",
+    "fuse"
+  ],
+  "sideEffects": false,
   "type": "commonjs",
   "main": "index.js",
+  "module": "index.mjs",
   "browser": "browser.js",
   "types": "index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./index.d.mts",
+        "default": "./index.mjs"
+      },
+      "require": {
+        "types": "./index.d.ts",
+        "default": "./index.js"
+      },
+      "browser": "./browser.js"
+    }
+  },
   "files": [
     "index.js",
+    "index.mjs",
     "index.d.ts",
+    "index.d.mts",
     "browser.js"
   ],
   "napi": {
@@ -35,7 +65,7 @@
   "engines": {
     "node": ">=20.0.0"
   },
-  "packageManager": "pnpm@10.13.1",
+  "packageManager": "pnpm@10.32.1",
   "scripts": {
     "build": "napi build --manifest-path crates/core/Cargo.toml --platform --release --js index.js --dts index.d.ts --output-dir .",
     "build:debug": "napi build --manifest-path crates/core/Cargo.toml --platform --js index.js --dts index.d.ts --output-dir .",
@@ -50,6 +80,8 @@
     "test": "vitest run",
     "test:watch": "vitest watch",
     "bench": "vitest bench",
+    "publint": "publint",
+    "bench:rust": "cargo bench -p rapid-fuzzy-bench",
     "prepare": "lefthook install"
   },
   "devDependencies": {
@@ -61,8 +93,16 @@
     "@emnapi/runtime": "^1.9.0",
     "@napi-rs/cli": "^3.5.1",
     "@tybys/wasm-util": "^0.10.1",
-    "@types/node": "^22.19.15",
+    "@types/node": "^24.0.0",
+    "@types/string-similarity": "^4.0.2",
+    "@vitest/coverage-v8": "^4.1.0",
+    "fastest-levenshtein": "^1.0.16",
+    "fuse.js": "^7.1.0",
+    "fuzzysort": "^3.1.0",
     "lefthook": "^2.1.4",
+    "leven": "^4.1.0",
+    "publint": "^0.3.18",
+    "string-similarity": "^4.0.4",
     "typescript": "^5.9.3",
     "vitest": "^4.1.0"
   },
