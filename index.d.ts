@@ -4,8 +4,9 @@
  * Find the closest matching string from a list.
  *
  * Returns the best match, or null if no match is found.
+ * If minScore is provided, returns null when the best match scores below the threshold.
  */
-export declare function closest(query: string, items: Array<string>): string | null
+export declare function closest(query: string, items: Array<string>, minScore?: number | undefined | null): string | null
 
 /**
  * Compute the Damerau-Levenshtein distance between two strings.
@@ -124,8 +125,19 @@ export declare function normalizedLevenshteinMany(reference: string, candidates:
  * Scores are normalized to a 0.0-1.0 range where 1.0 is a perfect match.
  * Uses the nucleo algorithm (same as Helix editor), which is
  * significantly faster than fzf/skim for large datasets.
+ *
+ * The third argument accepts either a number (maxResults for backward
+ * compatibility) or a SearchOptions object with maxResults and minScore.
  */
-export declare function search(query: string, items: Array<string>, maxResults?: number | undefined | null): Array<SearchResult>
+export declare function search(query: string, items: Array<string>, options?: number | SearchOptions | undefined | null): Array<SearchResult>
+
+/** Options for the search function. */
+export interface SearchOptions {
+  /** Maximum number of results to return. */
+  maxResults?: number
+  /** Minimum normalized score (0.0-1.0) to include in results. */
+  minScore?: number
+}
 
 /** A single fuzzy search result with the matched item and its score. */
 export interface SearchResult {
