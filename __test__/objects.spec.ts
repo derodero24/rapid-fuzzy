@@ -118,7 +118,9 @@ describe('searchObjects', () => {
     const results = searchObjects('hello', items, {
       keys: ['meta.tag'],
     });
-    expect(results.length).toBeGreaterThanOrEqual(0);
+    // Should find Alice (has meta.tag: 'hello') but not crash on Bob (missing meta)
+    expect(results.length).toBe(1);
+    expect(results[0]?.item.name).toBe('Alice');
   });
 
   it('should support isCaseSensitive option', () => {
