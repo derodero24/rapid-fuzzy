@@ -109,6 +109,22 @@ pnpm run bench        # JavaScript benchmarks
 cargo bench           # Rust internal benchmarks
 ```
 
+## Choosing an Algorithm
+
+| Use case | Recommended | Why |
+|---|---|---|
+| Typo detection / spell check | `levenshtein`, `damerauLevenshtein` | Counts edits; Damerau adds transposition support |
+| Name / address matching | `jaroWinkler` | Prefix-weighted similarity for short strings |
+| Document / text similarity | `sorensenDice` | Bigram-based; handles longer text well |
+| Normalized comparison (0–1) | `normalizedLevenshtein` | Length-independent similarity score |
+| Interactive fuzzy search | `search`, `closest` | Nucleo algorithm (same as Helix editor) |
+
+**Return types:**
+
+- `levenshtein`, `damerauLevenshtein` → integer (edit count)
+- `jaro`, `jaroWinkler`, `sorensenDice`, `normalizedLevenshtein` → float between 0.0 (no match) and 1.0 (identical)
+- `search` → array of `{ item, score, index }` sorted by relevance
+
 ## Why rapid-fuzzy?
 
 | | rapid-fuzzy | fuse.js | fastest-levenshtein | fuzzysort |
