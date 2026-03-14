@@ -53,10 +53,13 @@ pub(crate) fn resolve_case_matching(is_case_sensitive: Option<bool>) -> CaseMatc
     }
 }
 
-/// Internal search implementation used by both the napi export and tests.
-pub(crate) fn search_impl(
-    query: String,
-    items: Vec<String>,
+/// Shared search logic over a borrowed slice of items.
+///
+/// Both the standalone `search_impl` and `FuzzyIndex::search_impl` delegate
+/// to this function, which contains the core scoring/filtering/sorting logic.
+pub(crate) fn search_over_items(
+    query: &str,
+    items: &[String],
     max_results: Option<u32>,
     min_score: Option<f64>,
     include_positions: bool,
@@ -67,8 +70,8 @@ pub(crate) fn search_impl(
     }
 
     let mut matcher = Matcher::new(Config::DEFAULT);
-    let pattern = Pattern::parse(&query, case_matching, Normalization::Smart);
-    let max_score = compute_max_score(&query, &pattern, &mut matcher);
+    let pattern = Pattern::parse(query, case_matching, Normalization::Smart);
+    let max_score = compute_max_score(query, &pattern, &mut matcher);
     let threshold = min_score.unwrap_or(0.0);
 
     let mut buf = Vec::new();
@@ -116,6 +119,25 @@ pub(crate) fn search_impl(
     }
 
     results
+}
+
+/// Internal search implementation used by both the napi export and tests.
+pub(crate) fn search_impl(
+    query: String,
+    items: Vec<String>,
+    max_results: Option<u32>,
+    min_score: Option<f64>,
+    include_positions: bool,
+    case_matching: CaseMatching,
+) -> Vec<SearchResult> {
+    search_over_items(
+        &query,
+        &items,
+        max_results,
+        min_score,
+        include_positions,
+        case_matching,
+    )
 }
 
 /// Perform fuzzy search over a list of strings.
