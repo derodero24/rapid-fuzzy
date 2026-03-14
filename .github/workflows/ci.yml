@@ -6,6 +6,7 @@ on:
     paths:
       - 'crates/**'
       - '__test__/**'
+      - 'e2e/**'
       - 'src/**'
       - 'package.json'
       - 'pnpm-lock.yaml'
@@ -13,6 +14,7 @@ on:
       - 'Cargo.lock'
       - 'tsconfig.json'
       - 'biome.json'
+      - 'playwright.config.ts'
       - '.github/workflows/ci.yml'
       - 'deny.toml'
       - 'vitest.config.mts'
@@ -22,6 +24,7 @@ on:
     paths:
       - 'crates/**'
       - '__test__/**'
+      - 'e2e/**'
       - 'src/**'
       - 'package.json'
       - 'pnpm-lock.yaml'
@@ -29,6 +32,7 @@ on:
       - 'Cargo.lock'
       - 'tsconfig.json'
       - 'biome.json'
+      - 'playwright.config.ts'
       - '.github/workflows/ci.yml'
       - 'deny.toml'
       - 'vitest.config.mts'
@@ -179,7 +183,10 @@ jobs:
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
         with:
           name: bindings-wasm32
-          path: "*.wasm"
+          path: |
+            *.wasm
+            *.wasi-browser.js
+            wasi-worker-browser.mjs
           if-no-files-found: ignore
 
   test:
@@ -253,3 +260,25 @@ jobs:
           files: rust-lcov.info,coverage/lcov.info
           flags: rust,javascript
           fail_ci_if_error: false
+
+  test-browser:
+    name: Browser WASM Test
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Download WASM artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: bindings-wasm32
+          path: .
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+      - name: Run browser tests
+        run: pnpm run test:browser

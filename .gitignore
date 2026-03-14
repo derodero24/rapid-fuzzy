@@ -50,3 +50,4 @@ docs/*
 # Claude Code (local development only)
 CLAUDE.md
 .claude/
+test-results
