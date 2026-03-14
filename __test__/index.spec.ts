@@ -303,6 +303,42 @@ describe('search', () => {
       expect(exact.score).toBeGreaterThan(partial.score);
     }
   });
+
+  it('should accept SearchOptions object', () => {
+    const results = search('a', items, { maxResults: 2 });
+    expect(results.length).toBeLessThanOrEqual(2);
+  });
+
+  it('should filter by minScore', () => {
+    const all = search('apple', items);
+    const filtered = search('apple', items, { minScore: 0.5 });
+    expect(filtered.length).toBeLessThanOrEqual(all.length);
+    for (const r of filtered) {
+      expect(r.score).toBeGreaterThanOrEqual(0.5);
+    }
+  });
+
+  it('should return only exact matches with minScore 1.0', () => {
+    const results = search('apple', ['apple', 'application', 'banana'], {
+      minScore: 1.0,
+    });
+    expect(results.length).toBe(1);
+    expect(results[0]?.item).toBe('apple');
+  });
+
+  it('should combine maxResults and minScore', () => {
+    const results = search('app', items, { maxResults: 1, minScore: 0.1 });
+    expect(results.length).toBeLessThanOrEqual(1);
+    if (results.length > 0) {
+      expect(results[0]?.score).toBeGreaterThanOrEqual(0.1);
+    }
+  });
+
+  it('should treat number arg as maxResults (backward compat)', () => {
+    const withNumber = search('a', items, 2);
+    const withOptions = search('a', items, { maxResults: 2 });
+    expect(withNumber.length).toBe(withOptions.length);
+  });
 });
 
 describe('closest', () => {
@@ -321,6 +357,16 @@ describe('closest', () => {
   it('should return null for empty items', () => {
     const result = closest('test', []);
     expect(result).toBeNull();
+  });
+
+  it('should return null when best match is below minScore', () => {
+    const result = closest('hello', ['xyz', 'abc'], 0.99);
+    expect(result).toBeNull();
+  });
+
+  it('should return match when above minScore', () => {
+    const result = closest('apple', ['apple', 'banana'], 0.5);
+    expect(result).toBe('apple');
   });
 });
 
