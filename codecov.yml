@@ -1,0 +1,23 @@
+coverage:
+  status:
+    project:
+      default:
+        informational: true
+    patch:
+      default:
+        informational: true
+
+comment:
+  layout: 'condensed_header, condensed_files, condensed_footer'
+  require_changes: true
+
+flags:
+  rust:
+    paths:
+      - crates/
+    carryforward: true
+  javascript:
+    paths:
+      - __test__/
+      - src/
+    carryforward: true

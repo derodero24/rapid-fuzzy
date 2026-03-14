@@ -16,8 +16,8 @@ browser.js
 wasi-worker.mjs
 wasi-worker-browser.mjs
 
-# napi-rs generated platform packages
-npm/
+# napi-rs platform package binaries are ignored by *.node / *.wasm patterns above
+# Only npm/*/package.json files are tracked
 
 # Logs
 *.log

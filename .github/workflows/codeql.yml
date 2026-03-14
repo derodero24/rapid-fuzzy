@@ -1,0 +1,47 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - '**/*.ts'
+      - '**/*.js'
+      - '**/*.json'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/codeql.yml'
+  pull_request:
+    branches: [develop]
+    paths:
+      - '**/*.ts'
+      - '**/*.js'
+      - '**/*.json'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/codeql.yml'
+  schedule:
+    - cron: '0 6 * * 1' # Weekly Monday 6 AM UTC
+
+permissions:
+  contents: read
+  actions: read
+  security-events: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: javascript-typescript
+      - uses: github/codeql-action/analyze@v4
