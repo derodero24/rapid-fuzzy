@@ -3,7 +3,7 @@ use napi_derive::napi;
 use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
 use nucleo_matcher::{Config, Matcher};
 
-use super::{SearchOptions, SearchResult, compute_max_score};
+use super::{SearchOptions, SearchResult, compute_max_score, resolve_case_matching};
 
 /// A persistent fuzzy search index backed by Rust-side data.
 ///
@@ -40,16 +40,23 @@ impl FuzzyIndex {
         query: String,
         options: Option<Either<u32, SearchOptions>>,
     ) -> Vec<SearchResult> {
-        let (max_results, min_score, include_positions) = match options {
-            Some(Either::A(max)) => (Some(max), None, false),
+        let (max_results, min_score, include_positions, case_matching) = match options {
+            Some(Either::A(max)) => (Some(max), None, false, CaseMatching::Smart),
             Some(Either::B(opts)) => (
                 opts.max_results,
                 opts.min_score,
                 opts.include_positions.unwrap_or(false),
+                resolve_case_matching(opts.is_case_sensitive),
             ),
-            None => (None, None, false),
+            None => (None, None, false, CaseMatching::Smart),
         };
-        self.search_impl(&query, max_results, min_score, include_positions)
+        self.search_impl(
+            &query,
+            max_results,
+            min_score,
+            include_positions,
+            case_matching,
+        )
     }
 
     /// Find the closest matching string in the index.
@@ -58,7 +65,7 @@ impl FuzzyIndex {
     /// If minScore is provided, returns null when the best match scores below the threshold.
     #[napi]
     pub fn closest(&self, query: String, min_score: Option<f64>) -> Option<String> {
-        let results = self.search_impl(&query, Some(1), min_score, false);
+        let results = self.search_impl(&query, Some(1), min_score, false, CaseMatching::Smart);
         results.into_iter().next().map(|r| r.item)
     }
 
@@ -100,13 +107,14 @@ impl FuzzyIndex {
         max_results: Option<u32>,
         min_score: Option<f64>,
         include_positions: bool,
+        case_matching: CaseMatching,
     ) -> Vec<SearchResult> {
         if query.is_empty() || self.items.is_empty() {
             return Vec::new();
         }
 
         let mut matcher = Matcher::new(Config::DEFAULT);
-        let pattern = Pattern::parse(query, CaseMatching::Smart, Normalization::Smart);
+        let pattern = Pattern::parse(query, case_matching, Normalization::Smart);
         let max_score = compute_max_score(query, &pattern, &mut matcher);
         let threshold = min_score.unwrap_or(0.0);
 
@@ -173,7 +181,7 @@ mod tests {
     fn test_empty_index() {
         let index = FuzzyIndex::new(vec![]);
         assert_eq!(index.size(), 0);
-        let results = index.search_impl("test", None, None, false);
+        let results = index.search_impl("test", None, None, false, CaseMatching::Smart);
         assert!(results.is_empty());
     }
 
@@ -184,7 +192,7 @@ mod tests {
             "JavaScript".into(),
             "Python".into(),
         ]);
-        let results = index.search_impl("typscript", None, None, false);
+        let results = index.search_impl("typscript", None, None, false, CaseMatching::Smart);
         assert!(!results.is_empty());
         assert_eq!(results[0].item, "TypeScript");
     }
@@ -196,14 +204,14 @@ mod tests {
             "application".into(),
             "appetizer".into(),
         ]);
-        let results = index.search_impl("app", Some(2), None, false);
+        let results = index.search_impl("app", Some(2), None, false, CaseMatching::Smart);
         assert!(results.len() <= 2);
     }
 
     #[test]
     fn test_search_min_score() {
         let index = FuzzyIndex::new(vec!["apple".into(), "xyz".into()]);
-        let results = index.search_impl("apple", None, Some(0.5), false);
+        let results = index.search_impl("apple", None, Some(0.5), false, CaseMatching::Smart);
         for r in &results {
             assert!(r.score >= 0.5);
         }
@@ -212,7 +220,7 @@ mod tests {
     #[test]
     fn test_search_with_positions() {
         let index = FuzzyIndex::new(vec!["hello".into()]);
-        let results = index.search_impl("hello", None, None, true);
+        let results = index.search_impl("hello", None, None, true, CaseMatching::Smart);
         assert!(!results.is_empty());
         assert_eq!(results[0].positions, vec![0, 1, 2, 3, 4]);
     }
@@ -262,7 +270,7 @@ mod tests {
         index.remove(0); // removes "a", swaps "c" into position 0
         assert_eq!(index.size(), 2);
         // After swap_remove(0): ["c", "b"]
-        let results = index.search_impl("c", None, None, false);
+        let results = index.search_impl("c", None, None, false, CaseMatching::Smart);
         assert!(!results.is_empty());
     }
 
@@ -271,14 +279,14 @@ mod tests {
         let mut index = FuzzyIndex::new(vec!["apple".into(), "banana".into()]);
         index.destroy();
         assert_eq!(index.size(), 0);
-        let results = index.search_impl("apple", None, None, false);
+        let results = index.search_impl("apple", None, None, false, CaseMatching::Smart);
         assert!(results.is_empty());
     }
 
     #[test]
     fn test_scores_normalized() {
         let index = FuzzyIndex::new(vec!["apple".into(), "application".into(), "banana".into()]);
-        let results = index.search_impl("apple", None, None, false);
+        let results = index.search_impl("apple", None, None, false, CaseMatching::Smart);
         for r in &results {
             assert!(r.score >= 0.0 && r.score <= 1.0);
         }
@@ -292,7 +300,7 @@ mod tests {
             "appetizer".into(),
             "banana".into(),
         ]);
-        let results = index.search_impl("apple", None, None, false);
+        let results = index.search_impl("apple", None, None, false, CaseMatching::Smart);
         for window in results.windows(2) {
             assert!(window[0].score >= window[1].score);
         }
@@ -307,13 +315,35 @@ mod tests {
             "grape".into(),
         ];
         let index = FuzzyIndex::new(items.clone());
-        let index_results = index.search_impl("apple", None, None, false);
-        let standalone_results =
-            crate::search::search_impl("apple".into(), items, None, None, false);
+        let index_results = index.search_impl("apple", None, None, false, CaseMatching::Smart);
+        let standalone_results = crate::search::search_impl(
+            "apple".into(),
+            items,
+            None,
+            None,
+            false,
+            CaseMatching::Smart,
+        );
         assert_eq!(index_results.len(), standalone_results.len());
         for (a, b) in index_results.iter().zip(standalone_results.iter()) {
             assert_eq!(a.item, b.item);
             assert!((a.score - b.score).abs() < f64::EPSILON);
         }
+    }
+
+    #[test]
+    fn test_case_sensitive_search() {
+        let index = FuzzyIndex::new(vec!["Apple".into(), "apple".into(), "APPLE".into()]);
+        let results = index.search_impl("apple", None, Some(1.0), false, CaseMatching::Respect);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].item, "apple");
+    }
+
+    #[test]
+    fn test_smart_case_search() {
+        let index = FuzzyIndex::new(vec!["Apple".into(), "apple".into(), "APPLE".into()]);
+        // All-lowercase query with smart case matches all
+        let results = index.search_impl("apple", None, Some(1.0), false, CaseMatching::Smart);
+        assert_eq!(results.len(), 3);
     }
 }
