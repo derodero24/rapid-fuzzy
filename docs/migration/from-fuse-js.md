@@ -39,6 +39,9 @@ console.log(results[0].item); // 'TypeScript'
 | `results[0].refIndex` | `results[0].index` | Index in original array |
 | `options.threshold` | `{ minScore }` | Note: inverted scale (see below) |
 | `options.limit` | `{ maxResults }` or pass a number | `search(q, items, 5)` |
+| `options.isCaseSensitive` | `{ isCaseSensitive }` | Same name; default is smart case |
+| `options.keys` | `searchObjects(q, items, { keys })` | See [Object Search](#object-search) |
+| `options.includeMatches` | `{ includePositions: true }` | Returns character indices |
 
 ## Score Direction
 
@@ -105,25 +108,41 @@ const best = results[0]?.item;
 const best = closest('query', items);
 ```
 
-## What rapid-fuzzy Does Not Support (Yet)
-
-fuse.js has features that rapid-fuzzy does not currently implement:
-
-- **Object search** (`keys` option): fuse.js can search across object properties. rapid-fuzzy operates on string arrays. Extract the field to search before calling.
-- **Weighted search**: fuse.js supports per-key weights for object search.
-- **Extended search syntax**: fuse.js supports operators like `'word` (prefix), `!term` (negation).
-- **Match indices**: fuse.js can return character positions of matches. (Planned: #34)
+### Object search
 
 ```typescript
-// Workaround for object search
-interface Item { name: string; description: string }
-const items: Item[] = [/* ... */];
+// fuse.js
+const fuse = new Fuse(users, {
+  keys: ['name', { name: 'email', weight: 0.5 }],
+});
+const results = fuse.search('john');
+console.log(results[0].item); // { name: 'John Smith', email: '...' }
 
-// Extract searchable strings, then map back
-const names = items.map(item => item.name);
-const results = search('query', names);
-const matchedItems = results.map(r => items[r.index]);
+// rapid-fuzzy
+import { searchObjects } from 'rapid-fuzzy';
+const results = searchObjects('john', users, {
+  keys: ['name', { name: 'email', weight: 0.5 }],
+});
+console.log(results[0].item); // { name: 'John Smith', email: '...' }
 ```
+
+### Match highlighting
+
+```typescript
+// fuse.js — returns match indices, highlighting is manual
+const fuse = new Fuse(items, { includeMatches: true });
+const results = fuse.search('query');
+// results[0].matches[0].indices → [[0, 2], [5, 5]]
+
+// rapid-fuzzy — returns positions + built-in highlight utility
+import { search, highlight } from 'rapid-fuzzy';
+const results = search('query', items, { includePositions: true });
+highlight(results[0].item, results[0].positions, '<b>', '</b>');
+```
+
+## What rapid-fuzzy Does Not Support (Yet)
+
+- **Extended search syntax**: fuse.js supports operators like `'word` (prefix), `!term` (negation).
 
 ## Performance
 
@@ -131,8 +150,8 @@ rapid-fuzzy is significantly faster than fuse.js for fuzzy search:
 
 | Dataset size | rapid-fuzzy | fuse.js | Speedup |
 |---|---:|---:|---:|
-| 1,000 items | 4,941 ops/s | 376 ops/s | **13x** |
-| 10,000 items | 588 ops/s | 14 ops/s | **41x** |
+| 1,000 items | 6,614 ops/s | 381 ops/s | **17x** |
+| 10,000 items | 794 ops/s | 20 ops/s | **40x** |
 
 The performance advantage grows with dataset size because rapid-fuzzy's Rust-based nucleo engine scales better than fuse.js's pure JavaScript implementation.
 

@@ -93,11 +93,11 @@ rapid-fuzzy provides algorithms that string-similarity does not:
 
 ## Performance
 
-rapid-fuzzy's `sorensenDice` is **1.5x faster** than string-similarity's `compareTwoStrings` for single-pair comparisons. For bulk operations, the batch API (`sorensenDiceBatch`) provides even greater speedups by amortizing FFI overhead.
+rapid-fuzzy's `sorensenDice` is **1.7x faster** than string-similarity's `compareTwoStrings` for single-pair comparisons. For bulk operations, the batch API (`sorensenDiceBatch`) provides even greater speedups by amortizing FFI overhead.
 
 | Operation | rapid-fuzzy | string-similarity |
 |---|---:|---:|
-| Sorensen-Dice (single pair) | **61,050 ops/s** | 40,241 ops/s |
+| Sorensen-Dice (single pair) | **144,698 ops/s** | 84,108 ops/s |
 
 ## Key Differences
 
