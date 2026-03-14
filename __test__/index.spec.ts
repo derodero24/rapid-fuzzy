@@ -784,6 +784,45 @@ describe('unicode', () => {
       expect(result).not.toBeNull();
     });
   });
+
+  describe('multi-term search', () => {
+    const contacts = ['John Smith', 'Smith, John A.', 'Jane Doe', 'John Doe', 'Bob Smith'];
+
+    it('should require all terms to match (AND semantics)', () => {
+      const results = search('john smith', contacts);
+      const items = results.map((r) => r.item);
+      expect(items).toContain('John Smith');
+      expect(items).toContain('Smith, John A.');
+      expect(items).not.toContain('John Doe');
+      expect(items).not.toContain('Bob Smith');
+    });
+
+    it('should return more results for single term than multi-term', () => {
+      const single = search('john', contacts);
+      const multi = search('john smith', contacts);
+      expect(single.length).toBeGreaterThan(multi.length);
+    });
+
+    it('should return positions spanning all matched terms', () => {
+      const results = search('john smith', contacts, { includePositions: true });
+      expect(results.length).toBeGreaterThan(0);
+      expect(results[0]!.positions.length).toBeGreaterThan(0);
+    });
+
+    it('should work with FuzzyIndex', () => {
+      const { FuzzyIndex } = require('../index.js');
+      const idx = new FuzzyIndex(contacts);
+      const results = idx.search('john smith');
+      const items = results.map((r: { item: string }) => r.item);
+      expect(items).toContain('John Smith');
+      expect(items).not.toContain('John Doe');
+    });
+
+    it('single-word query should behave identically', () => {
+      const results = search('john', contacts);
+      expect(results.length).toBe(3); // John Smith, Smith John A., John Doe
+    });
+  });
 });
 
 describe('FuzzyIndex', () => {
