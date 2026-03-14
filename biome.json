@@ -57,11 +57,24 @@
   },
   "overrides": [
     {
-      "includes": ["vitest.config.mts", "commitlint.config.ts"],
+      "includes": ["vitest.config.mts", "commitlint.config.ts", "playwright.config.ts"],
       "linter": {
         "rules": {
           "style": {
             "noDefaultExport": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["e2e/**"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noConsole": "off"
+          },
+          "correctness": {
+            "noUndeclaredDependencies": "off"
           }
         }
       }
