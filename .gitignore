@@ -51,3 +51,4 @@ docs/*
 CLAUDE.md
 .claude/
 test-results
+deno.lock
