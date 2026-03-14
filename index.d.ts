@@ -161,6 +161,8 @@ export interface SearchOptions {
   maxResults?: number
   /** Minimum normalized score (0.0-1.0) to include in results. */
   minScore?: number
+  /** If true, include matched character positions in results. */
+  includePositions?: boolean
 }
 
 /** A single fuzzy search result with the matched item and its score. */
@@ -171,6 +173,11 @@ export interface SearchResult {
   score: number
   /** The index of the item in the original input array. */
   index: number
+  /**
+   * Indices of matched characters in the item string.
+   * Empty unless `includePositions` is set to true in SearchOptions.
+   */
+  positions: Array<number>
 }
 
 /**

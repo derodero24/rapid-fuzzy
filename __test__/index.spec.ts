@@ -351,6 +351,81 @@ describe('search', () => {
     const withOptions = search('a', items, { maxResults: 2 });
     expect(withNumber.length).toBe(withOptions.length);
   });
+
+  describe('match positions', () => {
+    it('should return positions when includePositions is true', () => {
+      const results = search('hello', ['hello world'], {
+        includePositions: true,
+      });
+      expect(results.length).toBeGreaterThan(0);
+      expect(results[0]?.positions.length).toBeGreaterThan(0);
+    });
+
+    it('should return empty positions by default', () => {
+      const results = search('hello', ['hello world']);
+      expect(results.length).toBeGreaterThan(0);
+      expect(results[0]?.positions).toEqual([]);
+    });
+
+    it('should return empty positions when includePositions is false', () => {
+      const results = search('hello', ['hello world'], {
+        includePositions: false,
+      });
+      expect(results.length).toBeGreaterThan(0);
+      expect(results[0]?.positions).toEqual([]);
+    });
+
+    it('should return all positions for exact match', () => {
+      const results = search('hello', ['hello'], { includePositions: true });
+      expect(results.length).toBe(1);
+      expect(results[0]?.positions).toEqual([0, 1, 2, 3, 4]);
+    });
+
+    it('should return sorted positions', () => {
+      const results = search('hlo', ['hello world'], {
+        includePositions: true,
+      });
+      expect(results.length).toBeGreaterThan(0);
+      const positions = results[0]?.positions ?? [];
+      for (let i = 1; i < positions.length; i++) {
+        expect(positions[i]).toBeGreaterThan(positions[i - 1] ?? 0);
+      }
+    });
+
+    it('should return positions within item bounds', () => {
+      const results = search('app', ['apple', 'application'], {
+        includePositions: true,
+      });
+      for (const r of results) {
+        for (const pos of r.positions) {
+          expect(pos).toBeLessThan(r.item.length);
+        }
+      }
+    });
+
+    it('should produce same scores with or without positions', () => {
+      const withPos = search('apple', items, { includePositions: true });
+      const withoutPos = search('apple', items);
+      expect(withPos.length).toBe(withoutPos.length);
+      for (let i = 0; i < withPos.length; i++) {
+        expect(withPos[i]?.item).toBe(withoutPos[i]?.item);
+        expect(withPos[i]?.score).toBeCloseTo(withoutPos[i]?.score ?? 0);
+      }
+    });
+
+    it('should work with maxResults and minScore', () => {
+      const results = search('app', items, {
+        maxResults: 2,
+        minScore: 0.1,
+        includePositions: true,
+      });
+      expect(results.length).toBeLessThanOrEqual(2);
+      for (const r of results) {
+        expect(r.score).toBeGreaterThanOrEqual(0.1);
+        expect(r.positions.length).toBeGreaterThan(0);
+      }
+    });
+  });
 });
 
 describe('closest', () => {
