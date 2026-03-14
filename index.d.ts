@@ -204,6 +204,11 @@ export interface SearchOptions {
   minScore?: number
   /** If true, include matched character positions in results. */
   includePositions?: boolean
+  /**
+   * If true, matching is case-sensitive. Default is smart case
+   * (case-insensitive unless the query contains uppercase characters).
+   */
+  isCaseSensitive?: boolean
 }
 
 /** A single fuzzy search result with the matched item and its score. */

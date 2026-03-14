@@ -427,6 +427,53 @@ describe('search', () => {
       }
     });
   });
+
+  describe('case sensitivity', () => {
+    it('should match case-insensitively by default (smart case)', () => {
+      const results = search('apple', ['Apple', 'apple', 'APPLE'], {
+        minScore: 1.0,
+      });
+      expect(results.length).toBe(3);
+    });
+
+    it('should match case-sensitively when isCaseSensitive is true', () => {
+      const results = search('apple', ['Apple', 'apple', 'APPLE'], {
+        isCaseSensitive: true,
+        minScore: 1.0,
+      });
+      expect(results.length).toBe(1);
+      expect(results[0]?.item).toBe('apple');
+    });
+
+    it('should match uppercase query case-sensitively', () => {
+      const results = search('APPLE', ['Apple', 'apple', 'APPLE'], {
+        isCaseSensitive: true,
+        minScore: 1.0,
+      });
+      expect(results.length).toBe(1);
+      expect(results[0]?.item).toBe('APPLE');
+    });
+
+    it('should use smart case when isCaseSensitive is false', () => {
+      const results = search('apple', ['Apple', 'apple', 'APPLE'], {
+        isCaseSensitive: false,
+        minScore: 1.0,
+      });
+      expect(results.length).toBe(3);
+    });
+
+    it('should work with other options', () => {
+      const results = search('app', ['Apple', 'apple', 'Application', 'APPLE'], {
+        isCaseSensitive: true,
+        maxResults: 2,
+        includePositions: true,
+      });
+      expect(results.length).toBeLessThanOrEqual(2);
+      for (const r of results) {
+        expect(r.positions.length).toBeGreaterThan(0);
+      }
+    });
+  });
 });
 
 describe('closest', () => {
@@ -810,6 +857,19 @@ describe('FuzzyIndex', () => {
         expect(indexResults[i]?.item).toBe(standaloneResults[i]?.item);
         expect(indexResults[i]?.score).toBeCloseTo(standaloneResults[i]?.score ?? 0);
       }
+    });
+
+    it('should support isCaseSensitive option', () => {
+      const index = new FuzzyIndex(['Apple', 'apple', 'APPLE']);
+      const results = index.search('apple', { isCaseSensitive: true, minScore: 1.0 });
+      expect(results.length).toBe(1);
+      expect(results[0]?.item).toBe('apple');
+    });
+
+    it('should default to smart case matching', () => {
+      const index = new FuzzyIndex(['Apple', 'apple', 'APPLE']);
+      const results = index.search('apple', { minScore: 1.0 });
+      expect(results.length).toBe(3);
     });
   });
 
