@@ -610,3 +610,8 @@ module.exports.tokenSortRatioMany = nativeBinding.tokenSortRatioMany
 module.exports.weightedRatio = nativeBinding.weightedRatio
 module.exports.weightedRatioBatch = nativeBinding.weightedRatioBatch
 module.exports.weightedRatioMany = nativeBinding.weightedRatioMany
+
+// --- JS utilities (appended by scripts/patch-binding.js) ---
+const _hl = require('./highlight.js');
+module.exports.highlight = _hl.highlight;
+module.exports.highlightRanges = _hl.highlightRanges;

@@ -343,3 +343,6 @@ export declare function weightedRatioBatch(pairs: Array<Array<string>>): Array<n
  * Returns an array of similarity scores, one per candidate, in the same order as the input.
  */
 export declare function weightedRatioMany(reference: string, candidates: Array<string>): Array<number>
+
+// --- JS utilities (appended by scripts/patch-binding.js) ---
+export { highlight, highlightRanges, HighlightRange } from './highlight';

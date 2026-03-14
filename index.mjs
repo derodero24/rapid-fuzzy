@@ -38,4 +38,6 @@ export const {
   weightedRatio,
   weightedRatioBatch,
   weightedRatioMany,
-} = binding;
+  highlight,
+  highlightRanges,
+} = { ...binding, ...require('./highlight.js') };
