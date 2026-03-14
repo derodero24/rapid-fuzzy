@@ -15,6 +15,8 @@ on:
       - 'biome.json'
       - '.github/workflows/ci.yml'
       - 'deny.toml'
+      - 'vitest.config.ts'
+      - 'codecov.yml'
   pull_request:
     branches: [develop]
     paths:
@@ -29,6 +31,8 @@ on:
       - 'biome.json'
       - '.github/workflows/ci.yml'
       - 'deny.toml'
+      - 'vitest.config.ts'
+      - 'codecov.yml'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -200,3 +204,42 @@ jobs:
           name: bindings-x86_64-unknown-linux-gnu
           path: .
       - run: pnpm test
+
+  coverage:
+    name: Coverage
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      # Rust coverage
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Rust coverage
+        run: cargo llvm-cov --lcov --output-path rust-lcov.info
+
+      # JS coverage
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Download x86_64 linux artifact
+        uses: actions/download-artifact@v6
+        with:
+          name: bindings-x86_64-unknown-linux-gnu
+          path: .
+      - name: JS coverage
+        run: pnpm test -- --coverage
+
+      # Upload to Codecov
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: rust-lcov.info,coverage/lcov.info
+          flags: rust,javascript
+          fail_ci_if_error: false

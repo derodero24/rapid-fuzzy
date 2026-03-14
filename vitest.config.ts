@@ -7,5 +7,10 @@ export default defineConfig({
     benchmark: {
       include: ['__test__/**/*.bench.ts'],
     },
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'lcov'],
+      reportsDirectory: 'coverage',
+    },
   },
 });
