@@ -14,7 +14,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'node e2e/serve.mjs',
+    command: 'npx vite --config e2e/vite.config.mjs',
     port: 4567,
     reuseExistingServer: !process.env.CI,
   },

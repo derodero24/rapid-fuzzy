@@ -57,7 +57,12 @@
   },
   "overrides": [
     {
-      "includes": ["vitest.config.mts", "commitlint.config.ts", "playwright.config.ts"],
+      "includes": [
+        "vitest.config.mts",
+        "commitlint.config.ts",
+        "playwright.config.ts",
+        "e2e/vite.config.mjs"
+      ],
       "linter": {
         "rules": {
           "style": {
