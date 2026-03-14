@@ -9,7 +9,9 @@ import {
   jaroWinkler,
   levenshtein,
   levenshteinBatch,
+  levenshteinMany,
   normalizedLevenshtein,
+  normalizedLevenshteinMany,
   sorensenDice,
 } from '../index.js';
 
@@ -85,6 +87,54 @@ describe('Damerau-Levenshtein', () => {
   bench('rapid-fuzzy', () => {
     for (const [a, b] of pairs) {
       damerauLevenshtein(a, b);
+    }
+  });
+});
+
+// --- Many candidates (1-to-N comparison) ---
+
+const manyCandidates = Array.from({ length: 1_000 }, (_, i) => {
+  const words = [
+    'kitten',
+    'sitting',
+    'saturday',
+    'sunday',
+    'hello',
+    'world',
+    'fuzzy',
+    'search',
+    'match',
+    'distance',
+  ];
+  return `${words[i % words.length]}${i}`;
+});
+
+describe('Levenshtein Distance — Many (1K candidates)', () => {
+  bench('rapid-fuzzy (many)', () => {
+    levenshteinMany('kitten', manyCandidates);
+  });
+
+  bench('rapid-fuzzy (loop)', () => {
+    for (const c of manyCandidates) {
+      levenshtein('kitten', c);
+    }
+  });
+
+  bench('fastest-levenshtein (loop)', () => {
+    for (const c of manyCandidates) {
+      fastestLevenshteinDistance('kitten', c);
+    }
+  });
+});
+
+describe('Normalized Levenshtein — Many (1K candidates)', () => {
+  bench('rapid-fuzzy (many)', () => {
+    normalizedLevenshteinMany('kitten', manyCandidates);
+  });
+
+  bench('rapid-fuzzy (loop)', () => {
+    for (const c of manyCandidates) {
+      normalizedLevenshtein('kitten', c);
     }
   });
 });
