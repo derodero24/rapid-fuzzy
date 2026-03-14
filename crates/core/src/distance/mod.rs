@@ -429,4 +429,107 @@ mod tests {
             }
         }
     }
+
+    mod unicode_tests {
+        use super::*;
+
+        #[test]
+        fn test_levenshtein_cjk() {
+            // Each CJK character is one Unicode scalar value (char)
+            assert_eq!(levenshtein("東京".into(), "京都".into()), 2);
+            assert_eq!(levenshtein("日本語".into(), "日本語".into()), 0);
+            assert_eq!(levenshtein("日本語".into(), "日本人".into()), 1);
+        }
+
+        #[test]
+        fn test_levenshtein_emoji() {
+            // Each emoji (non-ZWJ) is one Unicode scalar value
+            assert_eq!(levenshtein("👋🌍".into(), "👋🌎".into()), 1);
+            assert_eq!(levenshtein("🎉🎊".into(), "🎉🎊".into()), 0);
+        }
+
+        #[test]
+        fn test_levenshtein_diacritics() {
+            // 'é' (U+00E9) is one char, 'e' (U+0065) is one char -> distance 1
+            assert_eq!(levenshtein("café".into(), "cafe".into()), 1);
+            assert_eq!(levenshtein("naïve".into(), "naïve".into()), 0);
+        }
+
+        #[test]
+        fn test_levenshtein_mixed_scripts() {
+            assert_eq!(levenshtein("hello世界".into(), "hello世間".into()), 1);
+        }
+
+        #[test]
+        fn test_jaro_winkler_accented() {
+            let score = jaro_winkler("café".into(), "cafe".into());
+            assert!(score > 0.8 && score < 1.0);
+        }
+
+        #[test]
+        fn test_sorensen_dice_cjk() {
+            let score = sorensen_dice("日本語".into(), "日本人".into());
+            assert!(score > 0.0 && score < 1.0);
+        }
+
+        #[test]
+        fn test_normalized_levenshtein_unicode_identity() {
+            assert_eq!(normalized_levenshtein("naïve".into(), "naïve".into()), 1.0);
+            assert_eq!(normalized_levenshtein("東京".into(), "東京".into()), 1.0);
+            assert_eq!(normalized_levenshtein("🎉🎊".into(), "🎉🎊".into()), 1.0);
+        }
+    }
+
+    mod proptest_unicode {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            // Use any::<String>() to generate arbitrary Unicode strings
+
+            #[test]
+            fn levenshtein_unicode_identity(ref s in any::<String>()) {
+                prop_assert_eq!(levenshtein(s.clone(), s.clone()), 0);
+            }
+
+            #[test]
+            fn levenshtein_unicode_symmetry(ref a in any::<String>(), ref b in any::<String>()) {
+                prop_assert_eq!(
+                    levenshtein(a.clone(), b.clone()),
+                    levenshtein(b.clone(), a.clone())
+                );
+            }
+
+            #[test]
+            fn normalized_levenshtein_unicode_bounded(ref a in any::<String>(), ref b in any::<String>()) {
+                let score = normalized_levenshtein(a.clone(), b.clone());
+                prop_assert!(score >= 0.0 && score <= 1.0, "score {} out of [0, 1]", score);
+            }
+
+            #[test]
+            fn jaro_unicode_bounded(ref a in any::<String>(), ref b in any::<String>()) {
+                let score = jaro(a.clone(), b.clone());
+                prop_assert!(score >= 0.0 && score <= 1.0, "score {} out of [0, 1]", score);
+            }
+
+            #[test]
+            fn jaro_winkler_unicode_bounded(ref a in any::<String>(), ref b in any::<String>()) {
+                let score = jaro_winkler(a.clone(), b.clone());
+                prop_assert!(score >= 0.0 && score <= 1.0, "score {} out of [0, 1]", score);
+            }
+
+            #[test]
+            fn sorensen_dice_unicode_bounded(ref a in any::<String>(), ref b in any::<String>()) {
+                let score = sorensen_dice(a.clone(), b.clone());
+                prop_assert!(score >= 0.0 && score <= 1.0, "score {} out of [0, 1]", score);
+            }
+
+            #[test]
+            fn sorensen_dice_unicode_symmetry(ref a in any::<String>(), ref b in any::<String>()) {
+                let ab = sorensen_dice(a.clone(), b.clone());
+                let ba = sorensen_dice(b.clone(), a.clone());
+                prop_assert!((ab - ba).abs() < f64::EPSILON, "symmetry violated: {} != {}", ab, ba);
+            }
+        }
+    }
 }

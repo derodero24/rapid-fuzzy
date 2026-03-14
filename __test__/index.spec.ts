@@ -297,3 +297,77 @@ describe('closest', () => {
     expect(result).toBeNull();
   });
 });
+
+describe('unicode', () => {
+  describe('CJK characters', () => {
+    it('should compute distance for CJK strings', () => {
+      // '東京' -> '京都': replace '東'->'京', replace '京'->'都' = 2
+      expect(levenshtein('東京', '京都')).toBe(2);
+    });
+
+    it('should return 0 for identical CJK strings', () => {
+      expect(levenshtein('日本語', '日本語')).toBe(0);
+    });
+
+    it('should handle similarity for CJK strings', () => {
+      // '日本語' and '日本人' share the bigram '日本'
+      const score = sorensenDice('日本語', '日本人');
+      expect(score).toBeGreaterThan(0);
+      expect(score).toBeLessThan(1);
+    });
+  });
+
+  describe('emoji', () => {
+    it('should compute distance for emoji strings', () => {
+      // Each emoji is one Unicode scalar value; '🌍' -> '🌎' = 1 substitution
+      expect(levenshtein('👋🌍', '👋🌎')).toBe(1);
+    });
+
+    it('should return 0 for identical emoji strings', () => {
+      expect(levenshtein('🎉🎊', '🎉🎊')).toBe(0);
+    });
+  });
+
+  describe('diacritics and accented characters', () => {
+    it('should compute similarity for accented characters', () => {
+      // 'café' vs 'cafe': 'é' != 'e', so distance = 1
+      const score = jaroWinkler('café', 'cafe');
+      expect(score).toBeGreaterThan(0.8);
+      expect(score).toBeLessThan(1);
+    });
+
+    it('should return 1.0 for identical accented strings', () => {
+      expect(normalizedLevenshtein('naïve', 'naïve')).toBe(1.0);
+    });
+  });
+
+  describe('mixed scripts', () => {
+    it('should compute distance for mixed-script strings', () => {
+      // 'hello世界' -> 'hello世間': replace '界'->'間' = 1
+      const dist = levenshtein('hello世界', 'hello世間');
+      expect(dist).toBe(1);
+    });
+
+    it('should handle batch with Unicode pairs', () => {
+      const result = levenshteinBatch([
+        ['東京', '京都'],
+        ['café', 'cafe'],
+      ]);
+      expect(result).toHaveLength(2);
+      expect(result[0]).toBe(2);
+      expect(result[1]).toBe(1);
+    });
+  });
+
+  describe('search with Unicode', () => {
+    it('should find Unicode matches', () => {
+      const results = search('東', ['東京', '大阪', '京都']);
+      expect(results.length).toBeGreaterThan(0);
+    });
+
+    it('should find closest Unicode match', () => {
+      const result = closest('東京', ['大阪', '京都', '東京都']);
+      expect(result).not.toBeNull();
+    });
+  });
+});

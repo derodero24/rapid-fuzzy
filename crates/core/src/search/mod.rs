@@ -159,4 +159,102 @@ mod tests {
             }
         }
     }
+
+    mod unicode_tests {
+        use super::*;
+
+        #[test]
+        fn test_search_cjk() {
+            let items = vec!["東京".to_string(), "大阪".to_string(), "京都".to_string()];
+            let results = search("東".to_string(), items, None);
+            assert!(!results.is_empty());
+        }
+
+        #[test]
+        fn test_search_emoji() {
+            let items = vec![
+                "🎉 party".to_string(),
+                "🎊 celebration".to_string(),
+                "work".to_string(),
+            ];
+            let results = search("party".to_string(), items, None);
+            assert!(!results.is_empty());
+            assert!(results[0].item.contains("party"));
+        }
+
+        #[test]
+        fn test_search_accented() {
+            let items = vec![
+                "café".to_string(),
+                "resume".to_string(),
+                "naïve".to_string(),
+            ];
+            let results = search("cafe".to_string(), items, None);
+            assert!(!results.is_empty());
+        }
+
+        #[test]
+        fn test_closest_cjk() {
+            let items = vec!["大阪".to_string(), "京都".to_string(), "東京都".to_string()];
+            let result = closest("東京".to_string(), items);
+            assert!(result.is_some());
+        }
+
+        #[test]
+        fn test_search_mixed_scripts() {
+            let items = vec![
+                "hello世界".to_string(),
+                "goodbye世間".to_string(),
+                "test".to_string(),
+            ];
+            let results = search("hello".to_string(), items, None);
+            assert!(!results.is_empty());
+            assert!(results[0].item.contains("hello"));
+        }
+    }
+
+    mod proptest_unicode {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn search_unicode_max_results_respected(
+                query in "\\PC{1,5}",
+                items in prop::collection::vec("\\PC{1,10}", 1..20),
+                max in 1u32..10
+            ) {
+                let results = search(query, items, Some(max));
+                prop_assert!(results.len() <= max as usize);
+            }
+
+            #[test]
+            fn search_unicode_scores_sorted_descending(
+                query in "\\PC{1,5}",
+                items in prop::collection::vec("\\PC{1,10}", 1..20),
+            ) {
+                let results = search(query, items, None);
+                for window in results.windows(2) {
+                    prop_assert!(
+                        window[0].score >= window[1].score,
+                        "results not sorted: {} < {}",
+                        window[0].score,
+                        window[1].score
+                    );
+                }
+            }
+
+            #[test]
+            fn search_unicode_indices_valid(
+                query in "\\PC{1,5}",
+                items in prop::collection::vec("\\PC{1,10}", 1..20),
+            ) {
+                let len = items.len();
+                let results = search(query, items, None);
+                for r in &results {
+                    prop_assert!((r.index as usize) < len, "index {} out of bounds (len={})", r.index, len);
+                }
+            }
+        }
+    }
 }
