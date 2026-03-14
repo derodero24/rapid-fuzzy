@@ -181,7 +181,7 @@ jobs:
           path: artifacts
 
       - name: Move artifacts to platform packages
-        run: pnpm napi artifacts --dir artifacts
+        run: pnpm napi artifacts --output-dir artifacts
 
       - name: List packages
         run: |
