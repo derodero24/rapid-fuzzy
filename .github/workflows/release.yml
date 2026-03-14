@@ -145,7 +145,7 @@ jobs:
           pnpm build
           --target ${{ matrix.settings.target }}
           ${{ matrix.settings.use-cross && '--use-napi-cross' || '' }}
-          ${{ matrix.settings.use-zig && '--zig' || '' }}
+          ${{ matrix.settings.use-zig && '--cross-compile' || '' }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
