@@ -14,6 +14,7 @@ on:
       - 'tsconfig.json'
       - 'biome.json'
       - '.github/workflows/ci.yml'
+      - 'deny.toml'
   pull_request:
     branches: [develop]
     paths:
@@ -27,6 +28,7 @@ on:
       - 'tsconfig.json'
       - 'biome.json'
       - '.github/workflows/ci.yml'
+      - 'deny.toml'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -50,6 +52,22 @@ jobs:
       - run: pnpm run build
       - run: pnpm run typecheck
       - run: pnpm run publint
+
+  audit:
+    name: Dependency Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Audit npm dependencies
+        run: pnpm audit --prod
+      - name: Audit Rust dependencies
+        uses: EmbarkStudios/cargo-deny-action@v2
 
   rust-lint:
     name: Rust Lint
