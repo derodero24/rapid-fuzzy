@@ -1,0 +1,38 @@
+{
+  "name": "rapid-fuzzy-darwin-x64",
+  "version": "0.0.0",
+  "cpu": [
+    "x64"
+  ],
+  "main": "rapid-fuzzy.darwin-x64.node",
+  "files": [
+    "rapid-fuzzy.darwin-x64.node"
+  ],
+  "description": "Rust-powered fuzzy search and string distance for JavaScript/TypeScript. 10-50x faster than fuse.js/leven.",
+  "keywords": [
+    "fuzzy",
+    "fuzzy-search",
+    "string-distance",
+    "levenshtein",
+    "jaro-winkler",
+    "rust",
+    "napi",
+    "wasm",
+    "typescript",
+    "search",
+    "fuse"
+  ],
+  "author": "derodero24",
+  "homepage": "https://github.com/derodero24/rapid-fuzzy",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/derodero24/rapid-fuzzy.git"
+  },
+  "os": [
+    "darwin"
+  ]
+}
