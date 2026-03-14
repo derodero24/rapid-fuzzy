@@ -204,6 +204,8 @@ jobs:
           name: bindings-x86_64-unknown-linux-gnu
           path: .
       - run: pnpm test
+      - name: ESM import smoke test
+        run: node __test__/esm-import.mjs
 
   coverage:
     name: Coverage
