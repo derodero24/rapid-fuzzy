@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>rapid-fuzzy browser WASM test</title>
+</head>
+<body>
+  <h1>rapid-fuzzy browser WASM test</h1>
+  <pre id="output">Loading WASM module...</pre>
+  <script type="module">
+    const out = document.getElementById('output');
+
+    try {
+      const mod = await import('../rapid-fuzzy.wasi-browser.js');
+
+      const results = {};
+
+      // Distance functions
+      results.levenshtein = mod.levenshtein('kitten', 'sitting');
+      results.levenshteinIdentical = mod.levenshtein('hello', 'hello');
+      results.normalizedLevenshtein = mod.normalizedLevenshtein('hello', 'hello');
+      results.damerauLevenshtein = mod.damerauLevenshtein('hello', 'ehllo');
+      results.jaro = mod.jaro('hello', 'hello');
+      results.jaroWinkler = mod.jaroWinkler('hello', 'hello');
+      results.sorensenDice = mod.sorensenDice('hello', 'hello');
+
+      // Batch functions
+      results.levenshteinBatch = mod.levenshteinBatch([['hello', 'hello'], ['hello', 'world']]);
+      results.jaroBatch = mod.jaroBatch([['hello', 'hello'], ['abc', 'xyz']]);
+
+      // Many functions
+      results.levenshteinMany = mod.levenshteinMany('hello', ['hello', 'world', 'help']);
+      results.jaroMany = mod.jaroMany('hello', ['hello', 'world']);
+
+      // Token-based functions
+      results.tokenSortRatio = mod.tokenSortRatio('New York Mets', 'Mets New York');
+      results.tokenSetRatio = mod.tokenSetRatio('Mariners vs Yankees', 'Yankees vs Mariners');
+      results.partialRatio = mod.partialRatio('hello', 'hello world');
+      results.weightedRatio = mod.weightedRatio('hello', 'hello');
+
+      // Search
+      results.search = mod.search('type', ['TypeScript', 'JavaScript', 'Python', 'TypeSpec']);
+      results.searchEmpty = mod.search('', ['hello', 'world']);
+
+      // Closest
+      results.closest = mod.closest('apple', ['application', 'banana', 'apple pie']);
+      results.closestEmpty = mod.closest('hello', []);
+
+      // FuzzyIndex
+      const index = new mod.FuzzyIndex(['apple', 'banana', 'grape', 'orange']);
+      results.indexSize = index.size;
+      results.indexSearch = index.search('aple');
+      results.indexClosest = index.closest('aple');
+      index.add('mango');
+      results.indexSizeAfterAdd = index.size;
+      index.destroy();
+      results.indexSizeAfterDestroy = index.size;
+
+      // Export list check
+      const expectedExports = [
+        'closest', 'search', 'FuzzyIndex',
+        'levenshtein', 'levenshteinBatch', 'levenshteinMany',
+        'normalizedLevenshtein', 'normalizedLevenshteinBatch', 'normalizedLevenshteinMany',
+        'damerauLevenshtein', 'damerauLevenshteinBatch', 'damerauLevenshteinMany',
+        'jaro', 'jaroBatch', 'jaroMany',
+        'jaroWinkler', 'jaroWinklerBatch', 'jaroWinklerMany',
+        'sorensenDice', 'sorensenDiceBatch', 'sorensenDiceMany',
+        'tokenSortRatio', 'tokenSortRatioBatch', 'tokenSortRatioMany',
+        'tokenSetRatio', 'tokenSetRatioBatch', 'tokenSetRatioMany',
+        'partialRatio', 'partialRatioBatch', 'partialRatioMany',
+        'weightedRatio', 'weightedRatioBatch', 'weightedRatioMany',
+      ];
+      results.missingExports = expectedExports.filter(name => typeof mod[name] === 'undefined');
+      results.allExportsPresent = results.missingExports.length === 0;
+
+      window.__results = results;
+      window.__ready = true;
+      out.textContent = JSON.stringify(results, null, 2);
+    } catch (err) {
+      window.__error = err.message;
+      out.textContent = `Error: ${err.message}\n${err.stack}`;
+    }
+  </script>
+</body>
+</html>

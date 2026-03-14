@@ -1,6 +1,8 @@
 mod index;
+mod keys;
 
 pub use index::FuzzyIndex;
+pub use keys::search_keys;
 
 use napi::Either;
 use napi_derive::napi;
@@ -30,6 +32,9 @@ pub struct SearchOptions {
     pub min_score: Option<f64>,
     /// If true, include matched character positions in results.
     pub include_positions: Option<bool>,
+    /// If true, matching is case-sensitive. Default is smart case
+    /// (case-insensitive unless the query contains uppercase characters).
+    pub is_case_sensitive: Option<bool>,
 }
 
 /// Compute the maximum possible score for a given pattern by scoring
@@ -40,6 +45,14 @@ pub(crate) fn compute_max_score(query: &str, pattern: &Pattern, matcher: &mut Ma
     pattern.score(atoms, matcher).unwrap_or(1) as f64
 }
 
+/// Convert the `is_case_sensitive` flag into a `CaseMatching` variant.
+pub(crate) fn resolve_case_matching(is_case_sensitive: Option<bool>) -> CaseMatching {
+    match is_case_sensitive {
+        Some(true) => CaseMatching::Respect,
+        _ => CaseMatching::Smart,
+    }
+}
+
 /// Internal search implementation used by both the napi export and tests.
 pub(crate) fn search_impl(
     query: String,
@@ -47,13 +60,14 @@ pub(crate) fn search_impl(
     max_results: Option<u32>,
     min_score: Option<f64>,
     include_positions: bool,
+    case_matching: CaseMatching,
 ) -> Vec<SearchResult> {
     if query.is_empty() || items.is_empty() {
         return Vec::new();
     }
 
     let mut matcher = Matcher::new(Config::DEFAULT);
-    let pattern = Pattern::parse(&query, CaseMatching::Smart, Normalization::Smart);
+    let pattern = Pattern::parse(&query, case_matching, Normalization::Smart);
     let max_score = compute_max_score(&query, &pattern, &mut matcher);
     let threshold = min_score.unwrap_or(0.0);
 
@@ -119,16 +133,24 @@ pub fn search(
     items: Vec<String>,
     options: Option<Either<u32, SearchOptions>>,
 ) -> Vec<SearchResult> {
-    let (max_results, min_score, include_positions) = match options {
-        Some(Either::A(max)) => (Some(max), None, false),
+    let (max_results, min_score, include_positions, case_matching) = match options {
+        Some(Either::A(max)) => (Some(max), None, false, CaseMatching::Smart),
         Some(Either::B(opts)) => (
             opts.max_results,
             opts.min_score,
             opts.include_positions.unwrap_or(false),
+            resolve_case_matching(opts.is_case_sensitive),
         ),
-        None => (None, None, false),
+        None => (None, None, false, CaseMatching::Smart),
     };
-    search_impl(query, items, max_results, min_score, include_positions)
+    search_impl(
+        query,
+        items,
+        max_results,
+        min_score,
+        include_positions,
+        case_matching,
+    )
 }
 
 /// Find the closest matching string from a list.
@@ -137,7 +159,7 @@ pub fn search(
 /// If minScore is provided, returns null when the best match scores below the threshold.
 #[napi]
 pub fn closest(query: String, items: Vec<String>, min_score: Option<f64>) -> Option<String> {
-    let results = search_impl(query, items, Some(1), min_score, false);
+    let results = search_impl(query, items, Some(1), min_score, false, CaseMatching::Smart);
     results.into_iter().next().map(|r| r.item)
 }
 
@@ -153,7 +175,14 @@ mod tests {
             "Python".to_string(),
             "TypeSpec".to_string(),
         ];
-        let results = search_impl("typscript".to_string(), items, None, None, false);
+        let results = search_impl(
+            "typscript".to_string(),
+            items,
+            None,
+            None,
+            false,
+            CaseMatching::Smart,
+        );
         assert!(!results.is_empty());
         assert_eq!(results[0].item, "TypeScript");
     }
@@ -161,7 +190,14 @@ mod tests {
     #[test]
     fn test_search_empty_query() {
         let items = vec!["foo".to_string()];
-        let results = search_impl("".to_string(), items, None, None, false);
+        let results = search_impl(
+            "".to_string(),
+            items,
+            None,
+            None,
+            false,
+            CaseMatching::Smart,
+        );
         assert!(results.is_empty());
     }
 
@@ -184,7 +220,14 @@ mod tests {
             "banana".to_string(),
             "grape".to_string(),
         ];
-        let results = search_impl("apple".to_string(), items, None, None, false);
+        let results = search_impl(
+            "apple".to_string(),
+            items,
+            None,
+            None,
+            false,
+            CaseMatching::Smart,
+        );
         for r in &results {
             assert!(
                 r.score >= 0.0 && r.score <= 1.0,
@@ -198,7 +241,14 @@ mod tests {
     #[test]
     fn test_exact_match_scores_one() {
         let items = vec!["hello".to_string(), "world".to_string()];
-        let results = search_impl("hello".to_string(), items, None, None, false);
+        let results = search_impl(
+            "hello".to_string(),
+            items,
+            None,
+            None,
+            false,
+            CaseMatching::Smart,
+        );
         let exact = results.iter().find(|r| r.item == "hello").unwrap();
         assert!(
             (exact.score - 1.0).abs() < f64::EPSILON,
@@ -210,7 +260,14 @@ mod tests {
     #[test]
     fn test_partial_match_scores_below_one() {
         let items = vec!["TypeScript".to_string(), "JavaScript".to_string()];
-        let results = search_impl("type".to_string(), items, None, None, false);
+        let results = search_impl(
+            "type".to_string(),
+            items,
+            None,
+            None,
+            false,
+            CaseMatching::Smart,
+        );
         for r in &results {
             assert!(
                 r.score > 0.0 && r.score <= 1.0,
@@ -228,8 +285,22 @@ mod tests {
             "application".to_string(),
             "xyz".to_string(),
         ];
-        let all_results = search_impl("apple".to_string(), items.clone(), None, None, false);
-        let filtered = search_impl("apple".to_string(), items, None, Some(0.5), false);
+        let all_results = search_impl(
+            "apple".to_string(),
+            items.clone(),
+            None,
+            None,
+            false,
+            CaseMatching::Smart,
+        );
+        let filtered = search_impl(
+            "apple".to_string(),
+            items,
+            None,
+            Some(0.5),
+            false,
+            CaseMatching::Smart,
+        );
         assert!(filtered.len() <= all_results.len());
         for r in &filtered {
             assert!(
@@ -244,7 +315,14 @@ mod tests {
     #[test]
     fn test_min_score_one_returns_only_exact() {
         let items = vec!["hello".to_string(), "help".to_string(), "world".to_string()];
-        let results = search_impl("hello".to_string(), items, None, Some(1.0), false);
+        let results = search_impl(
+            "hello".to_string(),
+            items,
+            None,
+            Some(1.0),
+            false,
+            CaseMatching::Smart,
+        );
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].item, "hello");
     }
@@ -256,8 +334,22 @@ mod tests {
             "banana".to_string(),
             "grape".to_string(),
         ];
-        let no_threshold = search_impl("ap".to_string(), items.clone(), None, None, false);
-        let zero_threshold = search_impl("ap".to_string(), items, None, Some(0.0), false);
+        let no_threshold = search_impl(
+            "ap".to_string(),
+            items.clone(),
+            None,
+            None,
+            false,
+            CaseMatching::Smart,
+        );
+        let zero_threshold = search_impl(
+            "ap".to_string(),
+            items,
+            None,
+            Some(0.0),
+            false,
+            CaseMatching::Smart,
+        );
         assert_eq!(no_threshold.len(), zero_threshold.len());
     }
 
@@ -269,7 +361,14 @@ mod tests {
             "appetizer".to_string(),
             "xyz".to_string(),
         ];
-        let results = search_impl("apple".to_string(), items, Some(2), Some(0.3), false);
+        let results = search_impl(
+            "apple".to_string(),
+            items,
+            Some(2),
+            Some(0.3),
+            false,
+            CaseMatching::Smart,
+        );
         assert!(results.len() <= 2);
         for r in &results {
             assert!(r.score >= 0.3);
@@ -285,6 +384,84 @@ mod tests {
     }
 
     #[test]
+    fn test_case_sensitive_excludes_different_case() {
+        let items = vec![
+            "Apple".to_string(),
+            "apple".to_string(),
+            "APPLE".to_string(),
+        ];
+        // Case-sensitive: lowercase query "apple" should not match "Apple" or "APPLE"
+        let results = search_impl(
+            "apple".to_string(),
+            items,
+            None,
+            Some(1.0),
+            false,
+            CaseMatching::Respect,
+        );
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].item, "apple");
+    }
+
+    #[test]
+    fn test_case_sensitive_uppercase_query() {
+        let items = vec![
+            "Apple".to_string(),
+            "apple".to_string(),
+            "APPLE".to_string(),
+        ];
+        let results = search_impl(
+            "APPLE".to_string(),
+            items,
+            None,
+            Some(1.0),
+            false,
+            CaseMatching::Respect,
+        );
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].item, "APPLE");
+    }
+
+    #[test]
+    fn test_smart_case_lowercase_query_matches_any_case() {
+        let items = vec![
+            "Apple".to_string(),
+            "apple".to_string(),
+            "APPLE".to_string(),
+        ];
+        // Smart case: all-lowercase query matches any case
+        let results = search_impl(
+            "apple".to_string(),
+            items,
+            None,
+            Some(1.0),
+            false,
+            CaseMatching::Smart,
+        );
+        assert_eq!(results.len(), 3);
+    }
+
+    #[test]
+    fn test_smart_case_uppercase_query_is_case_sensitive() {
+        let items = vec![
+            "Apple".to_string(),
+            "apple".to_string(),
+            "APPLE".to_string(),
+        ];
+        // Smart case: query with uppercase becomes case-sensitive
+        let results = search_impl(
+            "Apple".to_string(),
+            items,
+            None,
+            Some(1.0),
+            false,
+            CaseMatching::Smart,
+        );
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].item, "Apple");
+    }
+
+    #[test]
     fn test_closest_without_min_score() {
         let items = vec!["apple".to_string(), "banana".to_string()];
         let result = closest("app".to_string(), items, None);
@@ -294,7 +471,14 @@ mod tests {
     #[test]
     fn test_positions_returned_when_requested() {
         let items = vec!["hello world".to_string()];
-        let results = search_impl("hlo".to_string(), items, None, None, true);
+        let results = search_impl(
+            "hlo".to_string(),
+            items,
+            None,
+            None,
+            true,
+            CaseMatching::Smart,
+        );
         assert!(!results.is_empty());
         assert!(
             !results[0].positions.is_empty(),
@@ -305,7 +489,14 @@ mod tests {
     #[test]
     fn test_positions_empty_when_not_requested() {
         let items = vec!["hello world".to_string()];
-        let results = search_impl("hlo".to_string(), items, None, None, false);
+        let results = search_impl(
+            "hlo".to_string(),
+            items,
+            None,
+            None,
+            false,
+            CaseMatching::Smart,
+        );
         assert!(!results.is_empty());
         assert!(
             results[0].positions.is_empty(),
@@ -316,7 +507,14 @@ mod tests {
     #[test]
     fn test_positions_are_sorted() {
         let items = vec!["hello world".to_string()];
-        let results = search_impl("hlo".to_string(), items, None, None, true);
+        let results = search_impl(
+            "hlo".to_string(),
+            items,
+            None,
+            None,
+            true,
+            CaseMatching::Smart,
+        );
         assert!(!results.is_empty());
         let positions = &results[0].positions;
         for window in positions.windows(2) {
@@ -332,7 +530,14 @@ mod tests {
     #[test]
     fn test_positions_within_bounds() {
         let items = vec!["hello".to_string()];
-        let results = search_impl("hlo".to_string(), items, None, None, true);
+        let results = search_impl(
+            "hlo".to_string(),
+            items,
+            None,
+            None,
+            true,
+            CaseMatching::Smart,
+        );
         assert!(!results.is_empty());
         let item_len = results[0].item.chars().count() as u32;
         for &pos in &results[0].positions {
@@ -348,7 +553,14 @@ mod tests {
     #[test]
     fn test_exact_match_positions() {
         let items = vec!["hello".to_string()];
-        let results = search_impl("hello".to_string(), items, None, None, true);
+        let results = search_impl(
+            "hello".to_string(),
+            items,
+            None,
+            None,
+            true,
+            CaseMatching::Smart,
+        );
         assert!(!results.is_empty());
         assert_eq!(results[0].positions, vec![0, 1, 2, 3, 4]);
     }
@@ -360,8 +572,22 @@ mod tests {
             "application".to_string(),
             "banana".to_string(),
         ];
-        let with_pos = search_impl("apple".to_string(), items.clone(), None, None, true);
-        let without_pos = search_impl("apple".to_string(), items, None, None, false);
+        let with_pos = search_impl(
+            "apple".to_string(),
+            items.clone(),
+            None,
+            None,
+            true,
+            CaseMatching::Smart,
+        );
+        let without_pos = search_impl(
+            "apple".to_string(),
+            items,
+            None,
+            None,
+            false,
+            CaseMatching::Smart,
+        );
         assert_eq!(with_pos.len(), without_pos.len());
         for (a, b) in with_pos.iter().zip(without_pos.iter()) {
             assert_eq!(a.item, b.item);
@@ -385,7 +611,7 @@ mod tests {
                 items in prop::collection::vec("[a-z]{1,10}", 1..20),
                 max in 1u32..10
             ) {
-                let results = search_impl(query, items, Some(max), None, false);
+                let results = search_impl(query, items, Some(max), None, false, CaseMatching::Smart);
                 prop_assert!(results.len() <= max as usize);
             }
 
@@ -394,7 +620,7 @@ mod tests {
                 query in "[a-z]{1,5}",
                 items in prop::collection::vec("[a-z]{1,10}", 1..20),
             ) {
-                let results = search_impl(query, items, None, None, false);
+                let results = search_impl(query, items, None, None, false, CaseMatching::Smart);
                 for window in results.windows(2) {
                     prop_assert!(
                         window[0].score >= window[1].score,
@@ -410,7 +636,7 @@ mod tests {
                 query in "[a-z]{1,5}",
                 items in prop::collection::vec("[a-z]{1,10}", 1..20),
             ) {
-                let results = search_impl(query, items, None, None, false);
+                let results = search_impl(query, items, None, None, false, CaseMatching::Smart);
                 for r in &results {
                     prop_assert!(
                         r.score >= 0.0 && r.score <= 1.0,
@@ -426,7 +652,7 @@ mod tests {
                 items in prop::collection::vec("[a-z]{1,10}", 1..20),
             ) {
                 let closest_result = closest(query.clone(), items.clone(), None);
-                let search_results = search_impl(query, items, None, None, false);
+                let search_results = search_impl(query, items, None, None, false, CaseMatching::Smart);
 
                 match (closest_result, search_results.first()) {
                     (Some(c), Some(first)) => {
@@ -445,7 +671,7 @@ mod tests {
                 items in prop::collection::vec("[a-z]{1,10}", 1..20),
             ) {
                 let len = items.len();
-                let results = search_impl(query, items, None, None, false);
+                let results = search_impl(query, items, None, None, false, CaseMatching::Smart);
                 for r in &results {
                     prop_assert!((r.index as usize) < len, "index {} out of bounds (len={})", r.index, len);
                 }
@@ -456,7 +682,7 @@ mod tests {
                 query in "[a-z]{1,5}",
                 items in prop::collection::vec("[a-z]{1,10}", 1..20),
             ) {
-                let results = search_impl(query, items, None, None, true);
+                let results = search_impl(query, items, None, None, true, CaseMatching::Smart);
                 for r in &results {
                     let item_len = r.item.chars().count() as u32;
                     for &pos in &r.positions {
@@ -470,7 +696,7 @@ mod tests {
                 query in "[a-z]{1,5}",
                 items in prop::collection::vec("[a-z]{1,10}", 1..20),
             ) {
-                let results = search_impl(query, items, None, None, true);
+                let results = search_impl(query, items, None, None, true, CaseMatching::Smart);
                 for r in &results {
                     for window in r.positions.windows(2) {
                         prop_assert!(window[0] < window[1], "positions not strictly sorted: {} >= {}", window[0], window[1]);
@@ -484,7 +710,7 @@ mod tests {
                 items in prop::collection::vec("[a-z]{1,10}", 1..20),
                 threshold in 0.0f64..1.0
             ) {
-                let results = search_impl(query, items, None, Some(threshold), false);
+                let results = search_impl(query, items, None, Some(threshold), false, CaseMatching::Smart);
                 for r in &results {
                     prop_assert!(
                         r.score >= threshold,
@@ -503,7 +729,14 @@ mod tests {
         #[test]
         fn test_search_cjk() {
             let items = vec!["東京".to_string(), "大阪".to_string(), "京都".to_string()];
-            let results = search_impl("東".to_string(), items, None, None, false);
+            let results = search_impl(
+                "東".to_string(),
+                items,
+                None,
+                None,
+                false,
+                CaseMatching::Smart,
+            );
             assert!(!results.is_empty());
         }
 
@@ -514,7 +747,14 @@ mod tests {
                 "🎊 celebration".to_string(),
                 "work".to_string(),
             ];
-            let results = search_impl("party".to_string(), items, None, None, false);
+            let results = search_impl(
+                "party".to_string(),
+                items,
+                None,
+                None,
+                false,
+                CaseMatching::Smart,
+            );
             assert!(!results.is_empty());
             assert!(results[0].item.contains("party"));
         }
@@ -526,7 +766,14 @@ mod tests {
                 "resume".to_string(),
                 "naïve".to_string(),
             ];
-            let results = search_impl("cafe".to_string(), items, None, None, false);
+            let results = search_impl(
+                "cafe".to_string(),
+                items,
+                None,
+                None,
+                false,
+                CaseMatching::Smart,
+            );
             assert!(!results.is_empty());
         }
 
@@ -544,7 +791,14 @@ mod tests {
                 "goodbye世間".to_string(),
                 "test".to_string(),
             ];
-            let results = search_impl("hello".to_string(), items, None, None, false);
+            let results = search_impl(
+                "hello".to_string(),
+                items,
+                None,
+                None,
+                false,
+                CaseMatching::Smart,
+            );
             assert!(!results.is_empty());
             assert!(results[0].item.contains("hello"));
         }
@@ -561,7 +815,7 @@ mod tests {
                 items in prop::collection::vec("\\PC{1,10}", 1..20),
                 max in 1u32..10
             ) {
-                let results = search_impl(query, items, Some(max), None, false);
+                let results = search_impl(query, items, Some(max), None, false, CaseMatching::Smart);
                 prop_assert!(results.len() <= max as usize);
             }
 
@@ -570,7 +824,7 @@ mod tests {
                 query in "\\PC{1,5}",
                 items in prop::collection::vec("\\PC{1,10}", 1..20),
             ) {
-                let results = search_impl(query, items, None, None, false);
+                let results = search_impl(query, items, None, None, false, CaseMatching::Smart);
                 for window in results.windows(2) {
                     prop_assert!(
                         window[0].score >= window[1].score,
@@ -587,7 +841,7 @@ mod tests {
                 items in prop::collection::vec("\\PC{1,10}", 1..20),
             ) {
                 let len = items.len();
-                let results = search_impl(query, items, None, None, false);
+                let results = search_impl(query, items, None, None, false, CaseMatching::Smart);
                 for r in &results {
                     prop_assert!((r.index as usize) < len, "index {} out of bounds (len={})", r.index, len);
                 }

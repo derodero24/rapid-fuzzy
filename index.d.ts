@@ -114,6 +114,19 @@ export declare function jaroWinklerBatch(pairs: Array<Array<string>>): Array<num
  */
 export declare function jaroWinklerMany(reference: string, candidates: Array<string>): Array<number>
 
+/** A single result from multi-key fuzzy search. */
+export interface KeySearchResult {
+  /** The index of the item in the original input array. */
+  index: number
+  /** The combined weighted score normalized to 0.0-1.0 range. */
+  score: number
+  /**
+   * Per-key scores in the same order as the input keys.
+   * A score of 0.0 means the item did not match on that key.
+   */
+  keyScores: Array<number>
+}
+
 /**
  * Compute the Levenshtein distance between two strings.
  *
@@ -196,6 +209,17 @@ export declare function partialRatioMany(reference: string, candidates: Array<st
  */
 export declare function search(query: string, items: Array<string>, options?: number | SearchOptions | undefined | null): Array<SearchResult>
 
+/**
+ * Perform fuzzy search across multiple text keys with weights.
+ *
+ * `key_texts[k]` is an array of strings for key `k`, one per item.
+ * All inner arrays must have the same length (the number of items).
+ * `weights` specifies the relative importance of each key.
+ *
+ * Returns results sorted by combined weighted score (best match first).
+ */
+export declare function searchKeys(query: string, keyTexts: Array<Array<string>>, weights: Array<number>, options?: SearchOptions | undefined | null): Array<KeySearchResult>
+
 /** Options for the search function. */
 export interface SearchOptions {
   /** Maximum number of results to return. */
@@ -204,6 +228,11 @@ export interface SearchOptions {
   minScore?: number
   /** If true, include matched character positions in results. */
   includePositions?: boolean
+  /**
+   * If true, matching is case-sensitive. Default is smart case
+   * (case-insensitive unless the query contains uppercase characters).
+   */
+  isCaseSensitive?: boolean
 }
 
 /** A single fuzzy search result with the matched item and its score. */
@@ -314,3 +343,6 @@ export declare function weightedRatioBatch(pairs: Array<Array<string>>): Array<n
  * Returns an array of similarity scores, one per candidate, in the same order as the input.
  */
 export declare function weightedRatioMany(reference: string, candidates: Array<string>): Array<number>
+
+// --- JS utilities (appended by scripts/patch-binding.js) ---
+export { highlight, highlightRanges, HighlightRange } from './highlight';

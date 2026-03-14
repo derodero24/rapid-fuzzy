@@ -597,6 +597,7 @@ module.exports.partialRatio = nativeBinding.partialRatio
 module.exports.partialRatioBatch = nativeBinding.partialRatioBatch
 module.exports.partialRatioMany = nativeBinding.partialRatioMany
 module.exports.search = nativeBinding.search
+module.exports.searchKeys = nativeBinding.searchKeys
 module.exports.sorensenDice = nativeBinding.sorensenDice
 module.exports.sorensenDiceBatch = nativeBinding.sorensenDiceBatch
 module.exports.sorensenDiceMany = nativeBinding.sorensenDiceMany
@@ -609,3 +610,8 @@ module.exports.tokenSortRatioMany = nativeBinding.tokenSortRatioMany
 module.exports.weightedRatio = nativeBinding.weightedRatio
 module.exports.weightedRatioBatch = nativeBinding.weightedRatioBatch
 module.exports.weightedRatioMany = nativeBinding.weightedRatioMany
+
+// --- JS utilities (appended by scripts/patch-binding.js) ---
+const _hl = require('./highlight.js');
+module.exports.highlight = _hl.highlight;
+module.exports.highlightRanges = _hl.highlightRanges;

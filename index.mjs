@@ -6,6 +6,7 @@ const binding = require('./index.js');
 export const {
   FuzzyIndex,
   closest,
+  searchKeys,
   damerauLevenshtein,
   damerauLevenshteinBatch,
   damerauLevenshteinMany,
@@ -37,4 +38,8 @@ export const {
   weightedRatio,
   weightedRatioBatch,
   weightedRatioMany,
-} = binding;
+  highlight,
+  highlightRanges,
+} = { ...binding, ...require('./highlight.js') };
+
+export const { searchObjects } = require('./objects.js');

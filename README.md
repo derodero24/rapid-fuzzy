@@ -69,6 +69,9 @@ search('app', items, 5);
 const [match] = search('hlo', ['hello world'], { includePositions: true });
 // → { item: 'hello world', score: 0.75, index: 0, positions: [0, 2, 4] }
 
+// Case-sensitive matching (default: smart case)
+search('Type', items, { isCaseSensitive: true });
+
 // Find the single best match
 closest('tsc', ['TypeScript', 'JavaScript', 'Python']);
 // → 'TypeScript'
@@ -76,6 +79,59 @@ closest('tsc', ['TypeScript', 'JavaScript', 'Python']);
 // With minimum score threshold (returns null if no match is good enough)
 closest('xyz', items, 0.5);
 // → null
+```
+
+### Object Search
+
+Search across object properties with weighted keys — a drop-in replacement for fuse.js's `keys` option:
+
+```typescript
+import { searchObjects } from 'rapid-fuzzy';
+
+const users = [
+  { name: 'John Smith', email: 'john@example.com' },
+  { name: 'Jane Doe', email: 'jane@example.com' },
+  { name: 'Bob Johnson', email: 'bob@test.com' },
+];
+
+// Search across multiple keys
+const results = searchObjects('john', users, {
+  keys: ['name', 'email'],
+});
+// → [{ item: { name: 'John Smith', ... }, score: 0.95, keyScores: [0.98, 0.85], index: 0 }]
+
+// Weighted keys — prioritize name matches over email
+searchObjects('john', users, {
+  keys: [
+    { name: 'name', weight: 2.0 },
+    { name: 'email', weight: 1.0 },
+  ],
+});
+
+// Nested key paths
+searchObjects('new york', items, { keys: ['address.city'] });
+```
+
+### Match Highlighting
+
+Convert matched positions into highlighted markup for UI rendering:
+
+```typescript
+import { search, highlight, highlightRanges } from 'rapid-fuzzy';
+
+const results = search('fzy', ['fuzzy'], { includePositions: true });
+const { item, positions } = results[0];
+
+// String markers
+highlight(item, positions, '<b>', '</b>');
+// → '<b>f</b>u<b>zy</b>'
+
+// Callback (React, JSX, custom DOM)
+highlight(item, positions, (matched) => `<mark>${matched}</mark>`);
+
+// Raw ranges for custom rendering
+highlightRanges(item, positions);
+// → [{ start: 0, end: 1, matched: true }, { start: 1, end: 2, matched: false }, ...]
 ```
 
 ### Token-Based Matching
@@ -199,8 +255,10 @@ cargo bench           # Rust internal benchmarks
 |---|---|---|---|---|
 | **Algorithms** | Levenshtein, Jaro-Winkler, Sorensen-Dice, Damerau-Levenshtein, token sort/set, partial ratio, fuzzy search | Bitap-based fuzzy | Levenshtein only | Substring fuzzy |
 | **Runtime** | Rust (native + WASM) | Pure JS | Pure JS | Pure JS |
+| **Object search** | Yes (searchObjects with weighted keys) | Yes (keys option) | No | Yes (keys) |
 | **Score threshold** | Yes (minScore) | Yes (threshold) | No | Yes (threshold) |
 | **Match positions** | Yes (includePositions) | Yes | No | Yes |
+| **Highlight utility** | Yes (highlight, highlightRanges) | No (manual) | No | Yes (highlight) |
 | **Batch API** | Yes | No | No | No |
 | **Node.js native** | Yes (napi-rs) | No | No | No |
 | **Browser support** | Yes (WASM) | Yes | Yes | Yes |
@@ -211,7 +269,7 @@ cargo bench           # Rust internal benchmarks
 Switching from another library? These guides provide API mapping tables, code examples, and performance comparisons:
 
 - [**From string-similarity**](docs/migration/from-string-similarity.md) — Same Dice coefficient algorithm, now maintained and faster
-- [**From fuse.js**](docs/migration/from-fuse-js.md) — 13–41x faster fuzzy search with a simpler API
+- [**From fuse.js**](docs/migration/from-fuse-js.md) — 17–40x faster fuzzy search with a simpler API
 - [**From leven / fastest-levenshtein**](docs/migration/from-leven.md) — Multi-algorithm upgrade with batch APIs
 
 ## License

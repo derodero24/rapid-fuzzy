@@ -108,14 +108,14 @@ For single-pair Levenshtein distance, fastest-levenshtein is faster due to its h
 
 | Operation | rapid-fuzzy | fastest-levenshtein | leven |
 |---|---:|---:|---:|
-| Single pair | 67,346 ops/s | **243,026 ops/s** | 51,789 ops/s |
+| Single pair | 193,593 ops/s | **774,820 ops/s** | 204,047 ops/s |
 
 However, rapid-fuzzy excels in closest-match scenarios where batch FFI overhead is amortized:
 
 | Closest match | rapid-fuzzy | fastest-levenshtein | Speedup |
 |---|---:|---:|---:|
-| 1,000 items | **5,912 ops/s** | 3,974 ops/s | 1.5x |
-| 10,000 items | **387 ops/s** | 126 ops/s | 3x |
+| 1,000 items | 8,416 ops/s | **8,762 ops/s** | — |
+| 10,000 items | **905 ops/s** | 662 ops/s | 1.4x |
 
 **When to choose rapid-fuzzy over fastest-levenshtein**:
 - You need more than just Levenshtein (similarity scores, other algorithms)

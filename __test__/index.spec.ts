@@ -22,6 +22,7 @@ import {
   partialRatioBatch,
   partialRatioMany,
   search,
+  searchKeys,
   sorensenDice,
   sorensenDiceBatch,
   sorensenDiceMany,
@@ -427,6 +428,53 @@ describe('search', () => {
       }
     });
   });
+
+  describe('case sensitivity', () => {
+    it('should match case-insensitively by default (smart case)', () => {
+      const results = search('apple', ['Apple', 'apple', 'APPLE'], {
+        minScore: 1.0,
+      });
+      expect(results.length).toBe(3);
+    });
+
+    it('should match case-sensitively when isCaseSensitive is true', () => {
+      const results = search('apple', ['Apple', 'apple', 'APPLE'], {
+        isCaseSensitive: true,
+        minScore: 1.0,
+      });
+      expect(results.length).toBe(1);
+      expect(results[0]?.item).toBe('apple');
+    });
+
+    it('should match uppercase query case-sensitively', () => {
+      const results = search('APPLE', ['Apple', 'apple', 'APPLE'], {
+        isCaseSensitive: true,
+        minScore: 1.0,
+      });
+      expect(results.length).toBe(1);
+      expect(results[0]?.item).toBe('APPLE');
+    });
+
+    it('should use smart case when isCaseSensitive is false', () => {
+      const results = search('apple', ['Apple', 'apple', 'APPLE'], {
+        isCaseSensitive: false,
+        minScore: 1.0,
+      });
+      expect(results.length).toBe(3);
+    });
+
+    it('should work with other options', () => {
+      const results = search('app', ['Apple', 'apple', 'Application', 'APPLE'], {
+        isCaseSensitive: true,
+        maxResults: 2,
+        includePositions: true,
+      });
+      expect(results.length).toBeLessThanOrEqual(2);
+      for (const r of results) {
+        expect(r.positions.length).toBeGreaterThan(0);
+      }
+    });
+  });
 });
 
 describe('closest', () => {
@@ -811,6 +859,19 @@ describe('FuzzyIndex', () => {
         expect(indexResults[i]?.score).toBeCloseTo(standaloneResults[i]?.score ?? 0);
       }
     });
+
+    it('should support isCaseSensitive option', () => {
+      const index = new FuzzyIndex(['Apple', 'apple', 'APPLE']);
+      const results = index.search('apple', { isCaseSensitive: true, minScore: 1.0 });
+      expect(results.length).toBe(1);
+      expect(results[0]?.item).toBe('apple');
+    });
+
+    it('should default to smart case matching', () => {
+      const index = new FuzzyIndex(['Apple', 'apple', 'APPLE']);
+      const results = index.search('apple', { minScore: 1.0 });
+      expect(results.length).toBe(3);
+    });
   });
 
   describe('closest', () => {
@@ -865,5 +926,84 @@ describe('FuzzyIndex', () => {
       expect(index.size).toBe(0);
       expect(index.search('apple')).toEqual([]);
     });
+  });
+});
+
+describe('searchKeys', () => {
+  // Simulate: [{name: "John Smith", email: "john@example.com"},
+  //            {name: "Jane Doe", email: "jane@example.com"},
+  //            {name: "Bob Johnson", email: "bob@test.com"}]
+  const names = ['John Smith', 'Jane Doe', 'Bob Johnson'];
+  const emails = ['john@example.com', 'jane@example.com', 'bob@test.com'];
+
+  it('should find matches across multiple keys', () => {
+    const results = searchKeys('john', [names, emails], [1, 1]);
+    expect(results.length).toBeGreaterThan(0);
+    // John Smith should rank first (matches on both name and email)
+    expect(results[0]?.index).toBe(0);
+  });
+
+  it('should respect key weights', () => {
+    // With equal weights, "john" matches John Smith on both keys
+    const equalWeights = searchKeys('john', [names, emails], [1, 1]);
+    expect(equalWeights[0]?.index).toBe(0);
+
+    // Search for "bob" with name weighted higher
+    const results = searchKeys('bob', [names, emails], [2, 1]);
+    expect(results.length).toBeGreaterThan(0);
+    // Bob Johnson should match (name key has higher weight)
+    expect(results[0]?.index).toBe(2);
+  });
+
+  it('should return scores in 0.0-1.0 range', () => {
+    const results = searchKeys('john', [names, emails], [1, 1]);
+    for (const r of results) {
+      expect(r.score).toBeGreaterThanOrEqual(0);
+      expect(r.score).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('should return sorted results (best first)', () => {
+    const results = searchKeys('john', [names, emails], [1, 1]);
+    for (let i = 1; i < results.length; i++) {
+      expect(results[i - 1]?.score).toBeGreaterThanOrEqual(results[i]?.score ?? 0);
+    }
+  });
+
+  it('should include per-key scores', () => {
+    const results = searchKeys('john', [names, emails], [1, 1]);
+    expect(results.length).toBeGreaterThan(0);
+    expect(results[0]?.keyScores).toHaveLength(2);
+  });
+
+  it('should respect maxResults', () => {
+    const results = searchKeys('o', [names, emails], [1, 1], { maxResults: 1 });
+    expect(results.length).toBeLessThanOrEqual(1);
+  });
+
+  it('should respect minScore', () => {
+    const results = searchKeys('john', [names, emails], [1, 1], { minScore: 0.3 });
+    for (const r of results) {
+      expect(r.score).toBeGreaterThanOrEqual(0.3);
+    }
+  });
+
+  it('should return empty for empty query', () => {
+    expect(searchKeys('', [names, emails], [1, 1])).toEqual([]);
+  });
+
+  it('should return empty for empty items', () => {
+    expect(searchKeys('test', [[], []], [1, 1])).toEqual([]);
+  });
+
+  it('should match single-key results with standard search', () => {
+    const items = ['apple', 'application', 'banana'];
+    const keyResults = searchKeys('apple', [items], [1]);
+    const stdResults = search('apple', items);
+    expect(keyResults.length).toBe(stdResults.length);
+    for (let i = 0; i < keyResults.length; i++) {
+      expect(keyResults[i]?.index).toBe(stdResults[i]?.index);
+      expect(keyResults[i]?.score).toBeCloseTo(stdResults[i]?.score ?? 0);
+    }
   });
 });
