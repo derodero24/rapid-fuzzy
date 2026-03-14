@@ -180,6 +180,15 @@ jobs:
         with:
           path: artifacts
 
+      - name: Copy WASM wrapper files to workspace root
+        run: |
+          WASM_DIR="artifacts/bindings-wasm32-wasip1-threads"
+          if [ -d "$WASM_DIR" ]; then
+            cp "$WASM_DIR"/*.cjs "$WASM_DIR"/*.js "$WASM_DIR"/*.mjs . 2>/dev/null || true
+            echo "Copied WASM wrapper files from $WASM_DIR"
+            ls -la rapid-fuzzy.wasi* wasi-worker* 2>/dev/null
+          fi
+
       - name: Move artifacts to platform packages
         run: pnpm napi artifacts --output-dir artifacts
 
