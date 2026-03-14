@@ -3,8 +3,18 @@ name: CodSpeed
 on:
   push:
     branches: [develop]
+    paths:
+      - "crates/**"
+      - "__test__/**/*.bench.ts"
+      - "vitest.config.mts"
+      - ".github/workflows/codspeed.yml"
   pull_request:
     branches: [develop]
+    paths:
+      - "crates/**"
+      - "__test__/**/*.bench.ts"
+      - "vitest.config.mts"
+      - ".github/workflows/codspeed.yml"
   workflow_dispatch:
 
 concurrency:
