@@ -1,6 +1,8 @@
 use std::collections::BTreeSet;
 
 use napi_derive::napi;
+use rapidfuzz::distance::damerau_levenshtein as rapid_damerau;
+use rapidfuzz::distance::levenshtein as rapid_lev;
 
 /// Apply a distance/similarity function to each pair in a batch.
 fn batch_apply<T: Default, F: Fn(&str, &str) -> T>(pairs: &[Vec<String>], f: F) -> Vec<T> {
@@ -28,7 +30,7 @@ fn many_apply<T, F: Fn(&str, &str) -> T>(reference: &str, candidates: &[String],
 /// into the other.
 #[napi]
 pub fn levenshtein(a: String, b: String) -> u32 {
-    strsim::levenshtein(&a, &b) as u32
+    rapid_lev::distance(a.chars(), b.chars()) as u32
 }
 
 /// Compute the Levenshtein distance for multiple pairs of strings in a single call.
@@ -37,7 +39,9 @@ pub fn levenshtein(a: String, b: String) -> u32 {
 /// Each pair must be an array of exactly two strings `[a, b]`.
 #[napi]
 pub fn levenshtein_batch(pairs: Vec<Vec<String>>) -> Vec<u32> {
-    batch_apply(&pairs, |a, b| strsim::levenshtein(a, b) as u32)
+    batch_apply(&pairs, |a, b| {
+        rapid_lev::distance(a.chars(), b.chars()) as u32
+    })
 }
 
 /// Compute the Levenshtein distance from one reference string to many candidates.
@@ -45,9 +49,11 @@ pub fn levenshtein_batch(pairs: Vec<Vec<String>>) -> Vec<u32> {
 /// Returns an array of distances, one per candidate, in the same order as the input.
 #[napi]
 pub fn levenshtein_many(reference: String, candidates: Vec<String>) -> Vec<u32> {
-    many_apply(&reference, &candidates, |a, b| {
-        strsim::levenshtein(a, b) as u32
-    })
+    let scorer = rapid_lev::BatchComparator::new(reference.chars());
+    candidates
+        .iter()
+        .map(|c| scorer.distance(c.chars()) as u32)
+        .collect()
 }
 
 /// Compute the Damerau-Levenshtein distance between two strings.
@@ -56,7 +62,7 @@ pub fn levenshtein_many(reference: String, candidates: Vec<String>) -> Vec<u32> 
 /// characters as a single edit.
 #[napi]
 pub fn damerau_levenshtein(a: String, b: String) -> u32 {
-    strsim::damerau_levenshtein(&a, &b) as u32
+    rapid_damerau::distance(a.chars(), b.chars()) as u32
 }
 
 /// Compute the Damerau-Levenshtein distance for multiple pairs of strings in a single call.
@@ -64,7 +70,9 @@ pub fn damerau_levenshtein(a: String, b: String) -> u32 {
 /// Returns an array of distances in the same order as the input pairs.
 #[napi]
 pub fn damerau_levenshtein_batch(pairs: Vec<Vec<String>>) -> Vec<u32> {
-    batch_apply(&pairs, |a, b| strsim::damerau_levenshtein(a, b) as u32)
+    batch_apply(&pairs, |a, b| {
+        rapid_damerau::distance(a.chars(), b.chars()) as u32
+    })
 }
 
 /// Compute the Damerau-Levenshtein distance from one reference string to many candidates.
@@ -72,9 +80,11 @@ pub fn damerau_levenshtein_batch(pairs: Vec<Vec<String>>) -> Vec<u32> {
 /// Returns an array of distances, one per candidate, in the same order as the input.
 #[napi]
 pub fn damerau_levenshtein_many(reference: String, candidates: Vec<String>) -> Vec<u32> {
-    many_apply(&reference, &candidates, |a, b| {
-        strsim::damerau_levenshtein(a, b) as u32
-    })
+    let scorer = rapid_damerau::BatchComparator::new(reference.chars());
+    candidates
+        .iter()
+        .map(|c| scorer.distance(c.chars()) as u32)
+        .collect()
 }
 
 /// Compute the Jaro similarity between two strings.
@@ -156,7 +166,7 @@ pub fn sorensen_dice_many(reference: String, candidates: Vec<String>) -> Vec<f64
 /// Returns a value between 0.0 (completely different) and 1.0 (identical).
 #[napi]
 pub fn normalized_levenshtein(a: String, b: String) -> f64 {
-    strsim::normalized_levenshtein(&a, &b)
+    rapid_lev::normalized_similarity(a.chars(), b.chars())
 }
 
 /// Compute the normalized Levenshtein similarity for multiple pairs of strings in a single call.
@@ -164,7 +174,9 @@ pub fn normalized_levenshtein(a: String, b: String) -> f64 {
 /// Returns an array of similarity scores in the same order as the input pairs.
 #[napi]
 pub fn normalized_levenshtein_batch(pairs: Vec<Vec<String>>) -> Vec<f64> {
-    batch_apply(&pairs, strsim::normalized_levenshtein)
+    batch_apply(&pairs, |a, b| {
+        rapid_lev::normalized_similarity(a.chars(), b.chars())
+    })
 }
 
 /// Compute the normalized Levenshtein similarity from one reference string to many candidates.
@@ -172,7 +184,11 @@ pub fn normalized_levenshtein_batch(pairs: Vec<Vec<String>>) -> Vec<f64> {
 /// Returns an array of similarity scores, one per candidate, in the same order as the input.
 #[napi]
 pub fn normalized_levenshtein_many(reference: String, candidates: Vec<String>) -> Vec<f64> {
-    many_apply(&reference, &candidates, strsim::normalized_levenshtein)
+    let scorer = rapid_lev::BatchComparator::new(reference.chars());
+    candidates
+        .iter()
+        .map(|c| scorer.normalized_similarity(c.chars()))
+        .collect()
 }
 
 // --- Internal helpers for token-based algorithms ---
@@ -203,7 +219,7 @@ fn token_sort_ratio_impl(a: &str, b: &str) -> f64 {
     if sorted_a.is_empty() && sorted_b.is_empty() {
         return 1.0;
     }
-    strsim::normalized_levenshtein(&sorted_a, &sorted_b)
+    rapid_lev::normalized_similarity(sorted_a.chars(), sorted_b.chars())
 }
 
 /// Internal implementation of token_set_ratio.
@@ -243,16 +259,16 @@ fn token_set_ratio_impl(a: &str, b: &str) -> f64 {
         std::borrow::Cow::Owned(format!("{} {}", sect_str, diff_b.join(" ")))
     };
 
-    let score_ab = strsim::normalized_levenshtein(&combined_a, &combined_b);
+    let score_ab = rapid_lev::normalized_similarity(combined_a.chars(), combined_b.chars());
     let score_a = if diff_a.is_empty() {
         1.0
     } else {
-        strsim::normalized_levenshtein(&sect_str, &combined_a)
+        rapid_lev::normalized_similarity(sect_str.chars(), combined_a.chars())
     };
     let score_b = if diff_b.is_empty() {
         1.0
     } else {
-        strsim::normalized_levenshtein(&sect_str, &combined_b)
+        rapid_lev::normalized_similarity(sect_str.chars(), combined_b.chars())
     };
 
     f64::max(score_ab, f64::max(score_a, score_b))
@@ -280,15 +296,16 @@ fn partial_ratio_impl(a: &str, b: &str) -> f64 {
     let long_len = longer.chars().count();
 
     if short_len == long_len {
-        return strsim::normalized_levenshtein(shorter, longer);
+        return rapid_lev::normalized_similarity(shorter.chars(), longer.chars());
     }
 
     let long_chars: Vec<char> = longer.chars().collect();
+    let scorer = rapid_lev::BatchComparator::new(shorter.chars());
     let mut best = 0.0_f64;
 
     for start in 0..=(long_len - short_len) {
-        let window: String = long_chars[start..start + short_len].iter().collect();
-        let score = strsim::normalized_levenshtein(shorter, &window);
+        let window = long_chars[start..start + short_len].iter().copied();
+        let score = scorer.normalized_similarity(window);
         best = f64::max(best, score);
         if best == 1.0 {
             break;
@@ -300,7 +317,7 @@ fn partial_ratio_impl(a: &str, b: &str) -> f64 {
 
 /// Internal implementation of weighted_ratio.
 fn weighted_ratio_impl(a: &str, b: &str) -> f64 {
-    let raw = strsim::normalized_levenshtein(a, b);
+    let raw = rapid_lev::normalized_similarity(a.chars(), b.chars());
     let sort = token_sort_ratio_impl(a, b);
     let set = token_set_ratio_impl(a, b);
     let partial = partial_ratio_impl(a, b);
