@@ -8,6 +8,7 @@ import {
   jaro,
   jaroWinkler,
   levenshtein,
+  levenshteinBatch,
   normalizedLevenshtein,
   sorensenDice,
 } from '../index.js';
@@ -27,6 +28,10 @@ describe('Levenshtein Distance', () => {
     for (const [a, b] of pairs) {
       levenshtein(a, b);
     }
+  });
+
+  bench('rapid-fuzzy (batch)', () => {
+    levenshteinBatch(pairs);
   });
 
   bench('fastest-levenshtein', () => {

@@ -3,12 +3,24 @@ import { describe, expect, it } from 'vitest';
 import {
   closest,
   damerauLevenshtein,
+  damerauLevenshteinBatch,
+  damerauLevenshteinMany,
   jaro,
+  jaroBatch,
+  jaroMany,
   jaroWinkler,
+  jaroWinklerBatch,
+  jaroWinklerMany,
   levenshtein,
+  levenshteinBatch,
+  levenshteinMany,
   normalizedLevenshtein,
+  normalizedLevenshteinBatch,
+  normalizedLevenshteinMany,
   search,
   sorensenDice,
+  sorensenDiceBatch,
+  sorensenDiceMany,
 } from '../index.js';
 
 describe('distance', () => {
@@ -97,6 +109,128 @@ describe('distance', () => {
       const score = normalizedLevenshtein('kitten', 'sitting');
       expect(score).toBeGreaterThan(0);
       expect(score).toBeLessThan(1);
+    });
+  });
+});
+
+describe('batch distance', () => {
+  describe('levenshteinBatch', () => {
+    it('should compute distances for multiple pairs', () => {
+      const result = levenshteinBatch([
+        ['kitten', 'sitting'],
+        ['', ''],
+        ['abc', 'abc'],
+      ]);
+      expect(result).toEqual([3, 0, 0]);
+    });
+
+    it('should return empty array for empty input', () => {
+      expect(levenshteinBatch([])).toEqual([]);
+    });
+  });
+
+  describe('levenshteinMany', () => {
+    it('should compute distances from one string to many candidates', () => {
+      const result = levenshteinMany('kitten', ['sitting', '', 'kitten']);
+      expect(result).toEqual([3, 6, 0]);
+    });
+
+    it('should return empty array for empty candidates', () => {
+      expect(levenshteinMany('hello', [])).toEqual([]);
+    });
+  });
+
+  describe('damerauLevenshteinBatch', () => {
+    it('should compute distances for multiple pairs', () => {
+      const result = damerauLevenshteinBatch([
+        ['ab', 'ba'],
+        ['abc', 'abc'],
+      ]);
+      expect(result).toEqual([1, 0]);
+    });
+  });
+
+  describe('damerauLevenshteinMany', () => {
+    it('should compute distances from one string to many candidates', () => {
+      const result = damerauLevenshteinMany('ab', ['ba', 'ab', 'xyz']);
+      expect(result).toEqual([1, 0, 3]);
+    });
+  });
+
+  describe('jaroBatch', () => {
+    it('should compute scores for multiple pairs', () => {
+      const result = jaroBatch([
+        ['hello', 'hello'],
+        ['abc', 'xyz'],
+      ]);
+      expect(result[0]).toBe(1.0);
+      expect(result[1]).toBe(0.0);
+    });
+  });
+
+  describe('jaroMany', () => {
+    it('should compute scores from one string to many candidates', () => {
+      const result = jaroMany('hello', ['hello', 'world']);
+      expect(result[0]).toBe(1.0);
+      expect(result[1]).toBeGreaterThan(0);
+    });
+  });
+
+  describe('jaroWinklerBatch', () => {
+    it('should compute scores for multiple pairs', () => {
+      const result = jaroWinklerBatch([
+        ['test', 'test'],
+        ['martha', 'marhta'],
+      ]);
+      expect(result[0]).toBe(1.0);
+      expect(result[1]).toBeGreaterThan(0.96);
+    });
+  });
+
+  describe('jaroWinklerMany', () => {
+    it('should compute scores from one string to many candidates', () => {
+      const result = jaroWinklerMany('test', ['test', 'text']);
+      expect(result[0]).toBe(1.0);
+      expect(result[1]).toBeGreaterThan(0);
+    });
+  });
+
+  describe('sorensenDiceBatch', () => {
+    it('should compute scores for multiple pairs', () => {
+      const result = sorensenDiceBatch([
+        ['night', 'night'],
+        ['ab', 'yz'],
+      ]);
+      expect(result[0]).toBe(1.0);
+      expect(result[1]).toBe(0.0);
+    });
+  });
+
+  describe('sorensenDiceMany', () => {
+    it('should compute scores from one string to many candidates', () => {
+      const result = sorensenDiceMany('night', ['night', 'nacht']);
+      expect(result[0]).toBe(1.0);
+      expect(result[1]).toBeGreaterThan(0);
+    });
+  });
+
+  describe('normalizedLevenshteinBatch', () => {
+    it('should compute scores for multiple pairs', () => {
+      const result = normalizedLevenshteinBatch([
+        ['hello', 'hello'],
+        ['abc', 'xyz'],
+      ]);
+      expect(result[0]).toBe(1.0);
+      expect(result[1]).toBe(0.0);
+    });
+  });
+
+  describe('normalizedLevenshteinMany', () => {
+    it('should compute scores from one string to many candidates', () => {
+      const result = normalizedLevenshteinMany('hello', ['hello', 'world']);
+      expect(result[0]).toBe(1.0);
+      expect(result[1]).toBeGreaterThan(0);
+      expect(result[1]).toBeLessThan(1);
     });
   });
 });
