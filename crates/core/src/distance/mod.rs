@@ -179,18 +179,19 @@ pub fn normalized_levenshtein_many(reference: String, candidates: Vec<String>) -
 
 /// Normalize a string: lowercase, trim, and collapse whitespace.
 fn normalize_str(s: &str) -> String {
-    s.split_whitespace()
-        .map(|w| w.to_lowercase())
-        .collect::<Vec<_>>()
-        .join(" ")
+    let mut result = String::new();
+    for word in s.split_whitespace() {
+        if !result.is_empty() {
+            result.push(' ');
+        }
+        result.push_str(&word.to_lowercase());
+    }
+    result
 }
 
-/// Tokenize a normalized string into sorted tokens.
+/// Tokenize into sorted, lowercased tokens (skipping the intermediate joined string).
 fn sorted_tokens(s: &str) -> Vec<String> {
-    let mut tokens: Vec<String> = normalize_str(s)
-        .split_whitespace()
-        .map(String::from)
-        .collect();
+    let mut tokens: Vec<String> = s.split_whitespace().map(|w| w.to_lowercase()).collect();
     tokens.sort();
     tokens
 }
@@ -217,29 +218,38 @@ fn token_set_ratio_impl(a: &str, b: &str) -> f64 {
     let tokens_a: BTreeSet<&str> = norm_a.split_whitespace().collect();
     let tokens_b: BTreeSet<&str> = norm_b.split_whitespace().collect();
 
-    let intersection: Vec<&str> = tokens_a.intersection(&tokens_b).copied().collect();
     let diff_a: Vec<&str> = tokens_a.difference(&tokens_b).copied().collect();
     let diff_b: Vec<&str> = tokens_b.difference(&tokens_a).copied().collect();
 
-    let sect_str = intersection.join(" ");
+    // Identical token sets — no further computation needed.
+    if diff_a.is_empty() && diff_b.is_empty() {
+        return 1.0;
+    }
+
+    let sect_str: String = tokens_a
+        .intersection(&tokens_b)
+        .copied()
+        .collect::<Vec<_>>()
+        .join(" ");
+
     let combined_a = if diff_a.is_empty() {
-        sect_str.clone()
+        std::borrow::Cow::Borrowed(sect_str.as_str())
     } else {
-        format!("{} {}", sect_str, diff_a.join(" "))
+        std::borrow::Cow::Owned(format!("{} {}", sect_str, diff_a.join(" ")))
     };
     let combined_b = if diff_b.is_empty() {
-        sect_str.clone()
+        std::borrow::Cow::Borrowed(sect_str.as_str())
     } else {
-        format!("{} {}", sect_str, diff_b.join(" "))
+        std::borrow::Cow::Owned(format!("{} {}", sect_str, diff_b.join(" ")))
     };
 
     let score_ab = strsim::normalized_levenshtein(&combined_a, &combined_b);
-    let score_a = if sect_str == combined_a {
+    let score_a = if diff_a.is_empty() {
         1.0
     } else {
         strsim::normalized_levenshtein(&sect_str, &combined_a)
     };
-    let score_b = if sect_str == combined_b {
+    let score_b = if diff_b.is_empty() {
         1.0
     } else {
         strsim::normalized_levenshtein(&sect_str, &combined_b)
