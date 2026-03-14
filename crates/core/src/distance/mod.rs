@@ -2,6 +2,25 @@ use std::collections::BTreeSet;
 
 use napi_derive::napi;
 
+/// Apply a distance/similarity function to each pair in a batch.
+fn batch_apply<T: Default, F: Fn(&str, &str) -> T>(pairs: &[Vec<String>], f: F) -> Vec<T> {
+    pairs
+        .iter()
+        .map(|pair| {
+            if pair.len() >= 2 {
+                f(&pair[0], &pair[1])
+            } else {
+                T::default()
+            }
+        })
+        .collect()
+}
+
+/// Apply a distance/similarity function from one reference string to many candidates.
+fn many_apply<T, F: Fn(&str, &str) -> T>(reference: &str, candidates: &[String], f: F) -> Vec<T> {
+    candidates.iter().map(|c| f(reference, c)).collect()
+}
+
 /// Compute the Levenshtein distance between two strings.
 ///
 /// The Levenshtein distance is the minimum number of single-character edits
@@ -18,16 +37,7 @@ pub fn levenshtein(a: String, b: String) -> u32 {
 /// Each pair must be an array of exactly two strings `[a, b]`.
 #[napi]
 pub fn levenshtein_batch(pairs: Vec<Vec<String>>) -> Vec<u32> {
-    pairs
-        .iter()
-        .map(|pair| {
-            if pair.len() >= 2 {
-                strsim::levenshtein(&pair[0], &pair[1]) as u32
-            } else {
-                0
-            }
-        })
-        .collect()
+    batch_apply(&pairs, |a, b| strsim::levenshtein(a, b) as u32)
 }
 
 /// Compute the Levenshtein distance from one reference string to many candidates.
@@ -35,10 +45,9 @@ pub fn levenshtein_batch(pairs: Vec<Vec<String>>) -> Vec<u32> {
 /// Returns an array of distances, one per candidate, in the same order as the input.
 #[napi]
 pub fn levenshtein_many(reference: String, candidates: Vec<String>) -> Vec<u32> {
-    candidates
-        .iter()
-        .map(|c| strsim::levenshtein(&reference, c) as u32)
-        .collect()
+    many_apply(&reference, &candidates, |a, b| {
+        strsim::levenshtein(a, b) as u32
+    })
 }
 
 /// Compute the Damerau-Levenshtein distance between two strings.
@@ -55,16 +64,7 @@ pub fn damerau_levenshtein(a: String, b: String) -> u32 {
 /// Returns an array of distances in the same order as the input pairs.
 #[napi]
 pub fn damerau_levenshtein_batch(pairs: Vec<Vec<String>>) -> Vec<u32> {
-    pairs
-        .iter()
-        .map(|pair| {
-            if pair.len() >= 2 {
-                strsim::damerau_levenshtein(&pair[0], &pair[1]) as u32
-            } else {
-                0
-            }
-        })
-        .collect()
+    batch_apply(&pairs, |a, b| strsim::damerau_levenshtein(a, b) as u32)
 }
 
 /// Compute the Damerau-Levenshtein distance from one reference string to many candidates.
@@ -72,10 +72,9 @@ pub fn damerau_levenshtein_batch(pairs: Vec<Vec<String>>) -> Vec<u32> {
 /// Returns an array of distances, one per candidate, in the same order as the input.
 #[napi]
 pub fn damerau_levenshtein_many(reference: String, candidates: Vec<String>) -> Vec<u32> {
-    candidates
-        .iter()
-        .map(|c| strsim::damerau_levenshtein(&reference, c) as u32)
-        .collect()
+    many_apply(&reference, &candidates, |a, b| {
+        strsim::damerau_levenshtein(a, b) as u32
+    })
 }
 
 /// Compute the Jaro similarity between two strings.
@@ -91,16 +90,7 @@ pub fn jaro(a: String, b: String) -> f64 {
 /// Returns an array of similarity scores in the same order as the input pairs.
 #[napi]
 pub fn jaro_batch(pairs: Vec<Vec<String>>) -> Vec<f64> {
-    pairs
-        .iter()
-        .map(|pair| {
-            if pair.len() >= 2 {
-                strsim::jaro(&pair[0], &pair[1])
-            } else {
-                0.0
-            }
-        })
-        .collect()
+    batch_apply(&pairs, strsim::jaro)
 }
 
 /// Compute the Jaro similarity from one reference string to many candidates.
@@ -108,10 +98,7 @@ pub fn jaro_batch(pairs: Vec<Vec<String>>) -> Vec<f64> {
 /// Returns an array of similarity scores, one per candidate, in the same order as the input.
 #[napi]
 pub fn jaro_many(reference: String, candidates: Vec<String>) -> Vec<f64> {
-    candidates
-        .iter()
-        .map(|c| strsim::jaro(&reference, c))
-        .collect()
+    many_apply(&reference, &candidates, strsim::jaro)
 }
 
 /// Compute the Jaro-Winkler similarity between two strings.
@@ -128,16 +115,7 @@ pub fn jaro_winkler(a: String, b: String) -> f64 {
 /// Returns an array of similarity scores in the same order as the input pairs.
 #[napi]
 pub fn jaro_winkler_batch(pairs: Vec<Vec<String>>) -> Vec<f64> {
-    pairs
-        .iter()
-        .map(|pair| {
-            if pair.len() >= 2 {
-                strsim::jaro_winkler(&pair[0], &pair[1])
-            } else {
-                0.0
-            }
-        })
-        .collect()
+    batch_apply(&pairs, strsim::jaro_winkler)
 }
 
 /// Compute the Jaro-Winkler similarity from one reference string to many candidates.
@@ -145,10 +123,7 @@ pub fn jaro_winkler_batch(pairs: Vec<Vec<String>>) -> Vec<f64> {
 /// Returns an array of similarity scores, one per candidate, in the same order as the input.
 #[napi]
 pub fn jaro_winkler_many(reference: String, candidates: Vec<String>) -> Vec<f64> {
-    candidates
-        .iter()
-        .map(|c| strsim::jaro_winkler(&reference, c))
-        .collect()
+    many_apply(&reference, &candidates, strsim::jaro_winkler)
 }
 
 /// Compute the Sorensen-Dice coefficient between two strings.
@@ -165,16 +140,7 @@ pub fn sorensen_dice(a: String, b: String) -> f64 {
 /// Returns an array of similarity scores in the same order as the input pairs.
 #[napi]
 pub fn sorensen_dice_batch(pairs: Vec<Vec<String>>) -> Vec<f64> {
-    pairs
-        .iter()
-        .map(|pair| {
-            if pair.len() >= 2 {
-                strsim::sorensen_dice(&pair[0], &pair[1])
-            } else {
-                0.0
-            }
-        })
-        .collect()
+    batch_apply(&pairs, strsim::sorensen_dice)
 }
 
 /// Compute the Sorensen-Dice coefficient from one reference string to many candidates.
@@ -182,10 +148,7 @@ pub fn sorensen_dice_batch(pairs: Vec<Vec<String>>) -> Vec<f64> {
 /// Returns an array of similarity scores, one per candidate, in the same order as the input.
 #[napi]
 pub fn sorensen_dice_many(reference: String, candidates: Vec<String>) -> Vec<f64> {
-    candidates
-        .iter()
-        .map(|c| strsim::sorensen_dice(&reference, c))
-        .collect()
+    many_apply(&reference, &candidates, strsim::sorensen_dice)
 }
 
 /// Compute the normalized Levenshtein similarity between two strings.
@@ -201,16 +164,7 @@ pub fn normalized_levenshtein(a: String, b: String) -> f64 {
 /// Returns an array of similarity scores in the same order as the input pairs.
 #[napi]
 pub fn normalized_levenshtein_batch(pairs: Vec<Vec<String>>) -> Vec<f64> {
-    pairs
-        .iter()
-        .map(|pair| {
-            if pair.len() >= 2 {
-                strsim::normalized_levenshtein(&pair[0], &pair[1])
-            } else {
-                0.0
-            }
-        })
-        .collect()
+    batch_apply(&pairs, strsim::normalized_levenshtein)
 }
 
 /// Compute the normalized Levenshtein similarity from one reference string to many candidates.
@@ -218,10 +172,7 @@ pub fn normalized_levenshtein_batch(pairs: Vec<Vec<String>>) -> Vec<f64> {
 /// Returns an array of similarity scores, one per candidate, in the same order as the input.
 #[napi]
 pub fn normalized_levenshtein_many(reference: String, candidates: Vec<String>) -> Vec<f64> {
-    candidates
-        .iter()
-        .map(|c| strsim::normalized_levenshtein(&reference, c))
-        .collect()
+    many_apply(&reference, &candidates, strsim::normalized_levenshtein)
 }
 
 // --- Internal helpers for token-based algorithms ---
@@ -368,16 +319,7 @@ pub fn token_sort_ratio(a: String, b: String) -> f64 {
 /// Returns an array of similarity scores in the same order as the input pairs.
 #[napi]
 pub fn token_sort_ratio_batch(pairs: Vec<Vec<String>>) -> Vec<f64> {
-    pairs
-        .iter()
-        .map(|pair| {
-            if pair.len() >= 2 {
-                token_sort_ratio_impl(&pair[0], &pair[1])
-            } else {
-                0.0
-            }
-        })
-        .collect()
+    batch_apply(&pairs, token_sort_ratio_impl)
 }
 
 /// Compute the token sort ratio from one reference string to many candidates.
@@ -385,10 +327,7 @@ pub fn token_sort_ratio_batch(pairs: Vec<Vec<String>>) -> Vec<f64> {
 /// Returns an array of similarity scores, one per candidate, in the same order as the input.
 #[napi]
 pub fn token_sort_ratio_many(reference: String, candidates: Vec<String>) -> Vec<f64> {
-    candidates
-        .iter()
-        .map(|c| token_sort_ratio_impl(&reference, c))
-        .collect()
+    many_apply(&reference, &candidates, token_sort_ratio_impl)
 }
 
 // --- Token Set Ratio ---
@@ -409,16 +348,7 @@ pub fn token_set_ratio(a: String, b: String) -> f64 {
 /// Returns an array of similarity scores in the same order as the input pairs.
 #[napi]
 pub fn token_set_ratio_batch(pairs: Vec<Vec<String>>) -> Vec<f64> {
-    pairs
-        .iter()
-        .map(|pair| {
-            if pair.len() >= 2 {
-                token_set_ratio_impl(&pair[0], &pair[1])
-            } else {
-                0.0
-            }
-        })
-        .collect()
+    batch_apply(&pairs, token_set_ratio_impl)
 }
 
 /// Compute the token set ratio from one reference string to many candidates.
@@ -426,10 +356,7 @@ pub fn token_set_ratio_batch(pairs: Vec<Vec<String>>) -> Vec<f64> {
 /// Returns an array of similarity scores, one per candidate, in the same order as the input.
 #[napi]
 pub fn token_set_ratio_many(reference: String, candidates: Vec<String>) -> Vec<f64> {
-    candidates
-        .iter()
-        .map(|c| token_set_ratio_impl(&reference, c))
-        .collect()
+    many_apply(&reference, &candidates, token_set_ratio_impl)
 }
 
 // --- Partial Ratio ---
@@ -450,16 +377,7 @@ pub fn partial_ratio(a: String, b: String) -> f64 {
 /// Returns an array of similarity scores in the same order as the input pairs.
 #[napi]
 pub fn partial_ratio_batch(pairs: Vec<Vec<String>>) -> Vec<f64> {
-    pairs
-        .iter()
-        .map(|pair| {
-            if pair.len() >= 2 {
-                partial_ratio_impl(&pair[0], &pair[1])
-            } else {
-                0.0
-            }
-        })
-        .collect()
+    batch_apply(&pairs, partial_ratio_impl)
 }
 
 /// Compute the partial ratio from one reference string to many candidates.
@@ -467,10 +385,7 @@ pub fn partial_ratio_batch(pairs: Vec<Vec<String>>) -> Vec<f64> {
 /// Returns an array of similarity scores, one per candidate, in the same order as the input.
 #[napi]
 pub fn partial_ratio_many(reference: String, candidates: Vec<String>) -> Vec<f64> {
-    candidates
-        .iter()
-        .map(|c| partial_ratio_impl(&reference, c))
-        .collect()
+    many_apply(&reference, &candidates, partial_ratio_impl)
 }
 
 // --- Weighted Ratio ---
@@ -491,16 +406,7 @@ pub fn weighted_ratio(a: String, b: String) -> f64 {
 /// Returns an array of similarity scores in the same order as the input pairs.
 #[napi]
 pub fn weighted_ratio_batch(pairs: Vec<Vec<String>>) -> Vec<f64> {
-    pairs
-        .iter()
-        .map(|pair| {
-            if pair.len() >= 2 {
-                weighted_ratio_impl(&pair[0], &pair[1])
-            } else {
-                0.0
-            }
-        })
-        .collect()
+    batch_apply(&pairs, weighted_ratio_impl)
 }
 
 /// Compute the weighted ratio from one reference string to many candidates.
@@ -508,10 +414,7 @@ pub fn weighted_ratio_batch(pairs: Vec<Vec<String>>) -> Vec<f64> {
 /// Returns an array of similarity scores, one per candidate, in the same order as the input.
 #[napi]
 pub fn weighted_ratio_many(reference: String, candidates: Vec<String>) -> Vec<f64> {
-    candidates
-        .iter()
-        .map(|c| weighted_ratio_impl(&reference, c))
-        .collect()
+    many_apply(&reference, &candidates, weighted_ratio_impl)
 }
 
 #[cfg(test)]
