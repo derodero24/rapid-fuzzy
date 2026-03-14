@@ -142,7 +142,44 @@ pub(crate) fn search_over_items(
 pub(crate) struct PrecomputedSearch<'a> {
     pub items: &'a [String],
     pub utf32_items: &'a [Utf32String],
+    pub char_masks: &'a [u64],
     pub matcher: &'a RefCell<Matcher>,
+}
+
+/// Compute a character-presence bitmask for quick pre-filtering.
+///
+/// Bit layout: 0–25 = a–z (case-insensitive), 26–35 = 0–9.
+/// Characters outside this range are ignored (conservative — no false negatives).
+pub(crate) fn compute_char_mask(s: &str) -> u64 {
+    let mut mask = 0u64;
+    for c in s.chars() {
+        let bit = match c {
+            'a'..='z' => Some(c as u32 - 'a' as u32),
+            'A'..='Z' => Some(c as u32 - 'A' as u32),
+            '0'..='9' => Some(26 + c as u32 - '0' as u32),
+            _ => None,
+        };
+        if let Some(b) = bit {
+            mask |= 1u64 << b;
+        }
+    }
+    mask
+}
+
+/// Extract a character-presence bitmask from a query string, considering
+/// only positive (non-inverted) terms. Inverted terms (`!term`) and
+/// syntax prefixes/suffixes (`^`, `'`, `$`) are stripped.
+pub(crate) fn compute_query_mask(query: &str) -> u64 {
+    let mut mask = 0u64;
+    for term in query.split_whitespace() {
+        if term.starts_with('!') {
+            continue;
+        }
+        let term = term.trim_start_matches(['^', '\'']);
+        let term = term.trim_end_matches('$');
+        mask |= compute_char_mask(term);
+    }
+    mask
 }
 
 /// Search over pre-computed Utf32String items with a reusable Matcher.
@@ -167,12 +204,18 @@ pub(crate) fn search_over_precomputed(
     let pattern = Pattern::parse(query, case_matching, Normalization::Smart);
     let max_score = compute_max_score(query, &pattern, &mut matcher);
     let threshold = min_score.unwrap_or(0.0);
+    let query_mask = compute_query_mask(query);
+    let char_masks = ctx.char_masks;
 
     // Pass 1: Score all items, collect (index, score) only — no String cloning.
     let mut scored: Vec<(u32, f64)> = utf32_items
         .iter()
         .enumerate()
         .filter_map(|(index, utf32_item)| {
+            // Pre-filter: skip items that lack required query characters.
+            if query_mask != 0 && (char_masks[index] & query_mask) != query_mask {
+                return None;
+            }
             let atoms = utf32_item.slice(..);
             let raw_score = pattern.score(atoms, &mut matcher)?;
             let normalized = (raw_score as f64 / max_score).min(1.0);

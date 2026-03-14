@@ -6,7 +6,8 @@ use nucleo_matcher::pattern::CaseMatching;
 use nucleo_matcher::{Config, Matcher, Utf32String};
 
 use super::{
-    PrecomputedSearch, SearchOptions, SearchResult, resolve_case_matching, search_over_precomputed,
+    PrecomputedSearch, SearchOptions, SearchResult, compute_char_mask, resolve_case_matching,
+    search_over_precomputed,
 };
 
 /// A persistent fuzzy search index backed by Rust-side data.
@@ -21,6 +22,7 @@ use super::{
 pub struct FuzzyIndex {
     items: Vec<String>,
     utf32_items: Vec<Utf32String>,
+    char_masks: Vec<u64>,
     matcher: RefCell<Matcher>,
 }
 
@@ -33,9 +35,11 @@ impl FuzzyIndex {
             .iter()
             .map(|s| Utf32String::from(s.as_str()))
             .collect();
+        let char_masks: Vec<u64> = items.iter().map(|s| compute_char_mask(s)).collect();
         Self {
             items,
             utf32_items,
+            char_masks,
             matcher: RefCell::new(Matcher::new(Config::DEFAULT)),
         }
     }
@@ -89,6 +93,7 @@ impl FuzzyIndex {
     #[napi]
     pub fn add(&mut self, item: String) {
         self.utf32_items.push(Utf32String::from(item.as_str()));
+        self.char_masks.push(compute_char_mask(&item));
         self.items.push(item);
     }
 
@@ -97,6 +102,7 @@ impl FuzzyIndex {
     pub fn add_many(&mut self, items: Vec<String>) {
         for item in &items {
             self.utf32_items.push(Utf32String::from(item.as_str()));
+            self.char_masks.push(compute_char_mask(item));
         }
         self.items.extend(items);
     }
@@ -110,6 +116,7 @@ impl FuzzyIndex {
         if idx < self.items.len() {
             self.items.swap_remove(idx);
             self.utf32_items.swap_remove(idx);
+            self.char_masks.swap_remove(idx);
             true
         } else {
             false
@@ -121,6 +128,7 @@ impl FuzzyIndex {
     pub fn destroy(&mut self) {
         self.items = Vec::new();
         self.utf32_items = Vec::new();
+        self.char_masks = Vec::new();
     }
 
     fn search_impl(
@@ -134,6 +142,7 @@ impl FuzzyIndex {
         let ctx = PrecomputedSearch {
             items: &self.items,
             utf32_items: &self.utf32_items,
+            char_masks: &self.char_masks,
             matcher: &self.matcher,
         };
         search_over_precomputed(
