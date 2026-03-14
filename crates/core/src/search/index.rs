@@ -1,9 +1,8 @@
 use napi::Either;
 use napi_derive::napi;
-use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
-use nucleo_matcher::{Config, Matcher};
+use nucleo_matcher::pattern::CaseMatching;
 
-use super::{SearchOptions, SearchResult, compute_max_score, resolve_case_matching};
+use super::{SearchOptions, SearchResult, resolve_case_matching, search_over_items};
 
 /// A persistent fuzzy search index backed by Rust-side data.
 ///
@@ -109,61 +108,14 @@ impl FuzzyIndex {
         include_positions: bool,
         case_matching: CaseMatching,
     ) -> Vec<SearchResult> {
-        if query.is_empty() || self.items.is_empty() {
-            return Vec::new();
-        }
-
-        let mut matcher = Matcher::new(Config::DEFAULT);
-        let pattern = Pattern::parse(query, case_matching, Normalization::Smart);
-        let max_score = compute_max_score(query, &pattern, &mut matcher);
-        let threshold = min_score.unwrap_or(0.0);
-
-        let mut buf = Vec::new();
-
-        let mut results: Vec<SearchResult> = self
-            .items
-            .iter()
-            .enumerate()
-            .filter_map(|(index, item)| {
-                buf.clear();
-                let atoms = nucleo_matcher::Utf32Str::new(item, &mut buf);
-
-                let (raw_score, positions) = if include_positions {
-                    let mut indices = Vec::new();
-                    let score = pattern.indices(atoms, &mut matcher, &mut indices)?;
-                    indices.sort_unstable();
-                    indices.dedup();
-                    (score, indices)
-                } else {
-                    let score = pattern.score(atoms, &mut matcher)?;
-                    (score, Vec::new())
-                };
-
-                let normalized = (raw_score as f64 / max_score).min(1.0);
-                if normalized >= threshold {
-                    Some(SearchResult {
-                        item: item.clone(),
-                        score: normalized,
-                        index: index as u32,
-                        positions,
-                    })
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        results.sort_unstable_by(|a, b| {
-            b.score
-                .partial_cmp(&a.score)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-
-        if let Some(max) = max_results {
-            results.truncate(max as usize);
-        }
-
-        results
+        search_over_items(
+            query,
+            &self.items,
+            max_results,
+            min_score,
+            include_positions,
+            case_matching,
+        )
     }
 }
 
