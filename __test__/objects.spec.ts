@@ -123,6 +123,14 @@ describe('searchObjects', () => {
     expect(results[0]?.item.name).toBe('Alice');
   });
 
+  it('should pass through includePositions option', () => {
+    const results = searchObjects('john', users, {
+      keys: ['name'],
+      includePositions: true,
+    });
+    expect(results.length).toBeGreaterThan(0);
+  });
+
   it('should support isCaseSensitive option', () => {
     const results = searchObjects('john', users, {
       keys: ['name'],
