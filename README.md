@@ -63,6 +63,28 @@ closest('tsc', ['TypeScript', 'JavaScript', 'Python']);
 // → 'TypeScript'
 ```
 
+### Batch Operations
+
+All distance functions have `Batch` and `Many` variants that amortize FFI overhead:
+
+```typescript
+import { levenshteinBatch, levenshteinMany } from 'rapid-fuzzy';
+
+// Compute distances for multiple pairs at once
+levenshteinBatch([
+  ['kitten', 'sitting'],
+  ['hello', 'help'],
+  ['foo', 'bar'],
+]);
+// → [3, 1, 3]
+
+// Compare one string against many candidates
+levenshteinMany('kitten', ['sitting', 'kittens', 'kitchen']);
+// → [3, 1, 2]
+```
+
+> **Tip**: Prefer batch/many variants over calling single-pair functions in a loop — they are significantly faster for multiple comparisons.
+
 ## Benchmarks
 
 Measured on Apple M-series with Node.js v22 using [Vitest bench](https://vitest.dev/guide/features.html#benchmarking). Each benchmark processes 6 realistic string pairs of varying length and similarity.
