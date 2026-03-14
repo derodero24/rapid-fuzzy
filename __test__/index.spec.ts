@@ -5,6 +5,7 @@ import {
   damerauLevenshtein,
   damerauLevenshteinBatch,
   damerauLevenshteinMany,
+  FuzzyIndex,
   jaro,
   jaroBatch,
   jaroMany,
@@ -717,6 +718,152 @@ describe('unicode', () => {
     it('should find closest Unicode match', () => {
       const result = closest('東京', ['大阪', '京都', '東京都']);
       expect(result).not.toBeNull();
+    });
+  });
+});
+
+describe('FuzzyIndex', () => {
+  const items = ['apple', 'banana', 'grape', 'orange', 'pineapple', 'mango'];
+
+  describe('constructor and size', () => {
+    it('should create an index with correct size', () => {
+      const index = new FuzzyIndex(items);
+      expect(index.size).toBe(6);
+    });
+
+    it('should handle empty items', () => {
+      const index = new FuzzyIndex([]);
+      expect(index.size).toBe(0);
+    });
+  });
+
+  describe('search', () => {
+    it('should find fuzzy matches', () => {
+      const index = new FuzzyIndex(items);
+      const results = index.search('aple');
+      expect(results.length).toBeGreaterThan(0);
+      expect(results.some((r) => r.item === 'apple')).toBe(true);
+    });
+
+    it('should return results sorted by score', () => {
+      const index = new FuzzyIndex(items);
+      const results = index.search('an');
+      for (let i = 1; i < results.length; i++) {
+        expect(results[i - 1]?.score).toBeGreaterThanOrEqual(results[i]?.score ?? 0);
+      }
+    });
+
+    it('should respect maxResults as number', () => {
+      const index = new FuzzyIndex(items);
+      const results = index.search('a', 2);
+      expect(results.length).toBeLessThanOrEqual(2);
+    });
+
+    it('should accept SearchOptions object', () => {
+      const index = new FuzzyIndex(items);
+      const results = index.search('a', { maxResults: 2 });
+      expect(results.length).toBeLessThanOrEqual(2);
+    });
+
+    it('should filter by minScore', () => {
+      const index = new FuzzyIndex(items);
+      const results = index.search('apple', { minScore: 0.5 });
+      for (const r of results) {
+        expect(r.score).toBeGreaterThanOrEqual(0.5);
+      }
+    });
+
+    it('should return positions when includePositions is true', () => {
+      const index = new FuzzyIndex(['hello']);
+      const results = index.search('hello', { includePositions: true });
+      expect(results.length).toBe(1);
+      expect(results[0]?.positions).toEqual([0, 1, 2, 3, 4]);
+    });
+
+    it('should return empty positions by default', () => {
+      const index = new FuzzyIndex(['hello']);
+      const results = index.search('hello');
+      expect(results[0]?.positions).toEqual([]);
+    });
+
+    it('should return scores in 0.0-1.0 range', () => {
+      const index = new FuzzyIndex(items);
+      const results = index.search('app');
+      for (const r of results) {
+        expect(r.score).toBeGreaterThanOrEqual(0);
+        expect(r.score).toBeLessThanOrEqual(1);
+      }
+    });
+
+    it('should return empty array for empty query', () => {
+      const index = new FuzzyIndex(items);
+      expect(index.search('')).toEqual([]);
+    });
+
+    it('should produce same results as standalone search', () => {
+      const { search } = require('../index.js');
+      const index = new FuzzyIndex(items);
+      const indexResults = index.search('apple');
+      const standaloneResults = search('apple', items);
+      expect(indexResults.length).toBe(standaloneResults.length);
+      for (let i = 0; i < indexResults.length; i++) {
+        expect(indexResults[i]?.item).toBe(standaloneResults[i]?.item);
+        expect(indexResults[i]?.score).toBeCloseTo(standaloneResults[i]?.score ?? 0);
+      }
+    });
+  });
+
+  describe('closest', () => {
+    it('should return the best match', () => {
+      const index = new FuzzyIndex(items);
+      expect(index.closest('aple')).toBe('apple');
+    });
+
+    it('should return null for empty index', () => {
+      const index = new FuzzyIndex([]);
+      expect(index.closest('test')).toBeNull();
+    });
+
+    it('should respect minScore', () => {
+      const index = new FuzzyIndex(['xyz']);
+      expect(index.closest('hello', 0.99)).toBeNull();
+    });
+  });
+
+  describe('add and addMany', () => {
+    it('should add a single item', () => {
+      const index = new FuzzyIndex(['apple']);
+      index.add('banana');
+      expect(index.size).toBe(2);
+      expect(index.closest('banana')).toBe('banana');
+    });
+
+    it('should add multiple items', () => {
+      const index = new FuzzyIndex([]);
+      index.addMany(['apple', 'banana', 'grape']);
+      expect(index.size).toBe(3);
+    });
+  });
+
+  describe('remove', () => {
+    it('should remove item at index', () => {
+      const index = new FuzzyIndex(['apple', 'banana', 'grape']);
+      expect(index.remove(1)).toBe(true);
+      expect(index.size).toBe(2);
+    });
+
+    it('should return false for out-of-bounds index', () => {
+      const index = new FuzzyIndex(['apple']);
+      expect(index.remove(5)).toBe(false);
+    });
+  });
+
+  describe('destroy', () => {
+    it('should clear all items', () => {
+      const index = new FuzzyIndex(items);
+      index.destroy();
+      expect(index.size).toBe(0);
+      expect(index.search('apple')).toEqual([]);
     });
   });
 });
