@@ -133,6 +133,16 @@ describe('searchObjects', () => {
     expect(results.length).toBe(0);
   });
 
+  it('should return empty positions when includePositions is not set', () => {
+    const results = searchObjects('john', users, {
+      keys: ['name'],
+    });
+    expect(results.length).toBeGreaterThan(0);
+    for (const r of results) {
+      expect(r.positions).toEqual([]);
+    }
+  });
+
   it('should match single-key results with searchKeys', () => {
     const { searchKeys } = require('../index.js');
     const names = users.map((u) => u.name);

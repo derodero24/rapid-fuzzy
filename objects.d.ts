@@ -14,6 +14,11 @@ export interface ObjectSearchResult<T> {
   index: number;
   score: number;
   keyScores: Array<number>;
+  /**
+   * Indices of matched characters in the best-matching key string.
+   * Empty unless `includePositions` is set to true in ObjectSearchOptions.
+   */
+  positions: Array<number>;
 }
 
 /**
