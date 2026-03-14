@@ -49,14 +49,14 @@ sorensenDice('night', 'nacht');       // 0.25
 ```typescript
 import { search, closest } from 'rapid-fuzzy';
 
-// Find matches sorted by relevance
+// Find matches sorted by relevance (scores normalized to 0.0-1.0)
 const results = search('typscript', [
   'TypeScript',
   'JavaScript',
   'Python',
   'TypeSpec',
 ]);
-// → [{ item: 'TypeScript', score: 89, index: 0 }, ...]
+// → [{ item: 'TypeScript', score: 0.85, index: 0 }, ...]
 
 // Find the single best match
 closest('tsc', ['TypeScript', 'JavaScript', 'Python']);
@@ -145,7 +145,7 @@ cargo bench           # Rust internal benchmarks
 
 - `levenshtein`, `damerauLevenshtein` → integer (edit count)
 - `jaro`, `jaroWinkler`, `sorensenDice`, `normalizedLevenshtein` → float between 0.0 (no match) and 1.0 (identical)
-- `search` → array of `{ item, score, index }` sorted by relevance
+- `search` → array of `{ item, score, index }` sorted by relevance (score: 0.0–1.0)
 
 ## Why rapid-fuzzy?
 
