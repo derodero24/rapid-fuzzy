@@ -143,6 +143,9 @@ pub(crate) struct PrecomputedSearch<'a> {
     pub items: &'a [String],
     pub utf32_items: &'a [Utf32String],
     pub char_masks: &'a [u64],
+    /// Optional subset of item indices to search (for incremental narrowing).
+    /// When `None`, all items are searched.
+    pub candidate_indices: Option<&'a [u32]>,
     pub matcher: &'a RefCell<Matcher>,
 }
 
@@ -182,9 +185,18 @@ pub(crate) fn compute_query_mask(query: &str) -> u64 {
     mask
 }
 
+/// Result of `search_over_precomputed`: the top-k results plus all matching indices.
+pub(crate) struct PrecomputedSearchResult {
+    /// Top-k search results (sorted, truncated).
+    pub results: Vec<SearchResult>,
+    /// Indices of ALL items that matched (before truncation), for incremental cache.
+    pub all_matching_indices: Vec<u32>,
+}
+
 /// Search over pre-computed Utf32String items with a reusable Matcher.
 ///
 /// Used by FuzzyIndex to avoid per-search string conversion and Matcher allocation.
+/// When `ctx.candidate_indices` is set, only those items are scored (incremental search).
 pub(crate) fn search_over_precomputed(
     query: &str,
     ctx: &PrecomputedSearch<'_>,
@@ -192,12 +204,15 @@ pub(crate) fn search_over_precomputed(
     min_score: Option<f64>,
     include_positions: bool,
     case_matching: CaseMatching,
-) -> Vec<SearchResult> {
+) -> PrecomputedSearchResult {
     let items = ctx.items;
     let utf32_items = ctx.utf32_items;
     let matcher_cell = ctx.matcher;
     if query.is_empty() || items.is_empty() {
-        return Vec::new();
+        return PrecomputedSearchResult {
+            results: Vec::new(),
+            all_matching_indices: Vec::new(),
+        };
     }
 
     let mut matcher = matcher_cell.borrow_mut();
@@ -207,34 +222,48 @@ pub(crate) fn search_over_precomputed(
     let query_mask = compute_query_mask(query);
     let char_masks = ctx.char_masks;
 
-    // Pass 1: Score all items, collect (index, score) only — no String cloning.
-    let mut scored: Vec<(u32, f64)> = utf32_items
-        .iter()
-        .enumerate()
-        .filter_map(|(index, utf32_item)| {
-            // Pre-filter: skip items that lack required query characters.
-            if query_mask != 0 && (char_masks[index] & query_mask) != query_mask {
-                return None;
-            }
-            let atoms = utf32_item.slice(..);
-            let raw_score = pattern.score(atoms, &mut matcher)?;
-            let normalized = (raw_score as f64 / max_score).min(1.0);
-            if normalized >= threshold {
-                Some((index as u32, normalized))
-            } else {
-                None
-            }
-        })
-        .collect();
+    // Scoring closure shared by both full-scan and candidate paths.
+    let mut score_item = |index: u32| -> Option<(u32, f64)> {
+        let idx = index as usize;
+        if query_mask != 0 && (char_masks[idx] & query_mask) != query_mask {
+            return None;
+        }
+        let atoms = utf32_items[idx].slice(..);
+        let raw_score = pattern.score(atoms, &mut matcher)?;
+        let normalized = (raw_score as f64 / max_score).min(1.0);
+        if normalized >= threshold {
+            Some((index, normalized))
+        } else {
+            None
+        }
+    };
+
+    // Pass 1: Score items. Use candidate_indices if provided (incremental search).
+    let mut scored: Vec<(u32, f64)> = match ctx.candidate_indices {
+        Some(candidates) => candidates.iter().filter_map(|&i| score_item(i)).collect(),
+        None => (0..utf32_items.len() as u32)
+            .filter_map(&mut score_item)
+            .collect(),
+    };
 
     scored.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    // Collect matching indices for incremental cache, but only when the match set
+    // is meaningfully smaller than the full dataset. When most items match (e.g.,
+    // short queries), the cache overhead outweighs the narrowing benefit.
+    let total = utf32_items.len();
+    let all_matching_indices: Vec<u32> = if total > 0 && scored.len() < total / 2 {
+        scored.iter().map(|&(index, _)| index).collect()
+    } else {
+        Vec::new()
+    };
 
     if let Some(max) = max_results {
         scored.truncate(max as usize);
     }
 
     // Pass 2: Construct results only for the final top-k items.
-    scored
+    let results = scored
         .into_iter()
         .map(|(index, score)| {
             let positions = if include_positions {
@@ -255,7 +284,12 @@ pub(crate) fn search_over_precomputed(
                 positions,
             }
         })
-        .collect()
+        .collect();
+
+    PrecomputedSearchResult {
+        results,
+        all_matching_indices,
+    }
 }
 
 /// Internal search implementation used by both the napi export and tests.
