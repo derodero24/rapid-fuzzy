@@ -15,18 +15,18 @@
 <text x="20" y="66" class="group-label">Levenshtein</text>
 <text x="172" y="91" class="bar-label" text-anchor="end">fastest-levenshtein</text>
 <rect x="180" y="74" width="460" height="26" rx="4" fill="#94a3b8" opacity="0.6" />
-<text x="632" y="91" class="bar-value" text-anchor="end">774,820 ops/s</text>
-<text x="172" y="122" class="bar-label" text-anchor="end">leven</text>
-<rect x="180" y="105" width="121.13990346144911" height="26" rx="4" fill="#94a3b8" opacity="0.6" />
-<text x="309.1399034614491" y="122" class="bar-value" text-anchor="start">204,047 ops/s</text>
-<text x="172" y="153" class="bar-label" text-anchor="end">rapid-fuzzy</text>
-<rect x="180" y="136" width="114.93350713714152" height="26" rx="4" fill="#3b82f6" opacity="1" />
-<text x="302.93350713714153" y="153" class="bar-value" text-anchor="start">193,593 ops/s</text>
+<text x="632" y="91" class="bar-value" text-anchor="end">739,107 ops/s</text>
+<text x="172" y="122" class="bar-label" text-anchor="end">rapid-fuzzy</text>
+<rect x="180" y="105" width="328.73413457050196" height="26" rx="4" fill="#3b82f6" opacity="1" />
+<text x="500.73413457050196" y="122" class="bar-value" text-anchor="end" fill="#ffffff">528,195 ops/s</text>
+<text x="172" y="153" class="bar-label" text-anchor="end">leven</text>
+<rect x="180" y="136" width="138.05283944002696" height="26" rx="4" fill="#94a3b8" opacity="0.6" />
+<text x="326.05283944002696" y="153" class="bar-value" text-anchor="start">221,817 ops/s</text>
 <text x="20" y="200" class="group-label">Sorensen-Dice</text>
 <text x="172" y="225" class="bar-label" text-anchor="end">rapid-fuzzy</text>
 <rect x="180" y="208" width="460" height="26" rx="4" fill="#3b82f6" opacity="1" />
-<text x="632" y="225" class="bar-value" text-anchor="end" fill="#ffffff">144,698 ops/s</text>
+<text x="632" y="225" class="bar-value" text-anchor="end" fill="#ffffff">149,567 ops/s</text>
 <text x="172" y="256" class="bar-label" text-anchor="end">string-similarity</text>
-<rect x="180" y="239" width="267.3822720424609" height="26" rx="4" fill="#94a3b8" opacity="0.6" />
-<text x="439.3822720424609" y="256" class="bar-value" text-anchor="end">84,108 ops/s</text>
+<rect x="180" y="239" width="254.98726323319983" height="26" rx="4" fill="#94a3b8" opacity="0.6" />
+<text x="426.9872632331998" y="256" class="bar-value" text-anchor="end">82,908 ops/s</text>
 </svg>

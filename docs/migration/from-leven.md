@@ -104,23 +104,35 @@ const results = search('type', ['TypeScript', 'JavaScript', 'Python']);
 
 ## Performance Considerations
 
-For single-pair Levenshtein distance, fastest-levenshtein is faster due to its highly optimized pure-JS implementation that avoids FFI overhead:
+For single-pair Levenshtein distance, fastest-levenshtein is still faster due to zero FFI overhead, but the gap has narrowed significantly with v0.5.0's bit-parallel algorithm:
 
 | Operation | rapid-fuzzy | fastest-levenshtein | leven |
 |---|---:|---:|---:|
-| Single pair | 193,593 ops/s | **774,820 ops/s** | 204,047 ops/s |
+| Single pair | 528,195 ops/s | **739,107 ops/s** | 221,817 ops/s |
 
-However, rapid-fuzzy excels in closest-match scenarios where batch FFI overhead is amortized:
+rapid-fuzzy is 2.4x faster than leven and within 1.4x of fastest-levenshtein.
 
-| Closest match | rapid-fuzzy | fastest-levenshtein | Speedup |
+For closest-match scenarios, rapid-fuzzy pulls ahead — especially with `FuzzyIndex` for repeated searches:
+
+| Closest match | rapid-fuzzy | FuzzyIndex | fastest-levenshtein |
 |---|---:|---:|---:|
-| 1,000 items | 8,416 ops/s | **8,762 ops/s** | — |
-| 10,000 items | **905 ops/s** | 662 ops/s | 1.4x |
+| 1,000 items | 8,304 ops/s | **60,469 ops/s** | 8,946 ops/s |
+| 10,000 items | 757 ops/s | **4,103 ops/s** | 604 ops/s |
+
+`FuzzyIndex` pre-computes internal data structures, making it **6.8x faster** than fastest-levenshtein for closest-match on 1K items. For repeated searches against the same dataset, always prefer `FuzzyIndex`:
+
+```typescript
+import { FuzzyIndex } from 'rapid-fuzzy';
+
+const index = new FuzzyIndex(['slow', 'faster', 'fastest', /* ... */]);
+const best = index.closest('fast'); // 'faster' — uses pre-built index
+```
 
 **When to choose rapid-fuzzy over fastest-levenshtein**:
 - You need more than just Levenshtein (similarity scores, other algorithms)
 - You process batches of string pairs
 - You need fuzzy search / closest match on medium-to-large datasets
+- You search the same dataset repeatedly (`FuzzyIndex` is 6.8x faster)
 - You want a single dependency for all string distance needs
 
 **When to keep fastest-levenshtein**:
