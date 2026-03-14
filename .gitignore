@@ -6,10 +6,13 @@ target/
 dist/
 *.node
 
-# napi-rs generated files (build output)
+# napi-rs generated files (tracked via git add -f for npm package)
+# Biome ignores these via useIgnoreFile
 index.js
 index.d.ts
 browser.js
+
+# napi-rs generated binaries (build output)
 *.wasm
 *.wasi.cjs
 *.wasi-browser.js
