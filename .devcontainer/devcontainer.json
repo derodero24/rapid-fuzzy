@@ -3,7 +3,7 @@
   "image": "mcr.microsoft.com/devcontainers/rust:2-bookworm",
   "features": {
     "ghcr.io/devcontainers/features/node:1": {
-      "version": "20"
+      "version": "24"
     }
   },
   "postCreateCommand": "corepack enable && pnpm install --ignore-scripts && pnpm run build",
