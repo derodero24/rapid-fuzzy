@@ -277,6 +277,32 @@ describe('search', () => {
     const results = search('test', []);
     expect(results).toEqual([]);
   });
+
+  it('should return scores in 0.0-1.0 range', () => {
+    const results = search('app', items);
+    for (const r of results) {
+      expect(r.score).toBeGreaterThanOrEqual(0);
+      expect(r.score).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('should return score of 1.0 for exact match', () => {
+    const results = search('apple', items);
+    const exact = results.find((r) => r.item === 'apple');
+    expect(exact).toBeDefined();
+    expect(exact?.score).toBeCloseTo(1.0);
+  });
+
+  it('should return lower scores for partial matches', () => {
+    const results = search('apple', ['apple', 'pineapple', 'application']);
+    const exact = results.find((r) => r.item === 'apple');
+    const partial = results.find((r) => r.item === 'pineapple');
+    expect(exact).toBeDefined();
+    expect(partial).toBeDefined();
+    if (exact && partial) {
+      expect(exact.score).toBeGreaterThan(partial.score);
+    }
+  });
 });
 
 describe('closest', () => {
