@@ -1,5 +1,13 @@
 # rapid-fuzzy
 
+## 0.1.1
+
+### Patch Changes
+
+- f603232: Fix npm package missing index.js, index.d.ts, and browser.js
+
+  These napi-rs loader files were incorrectly gitignored, causing them to be excluded from the published npm package. CJS `require('rapid-fuzzy')` now works correctly.
+
 ## 0.1.0
 
 ### Minor Changes
