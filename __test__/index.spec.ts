@@ -5,6 +5,7 @@ import {
   damerauLevenshtein,
   damerauLevenshteinBatch,
   damerauLevenshteinMany,
+  FuzzyIndex,
   jaro,
   jaroBatch,
   jaroMany,
@@ -17,10 +18,22 @@ import {
   normalizedLevenshtein,
   normalizedLevenshteinBatch,
   normalizedLevenshteinMany,
+  partialRatio,
+  partialRatioBatch,
+  partialRatioMany,
   search,
   sorensenDice,
   sorensenDiceBatch,
   sorensenDiceMany,
+  tokenSetRatio,
+  tokenSetRatioBatch,
+  tokenSetRatioMany,
+  tokenSortRatio,
+  tokenSortRatioBatch,
+  tokenSortRatioMany,
+  weightedRatio,
+  weightedRatioBatch,
+  weightedRatioMany,
 } from '../index.js';
 
 describe('distance', () => {
@@ -303,6 +316,117 @@ describe('search', () => {
       expect(exact.score).toBeGreaterThan(partial.score);
     }
   });
+
+  it('should accept SearchOptions object', () => {
+    const results = search('a', items, { maxResults: 2 });
+    expect(results.length).toBeLessThanOrEqual(2);
+  });
+
+  it('should filter by minScore', () => {
+    const all = search('apple', items);
+    const filtered = search('apple', items, { minScore: 0.5 });
+    expect(filtered.length).toBeLessThanOrEqual(all.length);
+    for (const r of filtered) {
+      expect(r.score).toBeGreaterThanOrEqual(0.5);
+    }
+  });
+
+  it('should return only exact matches with minScore 1.0', () => {
+    const results = search('apple', ['apple', 'application', 'banana'], {
+      minScore: 1.0,
+    });
+    expect(results.length).toBe(1);
+    expect(results[0]?.item).toBe('apple');
+  });
+
+  it('should combine maxResults and minScore', () => {
+    const results = search('app', items, { maxResults: 1, minScore: 0.1 });
+    expect(results.length).toBeLessThanOrEqual(1);
+    if (results.length > 0) {
+      expect(results[0]?.score).toBeGreaterThanOrEqual(0.1);
+    }
+  });
+
+  it('should treat number arg as maxResults (backward compat)', () => {
+    const withNumber = search('a', items, 2);
+    const withOptions = search('a', items, { maxResults: 2 });
+    expect(withNumber.length).toBe(withOptions.length);
+  });
+
+  describe('match positions', () => {
+    it('should return positions when includePositions is true', () => {
+      const results = search('hello', ['hello world'], {
+        includePositions: true,
+      });
+      expect(results.length).toBeGreaterThan(0);
+      expect(results[0]?.positions.length).toBeGreaterThan(0);
+    });
+
+    it('should return empty positions by default', () => {
+      const results = search('hello', ['hello world']);
+      expect(results.length).toBeGreaterThan(0);
+      expect(results[0]?.positions).toEqual([]);
+    });
+
+    it('should return empty positions when includePositions is false', () => {
+      const results = search('hello', ['hello world'], {
+        includePositions: false,
+      });
+      expect(results.length).toBeGreaterThan(0);
+      expect(results[0]?.positions).toEqual([]);
+    });
+
+    it('should return all positions for exact match', () => {
+      const results = search('hello', ['hello'], { includePositions: true });
+      expect(results.length).toBe(1);
+      expect(results[0]?.positions).toEqual([0, 1, 2, 3, 4]);
+    });
+
+    it('should return sorted positions', () => {
+      const results = search('hlo', ['hello world'], {
+        includePositions: true,
+      });
+      expect(results.length).toBeGreaterThan(0);
+      const positions = results[0]?.positions ?? [];
+      for (let i = 1; i < positions.length; i++) {
+        expect(positions[i]).toBeGreaterThan(positions[i - 1] ?? 0);
+      }
+    });
+
+    it('should return positions within item bounds', () => {
+      const results = search('app', ['apple', 'application'], {
+        includePositions: true,
+      });
+      for (const r of results) {
+        for (const pos of r.positions) {
+          expect(pos).toBeLessThan(r.item.length);
+        }
+      }
+    });
+
+    it('should produce same scores with or without positions', () => {
+      const withPos = search('apple', items, { includePositions: true });
+      const withoutPos = search('apple', items);
+      expect(withPos.length).toBe(withoutPos.length);
+      for (let i = 0; i < withPos.length; i++) {
+        expect(withPos[i]?.item).toBe(withoutPos[i]?.item);
+        expect(withPos[i]?.score).toBeCloseTo(withoutPos[i]?.score ?? 0);
+      }
+    });
+
+    it('should work with maxResults and minScore', () => {
+      const results = search('app', items, {
+        maxResults: 2,
+        minScore: 0.1,
+        includePositions: true,
+      });
+      expect(results.length).toBeLessThanOrEqual(2);
+      for (const r of results) {
+        expect(r.score).toBeGreaterThanOrEqual(0.1);
+        expect(r.positions.length).toBeGreaterThan(0);
+      }
+    });
+  });
 });
 
 describe('closest', () => {
@@ -321,6 +445,191 @@ describe('closest', () => {
   it('should return null for empty items', () => {
     const result = closest('test', []);
     expect(result).toBeNull();
+  });
+
+  it('should return null when best match is below minScore', () => {
+    const result = closest('hello', ['xyz', 'abc'], 0.99);
+    expect(result).toBeNull();
+  });
+
+  it('should return match when above minScore', () => {
+    const result = closest('apple', ['apple', 'banana'], 0.5);
+    expect(result).toBe('apple');
+  });
+});
+
+describe('token-based matching', () => {
+  describe('tokenSortRatio', () => {
+    it('should return 1.0 for reordered tokens', () => {
+      expect(tokenSortRatio('New York Mets', 'Mets New York')).toBe(1.0);
+    });
+
+    it('should be case-insensitive', () => {
+      expect(tokenSortRatio('john smith', 'SMITH JOHN')).toBe(1.0);
+    });
+
+    it('should return high score for similar reordered strings', () => {
+      const score = tokenSortRatio('John A. Smith', 'Smith, John A');
+      expect(score).toBeGreaterThan(0.8);
+    });
+
+    it('should return 1.0 for identical strings', () => {
+      expect(tokenSortRatio('hello world', 'hello world')).toBe(1.0);
+    });
+
+    it('should return 1.0 for both empty', () => {
+      expect(tokenSortRatio('', '')).toBe(1.0);
+    });
+
+    it('should return 0.0 for one empty', () => {
+      expect(tokenSortRatio('hello', '')).toBe(0.0);
+    });
+  });
+
+  describe('tokenSortRatioBatch', () => {
+    it('should compute scores for multiple pairs', () => {
+      const result = tokenSortRatioBatch([
+        ['New York Mets', 'Mets New York'],
+        ['abc', 'xyz'],
+      ]);
+      expect(result[0]).toBe(1.0);
+      expect(result[1]).toBeLessThan(0.5);
+    });
+  });
+
+  describe('tokenSortRatioMany', () => {
+    it('should compute scores from reference to candidates', () => {
+      const result = tokenSortRatioMany('New York Mets', ['Mets New York', 'completely different']);
+      expect(result[0]).toBe(1.0);
+      expect(result[1]).toBeLessThan(0.5);
+    });
+  });
+
+  describe('tokenSetRatio', () => {
+    it('should return 1.0 for reordered tokens', () => {
+      expect(tokenSetRatio('Mariners vs Yankees', 'Yankees vs Mariners')).toBe(1.0);
+    });
+
+    it('should handle subset tokens gracefully', () => {
+      const score = tokenSetRatio('Great Gatsby', 'The Great Gatsby by Fitzgerald');
+      expect(score).toBeGreaterThan(0.7);
+    });
+
+    it('should return 1.0 for both empty', () => {
+      expect(tokenSetRatio('', '')).toBe(1.0);
+    });
+
+    it('should return low score for no shared tokens', () => {
+      const score = tokenSetRatio('abc def', 'xyz uvw');
+      expect(score).toBeLessThan(0.5);
+    });
+  });
+
+  describe('tokenSetRatioBatch', () => {
+    it('should compute scores for multiple pairs', () => {
+      const result = tokenSetRatioBatch([
+        ['Mariners vs Yankees', 'Yankees vs Mariners'],
+        ['abc', 'xyz'],
+      ]);
+      expect(result[0]).toBe(1.0);
+      expect(result[1]).toBeLessThan(0.5);
+    });
+  });
+
+  describe('tokenSetRatioMany', () => {
+    it('should compute scores from reference to candidates', () => {
+      const result = tokenSetRatioMany('Mariners vs Yankees', [
+        'Yankees vs Mariners',
+        'something else',
+      ]);
+      expect(result[0]).toBe(1.0);
+      expect(result[1]).toBeLessThan(0.5);
+    });
+  });
+
+  describe('partialRatio', () => {
+    it('should return 1.0 for substring match', () => {
+      expect(partialRatio('hello', 'hello world')).toBe(1.0);
+    });
+
+    it('should return 1.0 for identical strings', () => {
+      expect(partialRatio('hello', 'hello')).toBe(1.0);
+    });
+
+    it('should return high score for partial overlap', () => {
+      const score = partialRatio('cat', 'scattered');
+      expect(score).toBeGreaterThan(0.5);
+    });
+
+    it('should return 1.0 for both empty', () => {
+      expect(partialRatio('', '')).toBe(1.0);
+    });
+
+    it('should return 0.0 for one empty', () => {
+      expect(partialRatio('hello', '')).toBe(0.0);
+    });
+  });
+
+  describe('partialRatioBatch', () => {
+    it('should compute scores for multiple pairs', () => {
+      const result = partialRatioBatch([
+        ['hello', 'hello world'],
+        ['abc', 'xyz'],
+      ]);
+      expect(result[0]).toBe(1.0);
+      expect(result[1]).toBeLessThan(0.5);
+    });
+  });
+
+  describe('partialRatioMany', () => {
+    it('should compute scores from reference to candidates', () => {
+      const result = partialRatioMany('hello', ['hello world', 'xyz']);
+      expect(result[0]).toBe(1.0);
+      expect(result[1]).toBeLessThan(0.5);
+    });
+  });
+
+  describe('weightedRatio', () => {
+    it('should return 1.0 for identical strings', () => {
+      expect(weightedRatio('hello', 'hello')).toBe(1.0);
+    });
+
+    it('should return 1.0 for reordered tokens', () => {
+      expect(weightedRatio('New York Mets', 'Mets New York')).toBe(1.0);
+    });
+
+    it('should return 1.0 for substring match', () => {
+      expect(weightedRatio('hello', 'hello world')).toBe(1.0);
+    });
+
+    it('should be at least as good as normalizedLevenshtein', () => {
+      const a = 'test string';
+      const b = 'testing strings';
+      expect(weightedRatio(a, b)).toBeGreaterThanOrEqual(normalizedLevenshtein(a, b));
+    });
+
+    it('should return low score for completely different strings', () => {
+      expect(weightedRatio('abc', 'xyz')).toBeLessThan(0.5);
+    });
+  });
+
+  describe('weightedRatioBatch', () => {
+    it('should compute scores for multiple pairs', () => {
+      const result = weightedRatioBatch([
+        ['hello', 'hello'],
+        ['abc', 'xyz'],
+      ]);
+      expect(result[0]).toBe(1.0);
+      expect(result[1]).toBeLessThan(0.5);
+    });
+  });
+
+  describe('weightedRatioMany', () => {
+    it('should compute scores from reference to candidates', () => {
+      const result = weightedRatioMany('hello', ['hello', 'xyz']);
+      expect(result[0]).toBe(1.0);
+      expect(result[1]).toBeLessThan(0.5);
+    });
   });
 });
 
@@ -385,6 +694,21 @@ describe('unicode', () => {
     });
   });
 
+  describe('token-based with Unicode', () => {
+    it('should sort CJK tokens correctly', () => {
+      expect(tokenSortRatio('東京 日本', '日本 東京')).toBe(1.0);
+    });
+
+    it('should handle emoji tokens', () => {
+      expect(tokenSortRatio('🎉 🎊', '🎊 🎉')).toBe(1.0);
+    });
+
+    it('should compute partial ratio for CJK substrings', () => {
+      const score = partialRatio('東京', '東京タワー');
+      expect(score).toBeGreaterThan(0.5);
+    });
+  });
+
   describe('search with Unicode', () => {
     it('should find Unicode matches', () => {
       const results = search('東', ['東京', '大阪', '京都']);
@@ -394,6 +718,152 @@ describe('unicode', () => {
     it('should find closest Unicode match', () => {
       const result = closest('東京', ['大阪', '京都', '東京都']);
       expect(result).not.toBeNull();
+    });
+  });
+});
+
+describe('FuzzyIndex', () => {
+  const items = ['apple', 'banana', 'grape', 'orange', 'pineapple', 'mango'];
+
+  describe('constructor and size', () => {
+    it('should create an index with correct size', () => {
+      const index = new FuzzyIndex(items);
+      expect(index.size).toBe(6);
+    });
+
+    it('should handle empty items', () => {
+      const index = new FuzzyIndex([]);
+      expect(index.size).toBe(0);
+    });
+  });
+
+  describe('search', () => {
+    it('should find fuzzy matches', () => {
+      const index = new FuzzyIndex(items);
+      const results = index.search('aple');
+      expect(results.length).toBeGreaterThan(0);
+      expect(results.some((r) => r.item === 'apple')).toBe(true);
+    });
+
+    it('should return results sorted by score', () => {
+      const index = new FuzzyIndex(items);
+      const results = index.search('an');
+      for (let i = 1; i < results.length; i++) {
+        expect(results[i - 1]?.score).toBeGreaterThanOrEqual(results[i]?.score ?? 0);
+      }
+    });
+
+    it('should respect maxResults as number', () => {
+      const index = new FuzzyIndex(items);
+      const results = index.search('a', 2);
+      expect(results.length).toBeLessThanOrEqual(2);
+    });
+
+    it('should accept SearchOptions object', () => {
+      const index = new FuzzyIndex(items);
+      const results = index.search('a', { maxResults: 2 });
+      expect(results.length).toBeLessThanOrEqual(2);
+    });
+
+    it('should filter by minScore', () => {
+      const index = new FuzzyIndex(items);
+      const results = index.search('apple', { minScore: 0.5 });
+      for (const r of results) {
+        expect(r.score).toBeGreaterThanOrEqual(0.5);
+      }
+    });
+
+    it('should return positions when includePositions is true', () => {
+      const index = new FuzzyIndex(['hello']);
+      const results = index.search('hello', { includePositions: true });
+      expect(results.length).toBe(1);
+      expect(results[0]?.positions).toEqual([0, 1, 2, 3, 4]);
+    });
+
+    it('should return empty positions by default', () => {
+      const index = new FuzzyIndex(['hello']);
+      const results = index.search('hello');
+      expect(results[0]?.positions).toEqual([]);
+    });
+
+    it('should return scores in 0.0-1.0 range', () => {
+      const index = new FuzzyIndex(items);
+      const results = index.search('app');
+      for (const r of results) {
+        expect(r.score).toBeGreaterThanOrEqual(0);
+        expect(r.score).toBeLessThanOrEqual(1);
+      }
+    });
+
+    it('should return empty array for empty query', () => {
+      const index = new FuzzyIndex(items);
+      expect(index.search('')).toEqual([]);
+    });
+
+    it('should produce same results as standalone search', () => {
+      const { search } = require('../index.js');
+      const index = new FuzzyIndex(items);
+      const indexResults = index.search('apple');
+      const standaloneResults = search('apple', items);
+      expect(indexResults.length).toBe(standaloneResults.length);
+      for (let i = 0; i < indexResults.length; i++) {
+        expect(indexResults[i]?.item).toBe(standaloneResults[i]?.item);
+        expect(indexResults[i]?.score).toBeCloseTo(standaloneResults[i]?.score ?? 0);
+      }
+    });
+  });
+
+  describe('closest', () => {
+    it('should return the best match', () => {
+      const index = new FuzzyIndex(items);
+      expect(index.closest('aple')).toBe('apple');
+    });
+
+    it('should return null for empty index', () => {
+      const index = new FuzzyIndex([]);
+      expect(index.closest('test')).toBeNull();
+    });
+
+    it('should respect minScore', () => {
+      const index = new FuzzyIndex(['xyz']);
+      expect(index.closest('hello', 0.99)).toBeNull();
+    });
+  });
+
+  describe('add and addMany', () => {
+    it('should add a single item', () => {
+      const index = new FuzzyIndex(['apple']);
+      index.add('banana');
+      expect(index.size).toBe(2);
+      expect(index.closest('banana')).toBe('banana');
+    });
+
+    it('should add multiple items', () => {
+      const index = new FuzzyIndex([]);
+      index.addMany(['apple', 'banana', 'grape']);
+      expect(index.size).toBe(3);
+    });
+  });
+
+  describe('remove', () => {
+    it('should remove item at index', () => {
+      const index = new FuzzyIndex(['apple', 'banana', 'grape']);
+      expect(index.remove(1)).toBe(true);
+      expect(index.size).toBe(2);
+    });
+
+    it('should return false for out-of-bounds index', () => {
+      const index = new FuzzyIndex(['apple']);
+      expect(index.remove(5)).toBe(false);
+    });
+  });
+
+  describe('destroy', () => {
+    it('should clear all items', () => {
+      const index = new FuzzyIndex(items);
+      index.destroy();
+      expect(index.size).toBe(0);
+      expect(index.search('apple')).toEqual([]);
     });
   });
 });

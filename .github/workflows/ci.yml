@@ -15,7 +15,7 @@ on:
       - 'biome.json'
       - '.github/workflows/ci.yml'
       - 'deny.toml'
-      - 'vitest.config.ts'
+      - 'vitest.config.mts'
       - 'codecov.yml'
   pull_request:
     branches: [develop]
@@ -31,7 +31,7 @@ on:
       - 'biome.json'
       - '.github/workflows/ci.yml'
       - 'deny.toml'
-      - 'vitest.config.ts'
+      - 'vitest.config.mts'
       - 'codecov.yml'
 
 concurrency:

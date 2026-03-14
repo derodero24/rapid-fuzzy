@@ -1,0 +1,76 @@
+name: CodSpeed
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - "crates/**"
+      - "__test__/**/*.bench.ts"
+      - "vitest.config.mts"
+      - ".github/workflows/codspeed.yml"
+  pull_request:
+    branches: [develop]
+    paths:
+      - "crates/**"
+      - "__test__/**/*.bench.ts"
+      - "vitest.config.mts"
+      - ".github/workflows/codspeed.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: codspeed-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  rust-benchmarks:
+    name: Rust Benchmarks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          shared-key: codspeed
+
+      - name: Install cargo-codspeed
+        uses: taiki-e/install-action@3ba22c660d7a3fe71d40eeb5830575b980204503
+        with:
+          tool: cargo-codspeed
+
+      - name: Build benchmarks
+        run: cargo codspeed build -p rapid-fuzzy-bench
+
+      - name: Run benchmarks
+        uses: CodSpeedHQ/action@281164b0f014a4e7badd2c02cecad9b595b70537 # v4
+        with:
+          mode: simulation
+          run: cargo codspeed run -p rapid-fuzzy-bench
+
+  js-benchmarks:
+    name: JS Benchmarks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          shared-key: codspeed
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build native module
+        run: pnpm run build
+
+      - name: Run benchmarks
+        uses: CodSpeedHQ/action@281164b0f014a4e7badd2c02cecad9b595b70537 # v4
+        with:
+          mode: simulation
+          run: pnpm run bench

@@ -4,6 +4,7 @@ const require = createRequire(import.meta.url);
 const binding = require('./index.js');
 
 export const {
+  FuzzyIndex,
   closest,
   damerauLevenshtein,
   damerauLevenshteinBatch,
@@ -20,8 +21,20 @@ export const {
   normalizedLevenshtein,
   normalizedLevenshteinBatch,
   normalizedLevenshteinMany,
+  partialRatio,
+  partialRatioBatch,
+  partialRatioMany,
   search,
   sorensenDice,
   sorensenDiceBatch,
   sorensenDiceMany,
+  tokenSetRatio,
+  tokenSetRatioBatch,
+  tokenSetRatioMany,
+  tokenSortRatio,
+  tokenSortRatioBatch,
+  tokenSortRatioMany,
+  weightedRatio,
+  weightedRatioBatch,
+  weightedRatioMany,
 } = binding;

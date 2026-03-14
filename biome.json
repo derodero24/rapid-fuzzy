@@ -57,7 +57,7 @@
   },
   "overrides": [
     {
-      "includes": ["vitest.config.ts", "commitlint.config.ts"],
+      "includes": ["vitest.config.mts", "commitlint.config.ts"],
       "linter": {
         "rules": {
           "style": {
@@ -72,6 +72,19 @@
         "rules": {
           "suspicious": {
             "noConsole": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["scripts/**"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noConsole": "off"
+          },
+          "style": {
+            "noDefaultExport": "off"
           }
         }
       }
