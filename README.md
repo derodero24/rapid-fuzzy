@@ -135,11 +135,11 @@ Measured on Apple M-series with Node.js v22 using [Vitest bench](https://vitest.
 
 | Function | rapid-fuzzy | fastest-levenshtein | leven | string-similarity |
 |---|---:|---:|---:|---:|
-| Levenshtein | 67,346 ops/s | **243,026 ops/s** | 51,789 ops/s | — |
-| Normalized Levenshtein | **64,592 ops/s** | — | — | — |
-| Sorensen-Dice | **61,050 ops/s** | — | — | 40,241 ops/s |
-| Jaro-Winkler | **198,140 ops/s** | — | — | — |
-| Damerau-Levenshtein | **58,888 ops/s** | — | — | — |
+| Levenshtein | 193,593 ops/s | **774,820 ops/s** | 204,047 ops/s | — |
+| Normalized Levenshtein | **136,854 ops/s** | — | — | — |
+| Sorensen-Dice | **144,698 ops/s** | — | — | 84,108 ops/s |
+| Jaro-Winkler | **291,673 ops/s** | — | — | — |
+| Damerau-Levenshtein | **72,238 ops/s** | — | — | — |
 
 > **Note**: For single-pair Levenshtein distance, fastest-levenshtein is faster due to its highly optimized pure-JS implementation that avoids FFI overhead. rapid-fuzzy provides broader algorithm coverage and excels in batch / search scenarios.
 
@@ -147,23 +147,23 @@ Measured on Apple M-series with Node.js v22 using [Vitest bench](https://vitest.
 
 | Dataset size | rapid-fuzzy | fuse.js | fuzzysort |
 |---|---:|---:|---:|
-| 20 items | 171,967 ops/s | 121,978 ops/s | **2,537,323 ops/s** |
-| 1,000 items | 4,941 ops/s | 376 ops/s | **55,388 ops/s** |
-| 10,000 items | 588 ops/s | 14 ops/s | **15,005 ops/s** |
+| Small (20 items) | 179,222 ops/s | 109,059 ops/s | **2,501,773 ops/s** |
+| Medium (1K items) | 6,614 ops/s | 381 ops/s | **63,032 ops/s** |
+| Large (10K items) | 794 ops/s | 20 ops/s | **28,616 ops/s** |
 
 ### Closest Match (Levenshtein-based)
 
 | Dataset size | rapid-fuzzy | fastest-levenshtein |
 |---|---:|---:|
-| 1,000 items | **5,912 ops/s** | 3,974 ops/s |
-| 10,000 items | **387 ops/s** | 126 ops/s |
+| Medium (1K items) | 8,416 ops/s | **8,762 ops/s** |
+| Large (10K items) | **905 ops/s** | 662 ops/s |
 
-> rapid-fuzzy is up to **3x faster** than fastest-levenshtein for closest-match lookups on large datasets.
+> rapid-fuzzy is up to **1.4x faster** than fastest-levenshtein for closest-match lookups on large datasets.
 
 ### Why these numbers matter
 
-- **vs fuse.js**: rapid-fuzzy is **13x faster** on medium datasets and **41x faster** on large datasets for fuzzy search.
-- **vs fastest-levenshtein**: rapid-fuzzy wins on closest-match (1.5–3x faster) where batch FFI overhead is amortized.
+- **vs fuse.js**: rapid-fuzzy is **17x faster** on medium datasets and **40x faster** on large datasets for fuzzy search.
+- **vs fastest-levenshtein**: rapid-fuzzy wins on closest-match at scale where batch FFI overhead is amortized.
 - **fuzzysort** uses a different (substring-based) matching algorithm that is extremely fast but produces different ranking results. Choose based on your matching needs.
 
 Run benchmarks yourself:
