@@ -1,5 +1,13 @@
 # rapid-fuzzy
 
+## 0.4.0
+
+### Minor Changes
+
+- 0744dd7: Add `isCaseSensitive` option to `SearchOptions` for explicit control over case-sensitive matching
+- 5bd6b95: Add `searchKeys` function for multi-key weighted fuzzy search
+- b120905: Add `searchObjects` function for ergonomic object array search with weighted keys
+
 ## 0.3.0
 
 ### Minor Changes
