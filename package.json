@@ -46,6 +46,8 @@
     "index.mjs",
     "index.d.ts",
     "index.d.mts",
+    "objects.js",
+    "objects.d.ts",
     "browser.js",
     "highlight.js",
     "highlight.mjs",
