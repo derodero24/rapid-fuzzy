@@ -162,6 +162,7 @@ jobs:
             -w /build
           run: |
             set -e
+            git config --global safe.directory /build
             npm install -g corepack@latest
             corepack enable
             corepack install
