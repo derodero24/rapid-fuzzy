@@ -597,6 +597,7 @@ module.exports.partialRatio = nativeBinding.partialRatio
 module.exports.partialRatioBatch = nativeBinding.partialRatioBatch
 module.exports.partialRatioMany = nativeBinding.partialRatioMany
 module.exports.search = nativeBinding.search
+module.exports.searchKeys = nativeBinding.searchKeys
 module.exports.sorensenDice = nativeBinding.sorensenDice
 module.exports.sorensenDiceBatch = nativeBinding.sorensenDiceBatch
 module.exports.sorensenDiceMany = nativeBinding.sorensenDiceMany
