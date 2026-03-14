@@ -56,12 +56,53 @@ const results = search('typscript', [
   'Python',
   'TypeSpec',
 ]);
-// → [{ item: 'TypeScript', score: 0.85, index: 0 }, ...]
+// → [{ item: 'TypeScript', score: 0.85, index: 0, positions: [] }, ...]
+
+// With options: filter by minimum score and limit results
+search('app', items, { maxResults: 5, minScore: 0.3 });
+
+// Backward compatible: pass a number for maxResults
+search('app', items, 5);
+
+// Get matched character positions for highlighting
+const [match] = search('hlo', ['hello world'], { includePositions: true });
+// → { item: 'hello world', score: 0.75, index: 0, positions: [0, 2, 4] }
 
 // Find the single best match
 closest('tsc', ['TypeScript', 'JavaScript', 'Python']);
 // → 'TypeScript'
+
+// With minimum score threshold (returns null if no match is good enough)
+closest('xyz', items, 0.5);
+// → null
 ```
+
+### Token-Based Matching
+
+Order-independent and partial string matching, inspired by Python's [RapidFuzz](https://github.com/rapidfuzz/RapidFuzz):
+
+```typescript
+import {
+  tokenSortRatio,
+  tokenSetRatio,
+  partialRatio,
+  weightedRatio,
+} from 'rapid-fuzzy';
+
+// Token Sort: order-independent comparison
+tokenSortRatio('New York Mets', 'Mets New York'); // 1.0
+
+// Token Set: handles extra/missing tokens
+tokenSetRatio('Great Gatsby', 'The Great Gatsby by Fitzgerald'); // ~0.85
+
+// Partial: best substring match
+partialRatio('hello', 'hello world'); // 1.0
+
+// Weighted: best score across all methods
+weightedRatio('John Smith', 'Smith, John'); // 1.0
+```
+
+All token-based functions include `Batch` and `Many` variants (e.g., `tokenSortRatioBatch`, `tokenSortRatioMany`).
 
 ### Batch Operations
 
@@ -136,23 +177,29 @@ cargo bench           # Rust internal benchmarks
 | Use case | Recommended | Why |
 |---|---|---|
 | Typo detection / spell check | `levenshtein`, `damerauLevenshtein` | Counts edits; Damerau adds transposition support |
-| Name / address matching | `jaroWinkler` | Prefix-weighted similarity for short strings |
+| Name / address matching | `jaroWinkler`, `tokenSortRatio` | Prefix-weighted or order-independent matching |
 | Document / text similarity | `sorensenDice` | Bigram-based; handles longer text well |
 | Normalized comparison (0–1) | `normalizedLevenshtein` | Length-independent similarity score |
+| Reordered words / messy data | `tokenSortRatio`, `tokenSetRatio` | Handles word order differences and extra tokens |
+| Substring / abbreviation matching | `partialRatio` | Finds best partial match within longer strings |
+| Best-effort similarity | `weightedRatio` | Picks the best score across all methods automatically |
 | Interactive fuzzy search | `search`, `closest` | Nucleo algorithm (same as Helix editor) |
 
 **Return types:**
 
 - `levenshtein`, `damerauLevenshtein` → integer (edit count)
 - `jaro`, `jaroWinkler`, `sorensenDice`, `normalizedLevenshtein` → float between 0.0 (no match) and 1.0 (identical)
-- `search` → array of `{ item, score, index }` sorted by relevance (score: 0.0–1.0)
+- `tokenSortRatio`, `tokenSetRatio`, `partialRatio`, `weightedRatio` → float between 0.0 and 1.0
+- `search` → array of `{ item, score, index, positions }` sorted by relevance (score: 0.0–1.0)
 
 ## Why rapid-fuzzy?
 
 | | rapid-fuzzy | fuse.js | fastest-levenshtein | fuzzysort |
 |---|---|---|---|---|
-| **Algorithms** | Levenshtein, Jaro-Winkler, Sorensen-Dice, Damerau-Levenshtein, fuzzy search | Bitap-based fuzzy | Levenshtein only | Substring fuzzy |
+| **Algorithms** | Levenshtein, Jaro-Winkler, Sorensen-Dice, Damerau-Levenshtein, token sort/set, partial ratio, fuzzy search | Bitap-based fuzzy | Levenshtein only | Substring fuzzy |
 | **Runtime** | Rust (native + WASM) | Pure JS | Pure JS | Pure JS |
+| **Score threshold** | Yes (minScore) | Yes (threshold) | No | Yes (threshold) |
+| **Match positions** | Yes (includePositions) | Yes | No | Yes |
 | **Batch API** | Yes | No | No | No |
 | **Node.js native** | Yes (napi-rs) | No | No | No |
 | **Browser support** | Yes (WASM) | Yes | Yes | Yes |
