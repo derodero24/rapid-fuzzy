@@ -12,6 +12,9 @@ pub struct SearchResult {
     pub score: f64,
     /// The index of the item in the original input array.
     pub index: u32,
+    /// Indices of matched characters in the item string.
+    /// Empty unless `includePositions` is set to true in SearchOptions.
+    pub positions: Vec<u32>,
 }
 
 /// Options for the search function.
@@ -21,6 +24,8 @@ pub struct SearchOptions {
     pub max_results: Option<u32>,
     /// Minimum normalized score (0.0-1.0) to include in results.
     pub min_score: Option<f64>,
+    /// If true, include matched character positions in results.
+    pub include_positions: Option<bool>,
 }
 
 /// Compute the maximum possible score for a given pattern by scoring
@@ -37,6 +42,7 @@ pub(crate) fn search_impl(
     items: Vec<String>,
     max_results: Option<u32>,
     min_score: Option<f64>,
+    include_positions: bool,
 ) -> Vec<SearchResult> {
     if query.is_empty() || items.is_empty() {
         return Vec::new();
@@ -53,18 +59,29 @@ pub(crate) fn search_impl(
         .filter_map(|(index, item)| {
             let mut buf = Vec::new();
             let atoms = nucleo_matcher::Utf32Str::new(item, &mut buf);
-            pattern.score(atoms, &mut matcher).and_then(|raw_score| {
-                let normalized = (raw_score as f64 / max_score).min(1.0);
-                if normalized >= threshold {
-                    Some(SearchResult {
-                        item: item.clone(),
-                        score: normalized,
-                        index: index as u32,
-                    })
-                } else {
-                    None
-                }
-            })
+
+            let (raw_score, positions) = if include_positions {
+                let mut indices = Vec::new();
+                let score = pattern.indices(atoms, &mut matcher, &mut indices)?;
+                indices.sort_unstable();
+                indices.dedup();
+                (score, indices)
+            } else {
+                let score = pattern.score(atoms, &mut matcher)?;
+                (score, Vec::new())
+            };
+
+            let normalized = (raw_score as f64 / max_score).min(1.0);
+            if normalized >= threshold {
+                Some(SearchResult {
+                    item: item.clone(),
+                    score: normalized,
+                    index: index as u32,
+                    positions,
+                })
+            } else {
+                None
+            }
         })
         .collect();
 
@@ -96,12 +113,16 @@ pub fn search(
     items: Vec<String>,
     options: Option<Either<u32, SearchOptions>>,
 ) -> Vec<SearchResult> {
-    let (max_results, min_score) = match options {
-        Some(Either::A(max)) => (Some(max), None),
-        Some(Either::B(opts)) => (opts.max_results, opts.min_score),
-        None => (None, None),
+    let (max_results, min_score, include_positions) = match options {
+        Some(Either::A(max)) => (Some(max), None, false),
+        Some(Either::B(opts)) => (
+            opts.max_results,
+            opts.min_score,
+            opts.include_positions.unwrap_or(false),
+        ),
+        None => (None, None, false),
     };
-    search_impl(query, items, max_results, min_score)
+    search_impl(query, items, max_results, min_score, include_positions)
 }
 
 /// Find the closest matching string from a list.
@@ -110,7 +131,7 @@ pub fn search(
 /// If minScore is provided, returns null when the best match scores below the threshold.
 #[napi]
 pub fn closest(query: String, items: Vec<String>, min_score: Option<f64>) -> Option<String> {
-    let results = search_impl(query, items, Some(1), min_score);
+    let results = search_impl(query, items, Some(1), min_score, false);
     results.into_iter().next().map(|r| r.item)
 }
 
@@ -126,7 +147,7 @@ mod tests {
             "Python".to_string(),
             "TypeSpec".to_string(),
         ];
-        let results = search_impl("typscript".to_string(), items, None, None);
+        let results = search_impl("typscript".to_string(), items, None, None, false);
         assert!(!results.is_empty());
         assert_eq!(results[0].item, "TypeScript");
     }
@@ -134,7 +155,7 @@ mod tests {
     #[test]
     fn test_search_empty_query() {
         let items = vec!["foo".to_string()];
-        let results = search_impl("".to_string(), items, None, None);
+        let results = search_impl("".to_string(), items, None, None, false);
         assert!(results.is_empty());
     }
 
@@ -157,7 +178,7 @@ mod tests {
             "banana".to_string(),
             "grape".to_string(),
         ];
-        let results = search_impl("apple".to_string(), items, None, None);
+        let results = search_impl("apple".to_string(), items, None, None, false);
         for r in &results {
             assert!(
                 r.score >= 0.0 && r.score <= 1.0,
@@ -171,7 +192,7 @@ mod tests {
     #[test]
     fn test_exact_match_scores_one() {
         let items = vec!["hello".to_string(), "world".to_string()];
-        let results = search_impl("hello".to_string(), items, None, None);
+        let results = search_impl("hello".to_string(), items, None, None, false);
         let exact = results.iter().find(|r| r.item == "hello").unwrap();
         assert!(
             (exact.score - 1.0).abs() < f64::EPSILON,
@@ -183,7 +204,7 @@ mod tests {
     #[test]
     fn test_partial_match_scores_below_one() {
         let items = vec!["TypeScript".to_string(), "JavaScript".to_string()];
-        let results = search_impl("type".to_string(), items, None, None);
+        let results = search_impl("type".to_string(), items, None, None, false);
         for r in &results {
             assert!(
                 r.score > 0.0 && r.score <= 1.0,
@@ -201,8 +222,8 @@ mod tests {
             "application".to_string(),
             "xyz".to_string(),
         ];
-        let all_results = search_impl("apple".to_string(), items.clone(), None, None);
-        let filtered = search_impl("apple".to_string(), items, None, Some(0.5));
+        let all_results = search_impl("apple".to_string(), items.clone(), None, None, false);
+        let filtered = search_impl("apple".to_string(), items, None, Some(0.5), false);
         assert!(filtered.len() <= all_results.len());
         for r in &filtered {
             assert!(
@@ -217,7 +238,7 @@ mod tests {
     #[test]
     fn test_min_score_one_returns_only_exact() {
         let items = vec!["hello".to_string(), "help".to_string(), "world".to_string()];
-        let results = search_impl("hello".to_string(), items, None, Some(1.0));
+        let results = search_impl("hello".to_string(), items, None, Some(1.0), false);
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].item, "hello");
     }
@@ -229,8 +250,8 @@ mod tests {
             "banana".to_string(),
             "grape".to_string(),
         ];
-        let no_threshold = search_impl("ap".to_string(), items.clone(), None, None);
-        let zero_threshold = search_impl("ap".to_string(), items, None, Some(0.0));
+        let no_threshold = search_impl("ap".to_string(), items.clone(), None, None, false);
+        let zero_threshold = search_impl("ap".to_string(), items, None, Some(0.0), false);
         assert_eq!(no_threshold.len(), zero_threshold.len());
     }
 
@@ -242,7 +263,7 @@ mod tests {
             "appetizer".to_string(),
             "xyz".to_string(),
         ];
-        let results = search_impl("apple".to_string(), items, Some(2), Some(0.3));
+        let results = search_impl("apple".to_string(), items, Some(2), Some(0.3), false);
         assert!(results.len() <= 2);
         for r in &results {
             assert!(r.score >= 0.3);
@@ -264,6 +285,89 @@ mod tests {
         assert!(result.is_some());
     }
 
+    #[test]
+    fn test_positions_returned_when_requested() {
+        let items = vec!["hello world".to_string()];
+        let results = search_impl("hlo".to_string(), items, None, None, true);
+        assert!(!results.is_empty());
+        assert!(
+            !results[0].positions.is_empty(),
+            "positions should not be empty"
+        );
+    }
+
+    #[test]
+    fn test_positions_empty_when_not_requested() {
+        let items = vec!["hello world".to_string()];
+        let results = search_impl("hlo".to_string(), items, None, None, false);
+        assert!(!results.is_empty());
+        assert!(
+            results[0].positions.is_empty(),
+            "positions should be empty when not requested"
+        );
+    }
+
+    #[test]
+    fn test_positions_are_sorted() {
+        let items = vec!["hello world".to_string()];
+        let results = search_impl("hlo".to_string(), items, None, None, true);
+        assert!(!results.is_empty());
+        let positions = &results[0].positions;
+        for window in positions.windows(2) {
+            assert!(
+                window[0] <= window[1],
+                "positions not sorted: {} > {}",
+                window[0],
+                window[1]
+            );
+        }
+    }
+
+    #[test]
+    fn test_positions_within_bounds() {
+        let items = vec!["hello".to_string()];
+        let results = search_impl("hlo".to_string(), items, None, None, true);
+        assert!(!results.is_empty());
+        let item_len = results[0].item.chars().count() as u32;
+        for &pos in &results[0].positions {
+            assert!(
+                pos < item_len,
+                "position {} out of bounds (len={})",
+                pos,
+                item_len
+            );
+        }
+    }
+
+    #[test]
+    fn test_exact_match_positions() {
+        let items = vec!["hello".to_string()];
+        let results = search_impl("hello".to_string(), items, None, None, true);
+        assert!(!results.is_empty());
+        assert_eq!(results[0].positions, vec![0, 1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn test_positions_score_consistency() {
+        let items = vec![
+            "apple".to_string(),
+            "application".to_string(),
+            "banana".to_string(),
+        ];
+        let with_pos = search_impl("apple".to_string(), items.clone(), None, None, true);
+        let without_pos = search_impl("apple".to_string(), items, None, None, false);
+        assert_eq!(with_pos.len(), without_pos.len());
+        for (a, b) in with_pos.iter().zip(without_pos.iter()) {
+            assert_eq!(a.item, b.item);
+            assert!(
+                (a.score - b.score).abs() < f64::EPSILON,
+                "scores differ: {} vs {}",
+                a.score,
+                b.score
+            );
+        }
+    }
+
     mod proptest_search {
         use super::*;
         use proptest::prelude::*;
@@ -275,7 +379,7 @@ mod tests {
                 items in prop::collection::vec("[a-z]{1,10}", 1..20),
                 max in 1u32..10
             ) {
-                let results = search_impl(query, items, Some(max), None);
+                let results = search_impl(query, items, Some(max), None, false);
                 prop_assert!(results.len() <= max as usize);
             }
 
@@ -284,7 +388,7 @@ mod tests {
                 query in "[a-z]{1,5}",
                 items in prop::collection::vec("[a-z]{1,10}", 1..20),
             ) {
-                let results = search_impl(query, items, None, None);
+                let results = search_impl(query, items, None, None, false);
                 for window in results.windows(2) {
                     prop_assert!(
                         window[0].score >= window[1].score,
@@ -300,7 +404,7 @@ mod tests {
                 query in "[a-z]{1,5}",
                 items in prop::collection::vec("[a-z]{1,10}", 1..20),
             ) {
-                let results = search_impl(query, items, None, None);
+                let results = search_impl(query, items, None, None, false);
                 for r in &results {
                     prop_assert!(
                         r.score >= 0.0 && r.score <= 1.0,
@@ -316,7 +420,7 @@ mod tests {
                 items in prop::collection::vec("[a-z]{1,10}", 1..20),
             ) {
                 let closest_result = closest(query.clone(), items.clone(), None);
-                let search_results = search_impl(query, items, None, None);
+                let search_results = search_impl(query, items, None, None, false);
 
                 match (closest_result, search_results.first()) {
                     (Some(c), Some(first)) => {
@@ -335,9 +439,36 @@ mod tests {
                 items in prop::collection::vec("[a-z]{1,10}", 1..20),
             ) {
                 let len = items.len();
-                let results = search_impl(query, items, None, None);
+                let results = search_impl(query, items, None, None, false);
                 for r in &results {
                     prop_assert!((r.index as usize) < len, "index {} out of bounds (len={})", r.index, len);
+                }
+            }
+
+            #[test]
+            fn search_positions_within_bounds(
+                query in "[a-z]{1,5}",
+                items in prop::collection::vec("[a-z]{1,10}", 1..20),
+            ) {
+                let results = search_impl(query, items, None, None, true);
+                for r in &results {
+                    let item_len = r.item.chars().count() as u32;
+                    for &pos in &r.positions {
+                        prop_assert!(pos < item_len, "position {} >= item length {} for '{}'", pos, item_len, r.item);
+                    }
+                }
+            }
+
+            #[test]
+            fn search_positions_sorted_and_unique(
+                query in "[a-z]{1,5}",
+                items in prop::collection::vec("[a-z]{1,10}", 1..20),
+            ) {
+                let results = search_impl(query, items, None, None, true);
+                for r in &results {
+                    for window in r.positions.windows(2) {
+                        prop_assert!(window[0] < window[1], "positions not strictly sorted: {} >= {}", window[0], window[1]);
+                    }
                 }
             }
 
@@ -347,7 +478,7 @@ mod tests {
                 items in prop::collection::vec("[a-z]{1,10}", 1..20),
                 threshold in 0.0f64..1.0
             ) {
-                let results = search_impl(query, items, None, Some(threshold));
+                let results = search_impl(query, items, None, Some(threshold), false);
                 for r in &results {
                     prop_assert!(
                         r.score >= threshold,
@@ -366,7 +497,7 @@ mod tests {
         #[test]
         fn test_search_cjk() {
             let items = vec!["東京".to_string(), "大阪".to_string(), "京都".to_string()];
-            let results = search_impl("東".to_string(), items, None, None);
+            let results = search_impl("東".to_string(), items, None, None, false);
             assert!(!results.is_empty());
         }
 
@@ -377,7 +508,7 @@ mod tests {
                 "🎊 celebration".to_string(),
                 "work".to_string(),
             ];
-            let results = search_impl("party".to_string(), items, None, None);
+            let results = search_impl("party".to_string(), items, None, None, false);
             assert!(!results.is_empty());
             assert!(results[0].item.contains("party"));
         }
@@ -389,7 +520,7 @@ mod tests {
                 "resume".to_string(),
                 "naïve".to_string(),
             ];
-            let results = search_impl("cafe".to_string(), items, None, None);
+            let results = search_impl("cafe".to_string(), items, None, None, false);
             assert!(!results.is_empty());
         }
 
@@ -407,7 +538,7 @@ mod tests {
                 "goodbye世間".to_string(),
                 "test".to_string(),
             ];
-            let results = search_impl("hello".to_string(), items, None, None);
+            let results = search_impl("hello".to_string(), items, None, None, false);
             assert!(!results.is_empty());
             assert!(results[0].item.contains("hello"));
         }
@@ -424,7 +555,7 @@ mod tests {
                 items in prop::collection::vec("\\PC{1,10}", 1..20),
                 max in 1u32..10
             ) {
-                let results = search_impl(query, items, Some(max), None);
+                let results = search_impl(query, items, Some(max), None, false);
                 prop_assert!(results.len() <= max as usize);
             }
 
@@ -433,7 +564,7 @@ mod tests {
                 query in "\\PC{1,5}",
                 items in prop::collection::vec("\\PC{1,10}", 1..20),
             ) {
-                let results = search_impl(query, items, None, None);
+                let results = search_impl(query, items, None, None, false);
                 for window in results.windows(2) {
                     prop_assert!(
                         window[0].score >= window[1].score,
@@ -450,7 +581,7 @@ mod tests {
                 items in prop::collection::vec("\\PC{1,10}", 1..20),
             ) {
                 let len = items.len();
-                let results = search_impl(query, items, None, None);
+                let results = search_impl(query, items, None, None, false);
                 for r in &results {
                     prop_assert!((r.index as usize) < len, "index {} out of bounds (len={})", r.index, len);
                 }
