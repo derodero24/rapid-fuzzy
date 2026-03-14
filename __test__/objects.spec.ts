@@ -155,3 +155,104 @@ describe('searchObjects', () => {
     }
   });
 });
+
+describe('FuzzyObjectIndex', () => {
+  const { FuzzyObjectIndex } = require('../objects.js');
+
+  const users = [
+    { name: 'John Smith', email: 'john@example.com' },
+    { name: 'Jane Doe', email: 'jane@example.com' },
+    { name: 'Bob Johnson', email: 'bob@example.com' },
+  ];
+
+  it('should construct and report size', () => {
+    const index = new FuzzyObjectIndex(users, { keys: ['name', 'email'] });
+    expect(index.size).toBe(3);
+  });
+
+  it('should search with weighted keys', () => {
+    const index = new FuzzyObjectIndex(users, {
+      keys: [{ name: 'name', weight: 2.0 }, 'email'],
+    });
+    const results = index.search('john');
+    expect(results.length).toBeGreaterThan(0);
+    expect(results[0].item.name).toBe('John Smith');
+    expect(results[0].score).toBeGreaterThan(0);
+    expect(results[0].keyScores.length).toBe(2);
+  });
+
+  it('should find closest match', () => {
+    const index = new FuzzyObjectIndex(users, { keys: ['name'] });
+    const result = index.closest('jane');
+    expect(result).not.toBeNull();
+    expect(result!.name).toBe('Jane Doe');
+  });
+
+  it('should return null from closest when minScore is too high', () => {
+    const index = new FuzzyObjectIndex(users, { keys: ['name'] });
+    const result = index.closest('zzzzz', 0.99);
+    expect(result).toBeNull();
+  });
+
+  it('should support add', () => {
+    const index = new FuzzyObjectIndex(users, { keys: ['name'] });
+    expect(index.size).toBe(3);
+    index.add({ name: 'Alice Wonder', email: 'alice@example.com' });
+    expect(index.size).toBe(4);
+    const results = index.search('alice');
+    expect(results.length).toBeGreaterThan(0);
+    expect(results[0].item.name).toBe('Alice Wonder');
+  });
+
+  it('should support addMany', () => {
+    const index = new FuzzyObjectIndex([], { keys: ['name'] });
+    index.addMany(users);
+    expect(index.size).toBe(3);
+  });
+
+  it('should support remove with swap-remove semantics', () => {
+    const index = new FuzzyObjectIndex(users, { keys: ['name'] });
+    expect(index.remove(1)).toBe(true); // Remove Jane Doe
+    expect(index.size).toBe(2);
+    expect(index.remove(10)).toBe(false); // Out of bounds
+  });
+
+  it('should support destroy', () => {
+    const index = new FuzzyObjectIndex(users, { keys: ['name'] });
+    index.destroy();
+    expect(index.size).toBe(0);
+  });
+
+  it('should support maxResults and minScore options', () => {
+    const index = new FuzzyObjectIndex(users, { keys: ['name'] });
+    const results = index.search('o', { maxResults: 1 });
+    expect(results.length).toBeLessThanOrEqual(1);
+  });
+
+  it('should match searchObjects results for same data', () => {
+    const index = new FuzzyObjectIndex(users, {
+      keys: [{ name: 'name', weight: 2.0 }, 'email'],
+    });
+    const indexResults = index.search('john');
+    const directResults = searchObjects('john', users, {
+      keys: [{ name: 'name', weight: 2.0 }, 'email'],
+    });
+
+    expect(indexResults.length).toBe(directResults.length);
+    for (let i = 0; i < indexResults.length; i++) {
+      expect(indexResults[i].item).toEqual(directResults[i].item);
+      expect(Math.abs(indexResults[i].score - directResults[i].score)).toBeLessThan(0.001);
+    }
+  });
+
+  it('should support nested key paths', () => {
+    const data = [
+      { user: { name: 'Alice' }, id: 1 },
+      { user: { name: 'Bob' }, id: 2 },
+    ];
+    const index = new FuzzyObjectIndex(data, { keys: ['user.name'] });
+    const results = index.search('alice');
+    expect(results.length).toBeGreaterThan(0);
+    expect(results[0].item.user.name).toBe('Alice');
+  });
+});

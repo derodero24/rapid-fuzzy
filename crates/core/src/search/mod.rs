@@ -1,7 +1,9 @@
 mod index;
+mod keyed_index;
 mod keys;
 
 pub use index::FuzzyIndex;
+pub use keyed_index::KeyedFuzzyIndex;
 pub use keys::search_keys;
 
 use std::cell::RefCell;

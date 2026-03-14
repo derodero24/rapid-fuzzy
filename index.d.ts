@@ -5,6 +5,8 @@
  *
  * Holds items in memory on the Rust side, avoiding repeated FFI overhead
  * for applications that search the same dataset multiple times.
+ * Pre-computes Utf32String representations for each item, eliminating
+ * per-search string conversion overhead.
  * Memory is freed when the JavaScript garbage collector collects the instance
  * or when `destroy()` is called explicitly.
  */
@@ -35,6 +37,56 @@ export declare class FuzzyIndex {
    * Remove the item at the given index.
    *
    * Returns false if the index is out of bounds.
+   */
+  remove(index: number): boolean
+  /** Free the internal data. After calling this, the index is empty. */
+  destroy(): void
+}
+
+/**
+ * A persistent multi-key fuzzy search index backed by Rust-side data.
+ *
+ * Holds key text arrays and weights in memory on the Rust side,
+ * avoiding repeated FFI overhead for applications that search the
+ * same dataset multiple times with multiple keys.
+ * Pre-computes Utf32String representations and reuses the Matcher
+ * instance for optimal repeated-search performance.
+ *
+ * Typically wrapped by a JS-side `FuzzyObjectIndex` class that maps
+ * results back to original objects.
+ */
+export declare class KeyedFuzzyIndex {
+  /**
+   * Create a new KeyedFuzzyIndex.
+   *
+   * `key_texts[k]` is an array of strings for key `k`, one per item.
+   * All inner arrays must have the same length (the number of items).
+   */
+  constructor(keyTexts: Array<Array<string>>, weights: Array<number>)
+  /** Return the number of items in the index. */
+  get size(): number
+  /**
+   * Search the index for items matching the query.
+   *
+   * Returns results sorted by combined weighted score (best match first).
+   */
+  search(query: string, options?: SearchOptions | undefined | null): Array<KeySearchResult>
+  /**
+   * Add a single item to the index.
+   *
+   * `key_values` must have the same length as the number of keys.
+   */
+  add(keyValues: Array<string>): void
+  /**
+   * Add multiple items to the index at once.
+   *
+   * Each element of `items_key_values` is an array of key values for one item.
+   */
+  addMany(itemsKeyValues: Array<Array<string>>): void
+  /**
+   * Remove the item at the given index.
+   *
+   * Uses swap-remove for O(1) performance. Returns false if out of bounds.
    */
   remove(index: number): boolean
   /** Free the internal data. After calling this, the index is empty. */
