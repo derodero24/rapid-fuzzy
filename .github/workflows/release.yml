@@ -2,7 +2,7 @@ name: Release
 
 on:
   push:
-    branches: [develop]
+    branches: [develop, main]
   workflow_dispatch:
 
 concurrency:
@@ -15,10 +15,10 @@ permissions:
   id-token: write
 
 jobs:
-  # On push to develop: create or update Version Packages PR via changesets
+  # ──── On develop push: version packages and create release PR to main ────
   version:
     name: Version
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -29,19 +29,69 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
 
-      - name: Create Release Pull Request
-        uses: changesets/action@v1
-        with:
-          version: pnpm changeset version
-          commit: 'chore(release): version packages'
-          title: 'chore(release): version packages'
+      - name: Check for changesets
+        id: changesets
+        run: |
+          COUNT=$(find .changeset -name '*.md' ! -name 'README.md' 2>/dev/null | wc -l | tr -d ' ')
+          echo "count=$COUNT" >> $GITHUB_OUTPUT
+
+      - name: Version packages and create release PR
+        if: steps.changesets.outputs.count != '0'
+        run: |
+          pnpm changeset version
+          VERSION=$(node -p "require('./package.json').version")
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "chore(release): version packages for v${VERSION}"
+          git push origin develop
+
+          EXISTING=$(gh pr list --base main --head develop --json number --jq '.[0].number')
+          if [ -n "$EXISTING" ]; then
+            gh pr edit "$EXISTING" --title "chore(release): release v${VERSION}"
+            echo "Updated existing release PR #${EXISTING}"
+          else
+            gh pr create --base main --head develop \
+              --title "chore(release): release v${VERSION}" \
+              --body "$(printf '## Release v%s\n\nMerging this PR will:\n1. Build native binaries for all 9 platforms\n2. Publish to npm with provenance\n\n### Changelog\n\n```\n%s\n```' "$VERSION" "$(head -30 CHANGELOG.md)")"
+            echo "Created release PR for v${VERSION}"
+          fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # On workflow_dispatch: build native binaries for all platforms
+  # ──── On main push: check if publish is needed ────
+  check:
+    name: Check Version
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    outputs:
+      should_publish: ${{ steps.check.outputs.should_publish }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+
+      - name: Check if version is already published
+        id: check
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if npm view "rapid-fuzzy@${VERSION}" version 2>/dev/null; then
+            echo "Version ${VERSION} already published, skipping"
+            echo "should_publish=false" >> $GITHUB_OUTPUT
+          else
+            echo "Version ${VERSION} not yet published, proceeding"
+            echo "should_publish=true" >> $GITHUB_OUTPUT
+          fi
+
+  # ──── Build native binaries for all platforms ────
   build:
     name: Build - ${{ matrix.settings.target }}
-    if: github.event_name == 'workflow_dispatch'
+    needs: check
+    if: needs.check.outputs.should_publish == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -130,11 +180,11 @@ jobs:
             wasi-worker*.mjs
           if-no-files-found: error
 
-  # Publish to npm after all builds succeed
+  # ──── Publish to npm after all builds succeed ────
   publish:
     name: Publish
-    needs: build
-    if: github.event_name == 'workflow_dispatch'
+    needs: [check, build]
+    if: needs.check.outputs.should_publish == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -171,8 +221,3 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Fast-forward main
-        run: |
-          git fetch origin main
-          git push origin develop:main
