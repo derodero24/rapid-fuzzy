@@ -1,6 +1,8 @@
 mod index;
+mod keys;
 
 pub use index::FuzzyIndex;
+pub use keys::search_keys;
 
 use napi::Either;
 use napi_derive::napi;
