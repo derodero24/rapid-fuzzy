@@ -1,5 +1,20 @@
 # rapid-fuzzy
 
+## 0.6.0
+
+### Minor Changes
+
+- 541c6a6: Add `serialize()` and `FuzzyIndex.deserialize()` for prebuilt index persistence
+
+### Patch Changes
+
+- b48e501: Add character-presence pre-filter to FuzzyIndex to skip non-matching items before scoring, reducing search time by ~2x
+- ac0fcd8: Add incremental search cache to FuzzyIndex for faster keystroke-by-keystroke autocomplete
+- d17701f: Validate key count in KeyedFuzzyIndex.add() and addMany() to prevent index corruption and Node.js crashes
+- 9376569: Add uFuzzy competitor and 50K dataset to search benchmarks
+- 38dd449: Reuse Matcher via thread-local storage in standalone search and closest to avoid per-call allocation overhead
+- 86d6bcd: Use quickselect for top-k selection and add length-based tiebreaker for better ranking differentiation
+
 ## 0.5.0
 
 ### Minor Changes
