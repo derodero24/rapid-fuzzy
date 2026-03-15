@@ -10,6 +10,8 @@
 
 Blazing-fast fuzzy search for JavaScript — powered by Rust, works everywhere.
 
+<img src=".github/assets/demo.svg" alt="rapid-fuzzy demo — fuzzy search, query syntax, FuzzyIndex, and string distance" width="580" />
+
 ## Features
 
 - **Fast**: Up to 7,000x faster than fuse.js with FuzzyIndex (Rust + napi-rs)
