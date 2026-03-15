@@ -57,6 +57,13 @@ pub(crate) fn resolve_case_matching(is_case_sensitive: Option<bool>) -> CaseMatc
     }
 }
 
+thread_local! {
+    /// Reusable Matcher for standalone search/closest calls.
+    /// Avoids allocating internal scoring matrices on every invocation.
+    /// FuzzyIndex has its own Matcher, so this is only for the standalone path.
+    static STANDALONE_MATCHER: RefCell<Matcher> = RefCell::new(Matcher::new(Config::DEFAULT));
+}
+
 /// Shared search logic over a borrowed slice of items.
 ///
 /// Both the standalone `search_impl` and `FuzzyIndex::search_impl` delegate
@@ -73,72 +80,145 @@ pub(crate) fn search_over_items(
         return Vec::new();
     }
 
-    let mut matcher = Matcher::new(Config::DEFAULT);
-    let pattern = Pattern::parse(query, case_matching, Normalization::Smart);
-    let max_score = compute_max_score(query, &pattern, &mut matcher);
-    let threshold = min_score.unwrap_or(0.0);
+    STANDALONE_MATCHER.with(|cell| {
+        let mut matcher = cell.borrow_mut();
+        let pattern = Pattern::parse(query, case_matching, Normalization::Smart);
+        let max_score = compute_max_score(query, &pattern, &mut matcher);
+        let threshold = min_score.unwrap_or(0.0);
 
-    let mut buf = Vec::new();
+        let mut buf = Vec::new();
 
-    // Pass 1: Score all items, collect (index, score) only — no String cloning.
-    let mut scored: Vec<(u32, f64)> = items
-        .iter()
-        .enumerate()
-        .filter_map(|(index, item)| {
-            buf.clear();
-            let atoms = nucleo_matcher::Utf32Str::new(item, &mut buf);
-            let raw_score = pattern.score(atoms, &mut matcher)?;
-            let normalized = (raw_score as f64 / max_score).min(1.0);
-            if normalized >= threshold {
-                Some((index as u32, normalized))
-            } else {
-                None
-            }
-        })
-        .collect();
-
-    scored.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-
-    if let Some(max) = max_results {
-        scored.truncate(max as usize);
-    }
-
-    // Pass 2: Construct results only for the final top-k items.
-    scored
-        .into_iter()
-        .map(|(index, score)| {
-            let positions = if include_positions {
+        // Pass 1: Score all items, collect (index, score) only — no String cloning.
+        let mut scored: Vec<(u32, f64)> = items
+            .iter()
+            .enumerate()
+            .filter_map(|(index, item)| {
                 buf.clear();
-                let atoms = nucleo_matcher::Utf32Str::new(&items[index as usize], &mut buf);
-                let mut indices = Vec::new();
-                pattern.indices(atoms, &mut matcher, &mut indices);
-                indices.sort_unstable();
-                indices.dedup();
-                indices
-            } else {
-                Vec::new()
-            };
+                let atoms = nucleo_matcher::Utf32Str::new(item, &mut buf);
+                let raw_score = pattern.score(atoms, &mut matcher)?;
+                let normalized = (raw_score as f64 / max_score).min(1.0);
+                if normalized >= threshold {
+                    Some((index as u32, normalized))
+                } else {
+                    None
+                }
+            })
+            .collect();
 
-            SearchResult {
-                item: items[index as usize].clone(),
-                score,
-                index,
-                positions,
+        // Sort by score descending, with shorter items first as tiebreaker,
+        // then by original index for fully deterministic ordering.
+        let cmp = |a: &(u32, f64), b: &(u32, f64)| {
+            let score_ord = b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal);
+            if score_ord != std::cmp::Ordering::Equal {
+                return score_ord;
             }
-        })
-        .collect()
+            let len_ord = items[a.0 as usize]
+                .chars()
+                .count()
+                .cmp(&items[b.0 as usize].chars().count());
+            if len_ord != std::cmp::Ordering::Equal {
+                return len_ord;
+            }
+            a.0.cmp(&b.0)
+        };
+
+        // Top-k selection: use quickselect O(n) + sort O(k log k) instead of
+        // full sort O(n log n) when maxResults is set.
+        if let Some(max) = max_results {
+            let k = max as usize;
+            if scored.len() > k {
+                scored.select_nth_unstable_by(k, cmp);
+                scored.truncate(k);
+            }
+        }
+        scored.sort_unstable_by(cmp);
+
+        // Pass 2: Construct results only for the final top-k items.
+        scored
+            .into_iter()
+            .map(|(index, score)| {
+                let positions = if include_positions {
+                    buf.clear();
+                    let atoms = nucleo_matcher::Utf32Str::new(&items[index as usize], &mut buf);
+                    let mut indices = Vec::new();
+                    pattern.indices(atoms, &mut matcher, &mut indices);
+                    indices.sort_unstable();
+                    indices.dedup();
+                    indices
+                } else {
+                    Vec::new()
+                };
+
+                SearchResult {
+                    item: items[index as usize].clone(),
+                    score,
+                    index,
+                    positions,
+                }
+            })
+            .collect()
+    })
 }
 
 /// Pre-computed search context for FuzzyIndex.
 pub(crate) struct PrecomputedSearch<'a> {
     pub items: &'a [String],
     pub utf32_items: &'a [Utf32String],
+    pub char_masks: &'a [u64],
+    /// Optional subset of item indices to search (for incremental narrowing).
+    /// When `None`, all items are searched.
+    pub candidate_indices: Option<&'a [u32]>,
     pub matcher: &'a RefCell<Matcher>,
+}
+
+/// Compute a character-presence bitmask for quick pre-filtering.
+///
+/// Bit layout: 0–25 = a–z (case-insensitive), 26–35 = 0–9.
+/// Characters outside this range are ignored (conservative — no false negatives).
+pub(crate) fn compute_char_mask(s: &str) -> u64 {
+    let mut mask = 0u64;
+    for c in s.chars() {
+        let bit = match c {
+            'a'..='z' => Some(c as u32 - 'a' as u32),
+            'A'..='Z' => Some(c as u32 - 'A' as u32),
+            '0'..='9' => Some(26 + c as u32 - '0' as u32),
+            _ => None,
+        };
+        if let Some(b) = bit {
+            mask |= 1u64 << b;
+        }
+    }
+    mask
+}
+
+/// Extract a character-presence bitmask from a query string, considering
+/// only positive (non-inverted) terms. Inverted terms (`!term`) and
+/// syntax prefixes/suffixes (`^`, `'`, `$`) are stripped.
+pub(crate) fn compute_query_mask(query: &str) -> u64 {
+    let mut mask = 0u64;
+    for term in query.split_whitespace() {
+        if term.starts_with('!') {
+            continue;
+        }
+        let term = term.trim_start_matches(['^', '\'']);
+        let term = term.trim_end_matches('$');
+        mask |= compute_char_mask(term);
+    }
+    mask
+}
+
+/// Result of `search_over_precomputed`: the top-k results plus all matching indices.
+pub(crate) struct PrecomputedSearchResult {
+    /// Top-k search results (sorted, truncated).
+    pub results: Vec<SearchResult>,
+    /// Indices of ALL items that matched (before truncation), for incremental cache.
+    pub all_matching_indices: Vec<u32>,
 }
 
 /// Search over pre-computed Utf32String items with a reusable Matcher.
 ///
 /// Used by FuzzyIndex to avoid per-search string conversion and Matcher allocation.
+/// When `ctx.candidate_indices` is set, only those items are scored (incremental search).
 pub(crate) fn search_over_precomputed(
     query: &str,
     ctx: &PrecomputedSearch<'_>,
@@ -146,43 +226,85 @@ pub(crate) fn search_over_precomputed(
     min_score: Option<f64>,
     include_positions: bool,
     case_matching: CaseMatching,
-) -> Vec<SearchResult> {
+) -> PrecomputedSearchResult {
     let items = ctx.items;
     let utf32_items = ctx.utf32_items;
     let matcher_cell = ctx.matcher;
     if query.is_empty() || items.is_empty() {
-        return Vec::new();
+        return PrecomputedSearchResult {
+            results: Vec::new(),
+            all_matching_indices: Vec::new(),
+        };
     }
 
     let mut matcher = matcher_cell.borrow_mut();
     let pattern = Pattern::parse(query, case_matching, Normalization::Smart);
     let max_score = compute_max_score(query, &pattern, &mut matcher);
     let threshold = min_score.unwrap_or(0.0);
+    let query_mask = compute_query_mask(query);
+    let char_masks = ctx.char_masks;
 
-    // Pass 1: Score all items, collect (index, score) only — no String cloning.
-    let mut scored: Vec<(u32, f64)> = utf32_items
-        .iter()
-        .enumerate()
-        .filter_map(|(index, utf32_item)| {
-            let atoms = utf32_item.slice(..);
-            let raw_score = pattern.score(atoms, &mut matcher)?;
-            let normalized = (raw_score as f64 / max_score).min(1.0);
-            if normalized >= threshold {
-                Some((index as u32, normalized))
-            } else {
-                None
-            }
-        })
-        .collect();
+    // Scoring closure shared by both full-scan and candidate paths.
+    let mut score_item = |index: u32| -> Option<(u32, f64)> {
+        let idx = index as usize;
+        if query_mask != 0 && (char_masks[idx] & query_mask) != query_mask {
+            return None;
+        }
+        let atoms = utf32_items[idx].slice(..);
+        let raw_score = pattern.score(atoms, &mut matcher)?;
+        let normalized = (raw_score as f64 / max_score).min(1.0);
+        if normalized >= threshold {
+            Some((index, normalized))
+        } else {
+            None
+        }
+    };
 
-    scored.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    // Pass 1: Score items. Use candidate_indices if provided (incremental search).
+    let mut scored: Vec<(u32, f64)> = match ctx.candidate_indices {
+        Some(candidates) => candidates.iter().filter_map(|&i| score_item(i)).collect(),
+        None => (0..utf32_items.len() as u32)
+            .filter_map(&mut score_item)
+            .collect(),
+    };
 
+    // Collect matching indices for incremental cache, but only when the match set
+    // is meaningfully smaller than the full dataset. When most items match (e.g.,
+    // short queries), the cache overhead outweighs the narrowing benefit.
+    let total = utf32_items.len();
+    let all_matching_indices: Vec<u32> = if total > 0 && scored.len() < total / 2 {
+        scored.iter().map(|&(index, _)| index).collect()
+    } else {
+        Vec::new()
+    };
+
+    // Sort by score descending, with shorter items first as tiebreaker,
+    // then by original index for fully deterministic ordering.
+    let cmp = |a: &(u32, f64), b: &(u32, f64)| {
+        let score_ord = b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal);
+        if score_ord != std::cmp::Ordering::Equal {
+            return score_ord;
+        }
+        let len_ord = items[a.0 as usize].len().cmp(&items[b.0 as usize].len());
+        if len_ord != std::cmp::Ordering::Equal {
+            return len_ord;
+        }
+        a.0.cmp(&b.0)
+    };
+
+    // Top-k selection: use quickselect O(n) + sort O(k log k) instead of
+    // full sort O(n log n) when maxResults is set.
     if let Some(max) = max_results {
-        scored.truncate(max as usize);
+        let k = max as usize;
+        if scored.len() > k {
+            scored.select_nth_unstable_by(k, cmp);
+            scored.truncate(k);
+        }
     }
+    scored.sort_unstable_by(cmp);
 
     // Pass 2: Construct results only for the final top-k items.
-    scored
+    let results = scored
         .into_iter()
         .map(|(index, score)| {
             let positions = if include_positions {
@@ -203,7 +325,12 @@ pub(crate) fn search_over_precomputed(
                 positions,
             }
         })
-        .collect()
+        .collect();
+
+    PrecomputedSearchResult {
+        results,
+        all_matching_indices,
+    }
 }
 
 /// Internal search implementation used by both the napi export and tests.

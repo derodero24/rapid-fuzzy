@@ -7,7 +7,10 @@ on:
       - '**/*.ts'
       - '**/*.js'
       - '**/*.json'
+      - '**/*.rs'
       - 'pnpm-lock.yaml'
+      - '**/Cargo.toml'
+      - '**/Cargo.lock'
       - '.github/workflows/codeql.yml'
   pull_request:
     branches: [develop]
@@ -15,7 +18,10 @@ on:
       - '**/*.ts'
       - '**/*.js'
       - '**/*.json'
+      - '**/*.rs'
       - 'pnpm-lock.yaml'
+      - '**/Cargo.toml'
+      - '**/Cargo.lock'
       - '.github/workflows/codeql.yml'
   schedule:
     - cron: '0 6 * * 1' # Weekly Monday 6 AM UTC
@@ -31,17 +37,24 @@ concurrency:
 
 jobs:
   analyze:
-    name: Analyze
+    name: Analyze (${{ matrix.language }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ['javascript-typescript', 'rust']
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4
+        if: matrix.language == 'javascript-typescript'
       - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+        if: matrix.language == 'javascript-typescript'
         with:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+        if: matrix.language == 'javascript-typescript'
       - uses: github/codeql-action/init@0d579ffd059c29b07949a3cce3983f0780820c98 # v4
         with:
-          languages: javascript-typescript
+          languages: ${{ matrix.language }}
       - uses: github/codeql-action/analyze@0d579ffd059c29b07949a3cce3983f0780820c98 # v4

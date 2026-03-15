@@ -112,9 +112,14 @@ test.describe('search', () => {
   test('search returns sorted results', async ({ page }) => {
     const results = await page.evaluate(() => window.__results.search);
     expect(results.length).toBeGreaterThan(0);
-    expect(results[0].item).toBe('TypeScript');
+    // First result should be one of the "Type*" prefix matches
+    expect(results[0].item).toMatch(/^Type/);
     expect(results[0]).toHaveProperty('score');
     expect(results[0]).toHaveProperty('index');
+    // Results should be sorted by score descending
+    for (let i = 1; i < results.length; i++) {
+      expect(results[i].score).toBeLessThanOrEqual(results[i - 1].score);
+    }
   });
 
   test('search returns empty for empty query', async ({ page }) => {

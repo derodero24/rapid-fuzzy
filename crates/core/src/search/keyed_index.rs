@@ -157,24 +157,38 @@ impl KeyedFuzzyIndex {
     /// Add a single item to the index.
     ///
     /// `key_values` must have the same length as the number of keys.
+    /// Throws if the length does not match.
     #[napi]
-    pub fn add(&mut self, key_values: Vec<String>) {
-        for (k, value) in key_values.into_iter().enumerate() {
-            if k < self.key_texts.len() {
-                self.utf32_keys[k].push(Utf32String::from(value.as_str()));
-                self.key_texts[k].push(value);
-            }
-        }
+    pub fn add(&mut self, key_values: Vec<String>) -> napi::Result<()> {
+        self.add_impl(key_values).map_err(napi::Error::from_reason)
     }
 
     /// Add multiple items to the index at once.
     ///
     /// Each element of `items_key_values` is an array of key values for one item.
+    /// Throws if any element has the wrong number of key values.
     #[napi]
-    pub fn add_many(&mut self, items_key_values: Vec<Vec<String>>) {
+    pub fn add_many(&mut self, items_key_values: Vec<Vec<String>>) -> napi::Result<()> {
         for key_values in items_key_values {
-            self.add(key_values);
+            self.add_impl(key_values)
+                .map_err(napi::Error::from_reason)?;
         }
+        Ok(())
+    }
+
+    fn add_impl(&mut self, key_values: Vec<String>) -> Result<(), String> {
+        let num_keys = self.key_texts.len();
+        if key_values.len() != num_keys {
+            return Err(format!(
+                "Expected {num_keys} key values, got {}",
+                key_values.len()
+            ));
+        }
+        for (k, value) in key_values.into_iter().enumerate() {
+            self.utf32_keys[k].push(Utf32String::from(value.as_str()));
+            self.key_texts[k].push(value);
+        }
+        Ok(())
     }
 
     /// Remove the item at the given index.
@@ -243,14 +257,47 @@ mod tests {
     #[test]
     fn test_add_and_search() {
         let mut index = make_index();
-        index.add(vec![
-            "John Wick".to_string(),
-            "wick@example.com".to_string(),
-        ]);
+        index
+            .add_impl(vec![
+                "John Wick".to_string(),
+                "wick@example.com".to_string(),
+            ])
+            .unwrap();
         assert_eq!(index.size(), 4);
 
         let results = index.search("wick".to_string(), None);
         assert!(!results.is_empty());
+    }
+
+    #[test]
+    fn test_add_wrong_key_count() {
+        let mut index = make_index(); // 2 keys
+
+        // Too few keys
+        let result = index.add_impl(vec!["only_one".to_string()]);
+        assert!(result.is_err());
+        assert_eq!(index.size(), 3); // Unchanged
+
+        // Too many keys
+        let result = index.add_impl(vec!["a".into(), "b".into(), "c".into()]);
+        assert!(result.is_err());
+        assert_eq!(index.size(), 3); // Unchanged
+    }
+
+    #[test]
+    fn test_add_many_validates_key_count() {
+        let mut index = make_index();
+
+        // Correct keys
+        index
+            .add_impl(vec!["Alice".into(), "alice@example.com".into()])
+            .unwrap();
+        assert_eq!(index.size(), 4);
+
+        // Wrong count is rejected
+        let result = index.add_impl(vec!["Bad".into()]);
+        assert!(result.is_err());
+        assert_eq!(index.size(), 4); // Unchanged
     }
 
     #[test]

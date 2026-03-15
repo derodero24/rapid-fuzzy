@@ -30,10 +30,23 @@ describe.skipIf(!wasmExists)('wasm', () => {
         'normalizedLevenshtein',
         'normalizedLevenshteinBatch',
         'normalizedLevenshteinMany',
+        'partialRatio',
+        'partialRatioBatch',
+        'partialRatioMany',
         'search',
+        'searchKeys',
         'sorensenDice',
         'sorensenDiceBatch',
         'sorensenDiceMany',
+        'tokenSetRatio',
+        'tokenSetRatioBatch',
+        'tokenSetRatioMany',
+        'tokenSortRatio',
+        'tokenSortRatioBatch',
+        'tokenSortRatioMany',
+        'weightedRatio',
+        'weightedRatioBatch',
+        'weightedRatioMany',
       ];
 
       for (const name of expectedExports) {
@@ -80,6 +93,37 @@ describe.skipIf(!wasmExists)('wasm', () => {
     it('sorensenDice', () => {
       expect(wasm.sorensenDice('hello', 'hello')).toBe(1.0);
       const score = wasm.sorensenDice('hello', 'world');
+      expect(score).toBeGreaterThanOrEqual(0);
+      expect(score).toBeLessThanOrEqual(1);
+    });
+
+    it('tokenSortRatio', () => {
+      expect(wasm.tokenSortRatio('hello world', 'hello world')).toBe(1.0);
+      expect(wasm.tokenSortRatio('world hello', 'hello world')).toBe(1.0);
+      const score = wasm.tokenSortRatio('hello', 'world');
+      expect(score).toBeGreaterThanOrEqual(0);
+      expect(score).toBeLessThanOrEqual(1);
+    });
+
+    it('tokenSetRatio', () => {
+      expect(wasm.tokenSetRatio('hello world', 'hello world')).toBe(1.0);
+      expect(wasm.tokenSetRatio('hello', 'hello world')).toBe(1.0);
+      const score = wasm.tokenSetRatio('hello', 'world');
+      expect(score).toBeGreaterThanOrEqual(0);
+      expect(score).toBeLessThanOrEqual(1);
+    });
+
+    it('partialRatio', () => {
+      expect(wasm.partialRatio('hello', 'hello')).toBe(1.0);
+      expect(wasm.partialRatio('hello', 'hello world')).toBe(1.0);
+      const score = wasm.partialRatio('hello', 'world');
+      expect(score).toBeGreaterThanOrEqual(0);
+      expect(score).toBeLessThanOrEqual(1);
+    });
+
+    it('weightedRatio', () => {
+      expect(wasm.weightedRatio('hello', 'hello')).toBe(1.0);
+      const score = wasm.weightedRatio('hello', 'world');
       expect(score).toBeGreaterThanOrEqual(0);
       expect(score).toBeLessThanOrEqual(1);
     });
@@ -138,6 +182,42 @@ describe.skipIf(!wasmExists)('wasm', () => {
       ]);
       expect(result).toEqual([0, 1]);
     });
+
+    it('tokenSortRatioBatch', () => {
+      const result = wasm.tokenSortRatioBatch([
+        ['hello world', 'hello world'],
+        ['hello', 'world'],
+      ]);
+      expect(result).toHaveLength(2);
+      expect(result[0]).toBe(1.0);
+    });
+
+    it('tokenSetRatioBatch', () => {
+      const result = wasm.tokenSetRatioBatch([
+        ['hello world', 'hello world'],
+        ['hello', 'world'],
+      ]);
+      expect(result).toHaveLength(2);
+      expect(result[0]).toBe(1.0);
+    });
+
+    it('partialRatioBatch', () => {
+      const result = wasm.partialRatioBatch([
+        ['hello', 'hello'],
+        ['hello', 'world'],
+      ]);
+      expect(result).toHaveLength(2);
+      expect(result[0]).toBe(1.0);
+    });
+
+    it('weightedRatioBatch', () => {
+      const result = wasm.weightedRatioBatch([
+        ['hello', 'hello'],
+        ['hello', 'world'],
+      ]);
+      expect(result).toHaveLength(2);
+      expect(result[0]).toBe(1.0);
+    });
   });
 
   describe('many functions', () => {
@@ -175,6 +255,31 @@ describe.skipIf(!wasmExists)('wasm', () => {
       const result = wasm.damerauLevenshteinMany('hello', ['hello', 'ehllo']);
       expect(result).toHaveLength(2);
       expect(result[0]).toBe(0);
+    });
+
+    it('tokenSortRatioMany', () => {
+      const result = wasm.tokenSortRatioMany('hello world', ['hello world', 'world hello']);
+      expect(result).toHaveLength(2);
+      expect(result[0]).toBe(1.0);
+      expect(result[1]).toBe(1.0);
+    });
+
+    it('tokenSetRatioMany', () => {
+      const result = wasm.tokenSetRatioMany('hello', ['hello world', 'world']);
+      expect(result).toHaveLength(2);
+      expect(result[0]).toBe(1.0);
+    });
+
+    it('partialRatioMany', () => {
+      const result = wasm.partialRatioMany('hello', ['hello world', 'world']);
+      expect(result).toHaveLength(2);
+      expect(result[0]).toBe(1.0);
+    });
+
+    it('weightedRatioMany', () => {
+      const result = wasm.weightedRatioMany('hello', ['hello', 'world']);
+      expect(result).toHaveLength(2);
+      expect(result[0]).toBe(1.0);
     });
   });
 
@@ -257,6 +362,30 @@ describe.skipIf(!wasmExists)('wasm', () => {
     it('damerauLevenshtein results should match native', () => {
       for (const [a, b] of testPairs) {
         expect(wasm.damerauLevenshtein(a, b)).toBe(native.damerauLevenshtein(a, b));
+      }
+    });
+
+    it('tokenSortRatio results should match native', () => {
+      for (const [a, b] of testPairs) {
+        expect(wasm.tokenSortRatio(a, b)).toBe(native.tokenSortRatio(a, b));
+      }
+    });
+
+    it('tokenSetRatio results should match native', () => {
+      for (const [a, b] of testPairs) {
+        expect(wasm.tokenSetRatio(a, b)).toBe(native.tokenSetRatio(a, b));
+      }
+    });
+
+    it('partialRatio results should match native', () => {
+      for (const [a, b] of testPairs) {
+        expect(wasm.partialRatio(a, b)).toBe(native.partialRatio(a, b));
+      }
+    });
+
+    it('weightedRatio results should match native', () => {
+      for (const [a, b] of testPairs) {
+        expect(wasm.weightedRatio(a, b)).toBe(native.weightedRatio(a, b));
       }
     });
 

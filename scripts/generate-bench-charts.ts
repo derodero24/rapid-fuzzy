@@ -40,9 +40,9 @@ function parseSearchTable(): ChartData {
   const lines = readme.split('\n');
 
   for (const line of lines) {
-    // Match rows: | Small (20 items) | rf | fi | fj | fs |
+    // Match rows: | Small (20 items) | rf | fi | fj | fs | uf |
     const m = line.match(
-      /\|\s*(Small|Medium|Large)\s*\([^)]+\)\s*\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|/,
+      /\|\s*(Small|Medium|Large|XL)\s*\([^)]+\)\s*\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|/,
     );
     if (!m) continue;
 
@@ -51,12 +51,14 @@ function parseSearchTable(): ChartData {
     const fi = parseOps(m[3]);
     const fj = parseOps(m[4]);
     const fs = parseOps(m[5]);
+    const uf = parseOps(m[6]);
 
     const bars: BarEntry[] = [];
     if (rf !== null) bars.push({ label: 'rapid-fuzzy', value: rf });
-    if (fi !== null) bars.push({ label: 'FuzzyIndex', value: fi });
+    if (fi !== null) bars.push({ label: 'rapid-fuzzy (indexed)', value: fi });
     if (fj !== null) bars.push({ label: 'fuse.js', value: fj });
     if (fs !== null) bars.push({ label: 'fuzzysort', value: fs });
+    if (uf !== null) bars.push({ label: 'uFuzzy', value: uf });
 
     groups.push({ groupLabel, bars });
   }
@@ -98,9 +100,10 @@ function parseDistanceTable(): ChartData {
 
 const COLORS: Record<string, string> = {
   'rapid-fuzzy': '#3b82f6',
-  FuzzyIndex: '#60a5fa',
+  'rapid-fuzzy (indexed)': '#60a5fa',
   'fuse.js': '#94a3b8',
   fuzzysort: '#94a3b8',
+  uFuzzy: '#94a3b8',
   'fastest-levenshtein': '#94a3b8',
   leven: '#94a3b8',
   'string-similarity': '#94a3b8',
@@ -118,9 +121,12 @@ function generateSvg(data: ChartData): string {
   const paddingBottom = 24;
 
   // Calculate total height
+  // Each group contributes: 22px (label) + n × (barHeight + barGap) + (groupGap - barGap) trailing
+  const groupLabelHeight = 22;
   let totalBarHeight = 0;
   for (const group of data.groups) {
-    totalBarHeight += group.bars.length * (barHeight + barGap) + groupGap;
+    totalBarHeight +=
+      groupLabelHeight + group.bars.length * (barHeight + barGap) + groupGap - barGap;
   }
 
   const svgWidth = chartWidth + paddingX * 2;
@@ -172,7 +178,7 @@ function generateSvg(data: ChartData): string {
     for (const bar of sorted) {
       const barWidth = Math.max(4, (bar.value / groupMax) * barAreaWidth);
       const color = COLORS[bar.label] ?? '#94a3b8';
-      const isRapidFuzzy = bar.label === 'rapid-fuzzy' || bar.label === 'FuzzyIndex';
+      const isRapidFuzzy = bar.label === 'rapid-fuzzy' || bar.label === 'rapid-fuzzy (indexed)';
       const x = paddingX + labelWidth;
 
       // Label

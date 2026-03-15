@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 520" width="680" height="520">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 798" width="680" height="798">
 <style>
   text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
   .title { font-size: 16px; font-weight: 600; fill: #1f2937; }
@@ -8,47 +8,66 @@
   .bar-value { font-size: 12px; fill: #374151; font-weight: 500; }
   .multiplier { font-size: 11px; fill: #059669; font-weight: 600; }
 </style>
-<rect width="680" height="520" rx="8" fill="#ffffff" />
-<rect x="0.5" y="0.5" width="679" height="519" rx="8" fill="none" stroke="#e5e7eb" />
+<rect width="680" height="798" rx="8" fill="#ffffff" />
+<rect x="0.5" y="0.5" width="679" height="797" rx="8" fill="none" stroke="#e5e7eb" />
 <text x="20" y="28" class="title">Fuzzy Search Performance</text>
 <text x="20" y="44" class="subtitle">ops/s (higher is better)</text>
 <text x="20" y="66" class="group-label">Small</text>
 <text x="172" y="91" class="bar-label" text-anchor="end">fuzzysort</text>
 <rect x="180" y="74" width="460" height="26" rx="4" fill="#94a3b8" opacity="0.6" />
-<text x="632" y="91" class="bar-value" text-anchor="end">2,502,299 ops/s</text>
-<text x="172" y="122" class="bar-label" text-anchor="end">FuzzyIndex</text>
-<rect x="180" y="105" width="74.68481584335046" height="26" rx="4" fill="#60a5fa" opacity="1" />
-<text x="262.68481584335046" y="122" class="bar-value" text-anchor="start">406,269 ops/s</text>
-<text x="172" y="153" class="bar-label" text-anchor="end">rapid-fuzzy</text>
-<rect x="180" y="136" width="32.13585586694476" height="26" rx="4" fill="#3b82f6" opacity="1" />
-<text x="220.13585586694475" y="153" class="bar-value" text-anchor="start">174,812 ops/s</text>
-<text x="172" y="184" class="bar-label" text-anchor="end">fuse.js</text>
-<rect x="180" y="167" width="23.377230299017025" height="26" rx="4" fill="#94a3b8" opacity="0.6" />
-<text x="211.37723029901701" y="184" class="bar-value" text-anchor="start">127,167 ops/s</text>
-<text x="20" y="231" class="group-label">Medium</text>
-<text x="172" y="256" class="bar-label" text-anchor="end">fuzzysort</text>
-<rect x="180" y="239" width="460" height="26" rx="4" fill="#94a3b8" opacity="0.6" />
-<text x="632" y="256" class="bar-value" text-anchor="end">62,845 ops/s</text>
-<text x="172" y="287" class="bar-label" text-anchor="end">FuzzyIndex</text>
-<rect x="180" y="270" width="161.13358262391597" height="26" rx="4" fill="#60a5fa" opacity="1" />
-<text x="349.13358262391597" y="287" class="bar-value" text-anchor="start">22,014 ops/s — 17x vs fuse.js</text>
-<text x="172" y="318" class="bar-label" text-anchor="end">rapid-fuzzy</text>
-<rect x="180" y="301" width="47.80428037234466" height="26" rx="4" fill="#3b82f6" opacity="1" />
-<text x="235.80428037234466" y="318" class="bar-value" text-anchor="start">6,531 ops/s — 17x vs fuse.js</text>
-<text x="172" y="349" class="bar-label" text-anchor="end">fuse.js</text>
-<rect x="180" y="332" width="4" height="26" rx="4" fill="#94a3b8" opacity="0.6" />
-<text x="192" y="349" class="bar-value" text-anchor="start">395 ops/s</text>
-<text x="20" y="396" class="group-label">Large</text>
-<text x="172" y="421" class="bar-label" text-anchor="end">fuzzysort</text>
-<rect x="180" y="404" width="460" height="26" rx="4" fill="#94a3b8" opacity="0.6" />
-<text x="632" y="421" class="bar-value" text-anchor="end">28,846 ops/s</text>
-<text x="172" y="452" class="bar-label" text-anchor="end">FuzzyIndex</text>
-<rect x="180" y="435" width="63.54780558829648" height="26" rx="4" fill="#60a5fa" opacity="1" />
-<text x="251.54780558829648" y="452" class="bar-value" text-anchor="start">3,985 ops/s — 40x vs fuse.js</text>
-<text x="172" y="483" class="bar-label" text-anchor="end">rapid-fuzzy</text>
-<rect x="180" y="466" width="12.661720862511267" height="26" rx="4" fill="#3b82f6" opacity="1" />
-<text x="200.66172086251126" y="483" class="bar-value" text-anchor="start">794 ops/s — 40x vs fuse.js</text>
-<text x="172" y="514" class="bar-label" text-anchor="end">fuse.js</text>
-<rect x="180" y="497" width="4" height="26" rx="4" fill="#94a3b8" opacity="0.6" />
-<text x="192" y="514" class="bar-value" text-anchor="start">20 ops/s</text>
+<text x="632" y="91" class="bar-value" text-anchor="end">2,606,394 ops/s</text>
+<text x="172" y="122" class="bar-label" text-anchor="end">uFuzzy</text>
+<rect x="180" y="105" width="162.91157054535884" height="26" rx="4" fill="#94a3b8" opacity="0.6" />
+<text x="350.9115705453588" y="122" class="bar-value" text-anchor="start">923,069 ops/s</text>
+<text x="172" y="153" class="bar-label" text-anchor="end">rapid-fuzzy (indexed)</text>
+<rect x="180" y="136" width="71.58466448280652" height="26" rx="4" fill="#60a5fa" opacity="1" />
+<text x="259.5846644828065" y="153" class="bar-value" text-anchor="start">405,604 ops/s — 3x vs fuse.js</text>
+<text x="172" y="184" class="bar-label" text-anchor="end">rapid-fuzzy</text>
+<rect x="180" y="167" width="53.64949428213847" height="26" rx="4" fill="#3b82f6" opacity="1" />
+<text x="241.64949428213848" y="184" class="bar-value" text-anchor="start">303,982 ops/s — 3x vs fuse.js</text>
+<text x="172" y="215" class="bar-label" text-anchor="end">fuse.js</text>
+<rect x="180" y="198" width="18.63159599047573" height="26" rx="4" fill="#94a3b8" opacity="0.6" />
+<text x="206.63159599047572" y="215" class="bar-value" text-anchor="start">105,568 ops/s</text>
+<text x="20" y="262" class="group-label">Medium</text>
+<text x="172" y="287" class="bar-label" text-anchor="end">rapid-fuzzy (indexed)</text>
+<rect x="180" y="270" width="460" height="26" rx="4" fill="#60a5fa" opacity="1" />
+<text x="632" y="287" class="bar-value" text-anchor="end" fill="#ffffff">80,579 ops/s — 18x vs fuse.js</text>
+<text x="172" y="318" class="bar-label" text-anchor="end">fuzzysort</text>
+<rect x="180" y="301" width="367.47936807356757" height="26" rx="4" fill="#94a3b8" opacity="0.6" />
+<text x="539.4793680735676" y="318" class="bar-value" text-anchor="end">64,372 ops/s</text>
+<text x="172" y="349" class="bar-label" text-anchor="end">uFuzzy</text>
+<rect x="180" y="332" width="165.28351059208975" height="26" rx="4" fill="#94a3b8" opacity="0.6" />
+<text x="353.2835105920898" y="349" class="bar-value" text-anchor="start">28,953 ops/s</text>
+<text x="172" y="380" class="bar-label" text-anchor="end">rapid-fuzzy</text>
+<rect x="180" y="363" width="38.74483426202857" height="26" rx="4" fill="#3b82f6" opacity="1" />
+<text x="226.74483426202858" y="380" class="bar-value" text-anchor="start">6,787 ops/s — 18x vs fuse.js</text>
+<text x="172" y="411" class="bar-label" text-anchor="end">fuse.js</text>
+<rect x="180" y="394" width="4" height="26" rx="4" fill="#94a3b8" opacity="0.6" />
+<text x="192" y="411" class="bar-value" text-anchor="start">367 ops/s</text>
+<text x="20" y="458" class="group-label">Large</text>
+<text x="172" y="483" class="bar-label" text-anchor="end">rapid-fuzzy (indexed)</text>
+<rect x="180" y="466" width="460" height="26" rx="4" fill="#60a5fa" opacity="1" />
+<text x="632" y="483" class="bar-value" text-anchor="end" fill="#ffffff">136,528 ops/s — 40x vs fuse.js</text>
+<text x="172" y="514" class="bar-label" text-anchor="end">fuzzysort</text>
+<rect x="180" y="497" width="87.97843665768194" height="26" rx="4" fill="#94a3b8" opacity="0.6" />
+<text x="275.9784366576819" y="514" class="bar-value" text-anchor="start">26,112 ops/s</text>
+<text x="172" y="545" class="bar-label" text-anchor="end">uFuzzy</text>
+<rect x="180" y="528" width="21.539757412398924" height="26" rx="4" fill="#94a3b8" opacity="0.6" />
+<text x="209.53975741239893" y="545" class="bar-value" text-anchor="start">6,393 ops/s</text>
+<text x="172" y="576" class="bar-label" text-anchor="end">rapid-fuzzy</text>
+<rect x="180" y="559" width="4" height="26" rx="4" fill="#3b82f6" opacity="1" />
+<text x="192" y="576" class="bar-value" text-anchor="start">751 ops/s — 40x vs fuse.js</text>
+<text x="172" y="607" class="bar-label" text-anchor="end">fuse.js</text>
+<rect x="180" y="590" width="4" height="26" rx="4" fill="#94a3b8" opacity="0.6" />
+<text x="192" y="607" class="bar-value" text-anchor="start">19 ops/s</text>
+<text x="20" y="654" class="group-label">XL</text>
+<text x="172" y="679" class="bar-label" text-anchor="end">rapid-fuzzy (indexed)</text>
+<rect x="180" y="662" width="460" height="26" rx="4" fill="#60a5fa" opacity="1" />
+<text x="632" y="679" class="bar-value" text-anchor="end" fill="#ffffff">31,903 ops/s</text>
+<text x="172" y="710" class="bar-label" text-anchor="end">fuzzysort</text>
+<rect x="180" y="693" width="85.30106886499702" height="26" rx="4" fill="#94a3b8" opacity="0.6" />
+<text x="273.30106886499703" y="710" class="bar-value" text-anchor="start">5,916 ops/s</text>
+<text x="172" y="741" class="bar-label" text-anchor="end">uFuzzy</text>
+<rect x="180" y="724" width="18.628969062470613" height="26" rx="4" fill="#94a3b8" opacity="0.6" />
+<text x="206.62896906247062" y="741" class="bar-value" text-anchor="start">1,292 ops/s</text>
 </svg>
