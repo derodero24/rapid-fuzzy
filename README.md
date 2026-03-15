@@ -8,9 +8,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D20.0.0-brightgreen)](https://nodejs.org/)
 
-Rust-powered fuzzy search and string distance for JavaScript/TypeScript.
-
-> **Status**: Early release (v0.x). API may change between minor versions.
+Blazing-fast fuzzy search for JavaScript — powered by Rust, works everywhere.
 
 ## Features
 
@@ -19,6 +17,24 @@ Rust-powered fuzzy search and string distance for JavaScript/TypeScript.
 - **Zero JS dependencies**: Pure Rust core with napi-rs bindings
 - **Type-safe**: Full TypeScript support with auto-generated type definitions
 - **Drop-in**: API compatible with popular fuzzy search libraries
+
+## Quick Start
+
+```typescript
+import { search } from 'rapid-fuzzy';
+
+const results = search('typscript', ['TypeScript', 'JavaScript', 'Python']);
+// → [{ item: 'TypeScript', score: 0.85, index: 0 }, ...]
+```
+
+For repeated searches, use `FuzzyIndex` for up to 182x faster lookups:
+
+```typescript
+import { FuzzyIndex } from 'rapid-fuzzy';
+
+const index = new FuzzyIndex(['TypeScript', 'JavaScript', 'Python', ...]);
+index.search('typscript'); // sub-millisecond with incremental cache
+```
 
 ## Installation
 
@@ -33,17 +49,7 @@ pnpm add rapid-fuzzy
 - **Node.js** (>=20): Uses native bindings via napi-rs for best performance.
 - **Browser / Deno / Bun**: Falls back to a WASM build automatically.
 
-## Usage
-
-### String Distance
-
-```typescript
-import { levenshtein, jaroWinkler, sorensenDice } from 'rapid-fuzzy';
-
-levenshtein('kitten', 'sitting');     // 3
-jaroWinkler('MARTHA', 'MARHTA');      // 0.961
-sorensenDice('night', 'nacht');       // 0.25
-```
+> **Note**: rapid-fuzzy is pre-1.0 — the API is stable but minor versions may include additions.
 
 ### Fuzzy Search
 
@@ -79,6 +85,16 @@ closest('tsc', ['TypeScript', 'JavaScript', 'Python']);
 // With minimum score threshold (returns null if no match is good enough)
 closest('xyz', items, 0.5);
 // → null
+```
+
+### String Distance
+
+```typescript
+import { levenshtein, jaroWinkler, sorensenDice } from 'rapid-fuzzy';
+
+levenshtein('kitten', 'sitting');     // 3
+jaroWinkler('MARTHA', 'MARHTA');      // 0.961
+sorensenDice('night', 'nacht');       // 0.25
 ```
 
 ### Query Syntax
@@ -231,6 +247,27 @@ levenshteinMany('kitten', ['sitting', 'kittens', 'kitchen']);
 
 > **Tip**: Prefer batch/many variants over calling single-pair functions in a loop — they are significantly faster for multiple comparisons.
 
+## Choosing an Algorithm
+
+| Use case | Recommended | Why |
+|---|---|---|
+| Typo detection / spell check | `levenshtein`, `damerauLevenshtein` | Counts edits; Damerau adds transposition support |
+| Name / address matching | `jaroWinkler`, `tokenSortRatio` | Prefix-weighted or order-independent matching |
+| Document / text similarity | `sorensenDice` | Bigram-based; handles longer text well |
+| Normalized comparison (0–1) | `normalizedLevenshtein` | Length-independent similarity score |
+| Reordered words / messy data | `tokenSortRatio`, `tokenSetRatio` | Handles word order differences and extra tokens |
+| Substring / abbreviation matching | `partialRatio` | Finds best partial match within longer strings |
+| Best-effort similarity | `weightedRatio` | Picks the best score across all methods automatically |
+| Interactive fuzzy search | `search`, `closest` | Nucleo algorithm (same as Helix editor) |
+| Repeated search on same data | `FuzzyIndex`, `FuzzyObjectIndex` | Persistent Rust-side index with incremental cache, up to 182x faster |
+
+**Return types:**
+
+- `levenshtein`, `damerauLevenshtein` → integer (edit count)
+- `jaro`, `jaroWinkler`, `sorensenDice`, `normalizedLevenshtein` → float between 0.0 (no match) and 1.0 (identical)
+- `tokenSortRatio`, `tokenSetRatio`, `partialRatio`, `weightedRatio` → float between 0.0 and 1.0
+- `search` → array of `{ item, score, index, positions }` sorted by relevance (score: 0.0–1.0)
+
 ## Benchmarks
 
 Measured on Apple M-series with Node.js v22 using [Vitest bench](https://vitest.dev/guide/features.html#benchmarking). Each benchmark processes 6 realistic string pairs of varying length and similarity.
@@ -294,45 +331,24 @@ pnpm run bench        # JavaScript benchmarks
 cargo bench           # Rust internal benchmarks
 ```
 
-## Choosing an Algorithm
-
-| Use case | Recommended | Why |
-|---|---|---|
-| Typo detection / spell check | `levenshtein`, `damerauLevenshtein` | Counts edits; Damerau adds transposition support |
-| Name / address matching | `jaroWinkler`, `tokenSortRatio` | Prefix-weighted or order-independent matching |
-| Document / text similarity | `sorensenDice` | Bigram-based; handles longer text well |
-| Normalized comparison (0–1) | `normalizedLevenshtein` | Length-independent similarity score |
-| Reordered words / messy data | `tokenSortRatio`, `tokenSetRatio` | Handles word order differences and extra tokens |
-| Substring / abbreviation matching | `partialRatio` | Finds best partial match within longer strings |
-| Best-effort similarity | `weightedRatio` | Picks the best score across all methods automatically |
-| Interactive fuzzy search | `search`, `closest` | Nucleo algorithm (same as Helix editor) |
-| Repeated search on same data | `FuzzyIndex`, `FuzzyObjectIndex` | Persistent Rust-side index with incremental cache, up to 182x faster |
-
-**Return types:**
-
-- `levenshtein`, `damerauLevenshtein` → integer (edit count)
-- `jaro`, `jaroWinkler`, `sorensenDice`, `normalizedLevenshtein` → float between 0.0 (no match) and 1.0 (identical)
-- `tokenSortRatio`, `tokenSetRatio`, `partialRatio`, `weightedRatio` → float between 0.0 and 1.0
-- `search` → array of `{ item, score, index, positions }` sorted by relevance (score: 0.0–1.0)
-
 ## Why rapid-fuzzy?
 
-| | rapid-fuzzy | fuse.js | fastest-levenshtein | fuzzysort |
-|---|:---:|:---:|:---:|:---:|
-| **Algorithms** | 9 (Levenshtein, Jaro, Dice, …) | Bitap | Levenshtein | Substring |
-| **Runtime** | Rust native + WASM | Pure JS | Pure JS | Pure JS |
-| **Object search** | ✅ weighted keys | ✅ | — | ✅ |
-| **Persistent index** | ✅ FuzzyIndex / FuzzyObjectIndex | — | — | ✅ prepared targets |
-| **Query syntax** | ✅ exclude, prefix, suffix, exact | ✅ extended search | — | — |
-| **Out-of-order matching** | ✅ automatic | — | — | — |
-| **Diacritics** | ✅ automatic | ✅ option | — | ✅ auto |
-| **Score threshold** | ✅ | ✅ | — | ✅ |
-| **Match positions** | ✅ | ✅ | — | ✅ |
-| **Highlight utility** | ✅ | — | — | ✅ |
-| **Batch API** | ✅ | — | — | — |
-| **Node.js native** | ✅ napi-rs | — | — | — |
-| **Browser** | ✅ WASM | ✅ | ✅ | ✅ |
-| **TypeScript** | ✅ full | ✅ full | ✅ | ✅ |
+| | rapid-fuzzy | fuse.js | fastest-levenshtein | fuzzysort | uFuzzy |
+|---|:---:|:---:|:---:|:---:|:---:|
+| **Algorithms** | 9 (Levenshtein, Jaro, Dice, …) | Bitap | Levenshtein | Substring | Regex-based |
+| **Runtime** | Rust native + WASM | Pure JS | Pure JS | Pure JS | Pure JS |
+| **Object search** | ✅ weighted keys | ✅ | — | ✅ | — |
+| **Persistent index** | ✅ FuzzyIndex / FuzzyObjectIndex | — | — | ✅ prepared targets | — |
+| **Query syntax** | ✅ exclude, prefix, suffix, exact | ✅ extended search | — | — | partial (`-` only) |
+| **Out-of-order matching** | ✅ automatic | — | — | — | ✅ with option |
+| **Diacritics** | ✅ automatic | ✅ option | — | ✅ auto | ✅ `latinize()` |
+| **Score threshold** | ✅ | ✅ | — | ✅ | — |
+| **Match positions** | ✅ | ✅ | — | ✅ | ✅ |
+| **Highlight utility** | ✅ | — | — | ✅ | ✅ |
+| **Batch API** | ✅ | — | — | — | — |
+| **Node.js native** | ✅ napi-rs | — | — | — | — |
+| **Browser** | ✅ WASM | ✅ | ✅ | ✅ | ✅ |
+| **TypeScript** | ✅ full | ✅ full | ✅ | ✅ | ✅ |
 
 ## Migration Guides
 
