@@ -177,7 +177,7 @@ While fuzzysort wins on raw speed, rapid-fuzzy offers capabilities that fuzzysor
 
 - **9 distance algorithms**: Levenshtein, Damerau-Levenshtein, Jaro, Jaro-Winkler, Sorensen-Dice, and more — useful beyond search
 - **Query syntax**: Exclude (`!term`), prefix (`^term`), suffix (`term$`), exact (`'term`) operators
-- **Diacritics handling**: `cafe` matches `caf`e, `uber` matches `uber` automatically
+- **Diacritics handling**: `cafe` matches `café`, `uber` matches `über` automatically
 - **Batch APIs**: `levenshteinBatch`, `jaroWinklerMany`, etc. for bulk operations
 - **Object search with weighted keys**: `searchObjects()` and `FuzzyObjectIndex` with per-key weights
 - **Out-of-order matching**: `john smith` matches "Smith, John" automatically

@@ -140,10 +140,6 @@ const results = search('query', items, { includePositions: true });
 highlight(results[0].item, results[0].positions, '<b>', '</b>');
 ```
 
-## What rapid-fuzzy Does Not Support (Yet)
-
-- **Extended search syntax**: fuse.js supports operators like `'word` (prefix), `!term` (negation).
-
 ## Performance
 
 rapid-fuzzy is significantly faster than fuse.js for fuzzy search:

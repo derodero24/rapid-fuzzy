@@ -58,7 +58,7 @@ if (idxs == null) {
 // Assemble results manually
 const results = [];
 for (let i = 0; i < order.length; i++) {
-  const idx = cycleOrder[i];
+  const idx = order[i];
   results.push({
     item: haystack[idxs[idx]],
     ranges: info.ranges[idx],
