@@ -121,9 +121,12 @@ function generateSvg(data: ChartData): string {
   const paddingBottom = 24;
 
   // Calculate total height
+  // Each group contributes: 22px (label) + n × (barHeight + barGap) + (groupGap - barGap) trailing
+  const groupLabelHeight = 22;
   let totalBarHeight = 0;
   for (const group of data.groups) {
-    totalBarHeight += group.bars.length * (barHeight + barGap) + groupGap;
+    totalBarHeight +=
+      groupLabelHeight + group.bars.length * (barHeight + barGap) + groupGap - barGap;
   }
 
   const svgWidth = chartWidth + paddingX * 2;
