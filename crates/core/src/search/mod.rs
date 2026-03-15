@@ -112,7 +112,10 @@ pub(crate) fn search_over_items(
             if score_ord != std::cmp::Ordering::Equal {
                 return score_ord;
             }
-            let len_ord = items[a.0 as usize].len().cmp(&items[b.0 as usize].len());
+            let len_ord = items[a.0 as usize]
+                .chars()
+                .count()
+                .cmp(&items[b.0 as usize].chars().count());
             if len_ord != std::cmp::Ordering::Equal {
                 return len_ord;
             }
