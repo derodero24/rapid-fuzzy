@@ -195,6 +195,15 @@ impl FuzzyIndex {
 
         let count = u32::from_le_bytes(bytes[8..12].try_into().unwrap()) as usize;
         let mut offset = header_size;
+
+        // Reject obviously invalid counts before allocating.
+        // Each item needs at least 4 bytes (length field), so count cannot
+        // exceed the remaining payload divided by 4.
+        let max_possible = bytes.len().saturating_sub(header_size) / 4;
+        if count > max_possible {
+            return Err("Invalid data: item count exceeds payload size".into());
+        }
+
         let mut items = Vec::with_capacity(count);
 
         for _ in 0..count {
@@ -210,6 +219,10 @@ impl FuzzyIndex {
                 .map_err(|e| format!("Invalid UTF-8: {e}"))?;
             items.push(s.to_owned());
             offset += len;
+        }
+
+        if offset != bytes.len() {
+            return Err("Invalid data: trailing bytes".into());
         }
 
         Ok(Self::new(items))
