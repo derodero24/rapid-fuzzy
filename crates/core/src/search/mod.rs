@@ -105,11 +105,30 @@ pub(crate) fn search_over_items(
             })
             .collect();
 
-        scored.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        // Sort by score descending, with shorter items first as tiebreaker,
+        // then by original index for fully deterministic ordering.
+        let cmp = |a: &(u32, f64), b: &(u32, f64)| {
+            let score_ord = b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal);
+            if score_ord != std::cmp::Ordering::Equal {
+                return score_ord;
+            }
+            let len_ord = items[a.0 as usize].len().cmp(&items[b.0 as usize].len());
+            if len_ord != std::cmp::Ordering::Equal {
+                return len_ord;
+            }
+            a.0.cmp(&b.0)
+        };
 
+        // Top-k selection: use quickselect O(n) + sort O(k log k) instead of
+        // full sort O(n log n) when maxResults is set.
         if let Some(max) = max_results {
-            scored.truncate(max as usize);
+            let k = max as usize;
+            if scored.len() > k {
+                scored.select_nth_unstable_by(k, cmp);
+                scored.truncate(k);
+            }
         }
+        scored.sort_unstable_by(cmp);
 
         // Pass 2: Construct results only for the final top-k items.
         scored
@@ -246,8 +265,6 @@ pub(crate) fn search_over_precomputed(
             .collect(),
     };
 
-    scored.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-
     // Collect matching indices for incremental cache, but only when the match set
     // is meaningfully smaller than the full dataset. When most items match (e.g.,
     // short queries), the cache overhead outweighs the narrowing benefit.
@@ -258,9 +275,30 @@ pub(crate) fn search_over_precomputed(
         Vec::new()
     };
 
+    // Sort by score descending, with shorter items first as tiebreaker,
+    // then by original index for fully deterministic ordering.
+    let cmp = |a: &(u32, f64), b: &(u32, f64)| {
+        let score_ord = b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal);
+        if score_ord != std::cmp::Ordering::Equal {
+            return score_ord;
+        }
+        let len_ord = items[a.0 as usize].len().cmp(&items[b.0 as usize].len());
+        if len_ord != std::cmp::Ordering::Equal {
+            return len_ord;
+        }
+        a.0.cmp(&b.0)
+    };
+
+    // Top-k selection: use quickselect O(n) + sort O(k log k) instead of
+    // full sort O(n log n) when maxResults is set.
     if let Some(max) = max_results {
-        scored.truncate(max as usize);
+        let k = max as usize;
+        if scored.len() > k {
+            scored.select_nth_unstable_by(k, cmp);
+            scored.truncate(k);
+        }
     }
+    scored.sort_unstable_by(cmp);
 
     // Pass 2: Construct results only for the final top-k items.
     let results = scored
