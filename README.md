@@ -339,6 +339,8 @@ Switching from another library? These guides provide API mapping tables, code ex
 - [**From string-similarity**](docs/migration/from-string-similarity.md) — Same Dice coefficient algorithm, now maintained and faster
 - [**From fuse.js**](docs/migration/from-fuse-js.md) — 17–40x faster fuzzy search with a simpler API
 - [**From leven / fastest-levenshtein**](docs/migration/from-leven.md) — Multi-algorithm upgrade with batch APIs
+- [**From fuzzysort**](docs/migration/from-fuzzysort.md) — Richer matching with query syntax and 9 distance algorithms
+- [**From uFuzzy**](docs/migration/from-ufuzzy.md) — Weighted object search, batch APIs, and persistent indexes
 
 ## License
 
