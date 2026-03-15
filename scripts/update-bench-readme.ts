@@ -137,7 +137,7 @@ if (damerauSuite) {
 
 // Search table (includes FuzzyIndex column)
 const searchLines: string[] = [];
-searchLines.push('| Dataset size | rapid-fuzzy | FuzzyIndex | fuse.js | fuzzysort |');
+searchLines.push('| Dataset size | rapid-fuzzy | rapid-fuzzy (indexed) | fuse.js | fuzzysort |');
 searchLines.push('|---|---:|---:|---:|---:|');
 
 for (const size of ['Small (20 items)', 'Medium (1K items)', 'Large (10K items)']) {
@@ -155,7 +155,7 @@ for (const size of ['Small (20 items)', 'Medium (1K items)', 'Large (10K items)'
 
 // Closest table (includes FuzzyIndex column)
 const closestLines: string[] = [];
-closestLines.push('| Dataset size | rapid-fuzzy | FuzzyIndex | fastest-levenshtein |');
+closestLines.push('| Dataset size | rapid-fuzzy | rapid-fuzzy (indexed) | fastest-levenshtein |');
 closestLines.push('|---|---:|---:|---:|');
 
 for (const size of ['Medium (1K items)', 'Large (10K items)']) {
@@ -213,7 +213,7 @@ readme = replaceSection(
 readme = replaceSection(
   readme,
   '### Closest Match (Levenshtein-based)',
-  '> With `FuzzyIndex`',
+  '> In indexed mode (`FuzzyIndex`)',
   closestLines.join('\n'),
 );
 

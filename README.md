@@ -153,7 +153,7 @@ For applications that search the same dataset repeatedly (autocomplete, file fin
 ```typescript
 import { FuzzyIndex, FuzzyObjectIndex } from 'rapid-fuzzy';
 
-// String search index — up to 5x faster than standalone search()
+// String search index — up to 182x faster than standalone search()
 const index = new FuzzyIndex(['TypeScript', 'JavaScript', 'Python', ...]);
 
 index.search('typscript', { maxResults: 5 });
@@ -297,10 +297,12 @@ Measured on Apple M-series with Node.js v22 using [Vitest bench](https://vitest.
 
 <img src=".github/assets/bench-search.svg" alt="Search performance chart — rapid-fuzzy vs fuse.js vs fuzzysort vs uFuzzy" width="680" />
 
+> Both `rapid-fuzzy` columns below show the same library: standalone `search()` vs `FuzzyIndex` (indexed mode for repeated searches).
+
 <details>
 <summary>Raw numbers</summary>
 
-| Dataset size | rapid-fuzzy | FuzzyIndex | fuse.js | fuzzysort | uFuzzy |
+| Dataset size | rapid-fuzzy | rapid-fuzzy (indexed) | fuse.js | fuzzysort | uFuzzy |
 |---|---:|---:|---:|---:|---:|
 | Small (20 items) | 303,982 ops/s | 405,604 ops/s | 105,568 ops/s | **2,606,394 ops/s** | 923,069 ops/s |
 | Medium (1K items) | 6,787 ops/s | **80,579 ops/s** | 367 ops/s | 64,372 ops/s | 28,953 ops/s |
@@ -311,17 +313,17 @@ Measured on Apple M-series with Node.js v22 using [Vitest bench](https://vitest.
 
 ### Closest Match (Levenshtein-based)
 
-| Dataset size | rapid-fuzzy | FuzzyIndex | fastest-levenshtein |
+| Dataset size | rapid-fuzzy | rapid-fuzzy (indexed) | fastest-levenshtein |
 |---|---:|---:|---:|
 | Medium (1K items) | 8,611 ops/s | **989,095 ops/s** | 6,797 ops/s |
 | Large (10K items) | 924 ops/s | **156,014 ops/s** | 658 ops/s |
 
-> With `FuzzyIndex`, rapid-fuzzy is up to **237x faster** than fastest-levenshtein for closest-match lookups.
+> In indexed mode (`FuzzyIndex`), rapid-fuzzy is up to **237x faster** than fastest-levenshtein for closest-match lookups.
 
 ### Why these numbers matter
 
 - **vs fuse.js**: `FuzzyIndex` is **219x faster** on medium datasets and **6,869x faster** on large datasets. Even standalone `search()` is 18x / 40x faster.
-- **FuzzyIndex**: An incremental search cache accelerates repeated and keystroke-level searches, delivering sub-millisecond autocomplete. On large datasets this is **182x faster** than standalone `search()`.
+- **Indexed mode**: `FuzzyIndex` keeps data on the Rust side with an incremental search cache, delivering sub-millisecond autocomplete. On large datasets this is **182x faster** than standalone `search()`.
 - **vs fuzzysort**: `FuzzyIndex` now **outperforms fuzzysort** on medium-and-above datasets — 1.25x faster at 1K, 5.2x at 10K, and 5.4x at 50K.
 - **vs uFuzzy**: `FuzzyIndex` is **2.8x faster** at medium and **21x faster** at large datasets.
 - **vs fastest-levenshtein**: With `FuzzyIndex`, closest-match is **145x faster** at 1K and **237x faster** at 10K.

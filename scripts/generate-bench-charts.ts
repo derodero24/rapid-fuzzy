@@ -55,7 +55,7 @@ function parseSearchTable(): ChartData {
 
     const bars: BarEntry[] = [];
     if (rf !== null) bars.push({ label: 'rapid-fuzzy', value: rf });
-    if (fi !== null) bars.push({ label: 'FuzzyIndex', value: fi });
+    if (fi !== null) bars.push({ label: 'rapid-fuzzy (indexed)', value: fi });
     if (fj !== null) bars.push({ label: 'fuse.js', value: fj });
     if (fs !== null) bars.push({ label: 'fuzzysort', value: fs });
     if (uf !== null) bars.push({ label: 'uFuzzy', value: uf });
@@ -100,7 +100,7 @@ function parseDistanceTable(): ChartData {
 
 const COLORS: Record<string, string> = {
   'rapid-fuzzy': '#3b82f6',
-  FuzzyIndex: '#60a5fa',
+  'rapid-fuzzy (indexed)': '#60a5fa',
   'fuse.js': '#94a3b8',
   fuzzysort: '#94a3b8',
   uFuzzy: '#94a3b8',
@@ -178,7 +178,7 @@ function generateSvg(data: ChartData): string {
     for (const bar of sorted) {
       const barWidth = Math.max(4, (bar.value / groupMax) * barAreaWidth);
       const color = COLORS[bar.label] ?? '#94a3b8';
-      const isRapidFuzzy = bar.label === 'rapid-fuzzy' || bar.label === 'FuzzyIndex';
+      const isRapidFuzzy = bar.label === 'rapid-fuzzy' || bar.label === 'rapid-fuzzy (indexed)';
       const x = paddingX + labelWidth;
 
       // Label

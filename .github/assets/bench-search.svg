@@ -19,7 +19,7 @@
 <text x="172" y="122" class="bar-label" text-anchor="end">uFuzzy</text>
 <rect x="180" y="105" width="162.91157054535884" height="26" rx="4" fill="#94a3b8" opacity="0.6" />
 <text x="350.9115705453588" y="122" class="bar-value" text-anchor="start">923,069 ops/s</text>
-<text x="172" y="153" class="bar-label" text-anchor="end">FuzzyIndex</text>
+<text x="172" y="153" class="bar-label" text-anchor="end">rapid-fuzzy (indexed)</text>
 <rect x="180" y="136" width="71.58466448280652" height="26" rx="4" fill="#60a5fa" opacity="1" />
 <text x="259.5846644828065" y="153" class="bar-value" text-anchor="start">405,604 ops/s — 3x vs fuse.js</text>
 <text x="172" y="184" class="bar-label" text-anchor="end">rapid-fuzzy</text>
@@ -29,7 +29,7 @@
 <rect x="180" y="198" width="18.63159599047573" height="26" rx="4" fill="#94a3b8" opacity="0.6" />
 <text x="206.63159599047572" y="215" class="bar-value" text-anchor="start">105,568 ops/s</text>
 <text x="20" y="262" class="group-label">Medium</text>
-<text x="172" y="287" class="bar-label" text-anchor="end">FuzzyIndex</text>
+<text x="172" y="287" class="bar-label" text-anchor="end">rapid-fuzzy (indexed)</text>
 <rect x="180" y="270" width="460" height="26" rx="4" fill="#60a5fa" opacity="1" />
 <text x="632" y="287" class="bar-value" text-anchor="end" fill="#ffffff">80,579 ops/s — 18x vs fuse.js</text>
 <text x="172" y="318" class="bar-label" text-anchor="end">fuzzysort</text>
@@ -45,7 +45,7 @@
 <rect x="180" y="394" width="4" height="26" rx="4" fill="#94a3b8" opacity="0.6" />
 <text x="192" y="411" class="bar-value" text-anchor="start">367 ops/s</text>
 <text x="20" y="458" class="group-label">Large</text>
-<text x="172" y="483" class="bar-label" text-anchor="end">FuzzyIndex</text>
+<text x="172" y="483" class="bar-label" text-anchor="end">rapid-fuzzy (indexed)</text>
 <rect x="180" y="466" width="460" height="26" rx="4" fill="#60a5fa" opacity="1" />
 <text x="632" y="483" class="bar-value" text-anchor="end" fill="#ffffff">136,528 ops/s — 40x vs fuse.js</text>
 <text x="172" y="514" class="bar-label" text-anchor="end">fuzzysort</text>
@@ -61,7 +61,7 @@
 <rect x="180" y="590" width="4" height="26" rx="4" fill="#94a3b8" opacity="0.6" />
 <text x="192" y="607" class="bar-value" text-anchor="start">19 ops/s</text>
 <text x="20" y="654" class="group-label">XL</text>
-<text x="172" y="679" class="bar-label" text-anchor="end">FuzzyIndex</text>
+<text x="172" y="679" class="bar-label" text-anchor="end">rapid-fuzzy (indexed)</text>
 <rect x="180" y="662" width="460" height="26" rx="4" fill="#60a5fa" opacity="1" />
 <text x="632" y="679" class="bar-value" text-anchor="end" fill="#ffffff">31,903 ops/s</text>
 <text x="172" y="710" class="bar-label" text-anchor="end">fuzzysort</text>
