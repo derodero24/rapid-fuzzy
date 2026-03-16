@@ -47,6 +47,19 @@ impl KeyedFuzzyIndex {
     fn new_impl(key_texts: Vec<Vec<String>>, weights: Vec<f64>) -> Result<Self, String> {
         let num_keys = key_texts.len();
 
+        if let Some(num_items) = key_texts.first().map(Vec::len) {
+            for (k, col) in key_texts.iter().enumerate().skip(1) {
+                if col.len() != num_items {
+                    return Err(format!(
+                        "All key_texts columns must have the same length; key 0 has {}, key {} has {}",
+                        num_items,
+                        k,
+                        col.len()
+                    ));
+                }
+            }
+        }
+
         if weights.len() != num_keys {
             return Err(format!(
                 "Expected {} weights, got {}",
@@ -417,6 +430,18 @@ mod tests {
     #[test]
     fn test_zero_total_weight_rejected() {
         let result = KeyedFuzzyIndex::new_impl(vec![vec!["a".into()]], vec![0.0]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_mismatched_key_texts_lengths_rejected() {
+        let result = KeyedFuzzyIndex::new_impl(
+            vec![
+                vec!["a".into(), "b".into()],
+                vec!["c".into()], // different length
+            ],
+            vec![1.0, 1.0],
+        );
         assert!(result.is_err());
     }
 }
