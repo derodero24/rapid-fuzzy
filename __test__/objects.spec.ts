@@ -133,13 +133,13 @@ describe('searchObjects', () => {
     expect(results.length).toBe(0);
   });
 
-  it('should return empty positions when includePositions is not set', () => {
+  it('should not include positions in results', () => {
     const results = searchObjects('john', users, {
       keys: ['name'],
     });
     expect(results.length).toBeGreaterThan(0);
     for (const r of results) {
-      expect(r.positions).toEqual([]);
+      expect(r).not.toHaveProperty('positions');
     }
   });
 

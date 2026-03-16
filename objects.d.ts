@@ -5,6 +5,10 @@ export interface KeyConfig {
   weight?: number;
 }
 
+/**
+ * Options for searchObjects(). Extends SearchOptions with key configuration.
+ * Note: `includePositions` has no effect for multi-key search.
+ */
 export interface ObjectSearchOptions extends SearchOptions {
   keys: Array<string | KeyConfig>;
 }
@@ -14,11 +18,6 @@ export interface ObjectSearchResult<T> {
   index: number;
   score: number;
   keyScores: Array<number>;
-  /**
-   * Indices of matched characters in the best-matching key string.
-   * Empty unless `includePositions` is set to true in ObjectSearchOptions.
-   */
-  positions: Array<number>;
 }
 
 /**
@@ -86,7 +85,7 @@ export declare class FuzzyObjectIndex<T> {
   search(
     query: string,
     options?: ObjectIndexSearchOptions,
-  ): Array<Omit<ObjectSearchResult<T>, 'positions'>>;
+  ): Array<ObjectSearchResult<T>>;
 
   /** Find the closest matching object, or null if no match. */
   closest(query: string, minScore?: number): T | null;

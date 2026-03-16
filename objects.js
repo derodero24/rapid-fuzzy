@@ -31,7 +31,7 @@ function getNestedValue(obj, path) {
  * @param {number} [options.maxResults] - Maximum results to return.
  * @param {number} [options.minScore] - Minimum score threshold.
  * @param {boolean} [options.isCaseSensitive] - Enable case-sensitive matching.
- * @returns {Array<{ item: T; index: number; score: number; keyScores: number[]; positions: number[] }>}
+ * @returns {Array<{ item: T; index: number; score: number; keyScores: number[] }>}
  */
 function searchObjects(query, items, options) {
   const { keys, ...searchOpts } = options;
@@ -52,7 +52,6 @@ function searchObjects(query, items, options) {
     index: r.index,
     score: r.score,
     keyScores: r.keyScores,
-    positions: r.positions ?? [],
   }));
 }
 
