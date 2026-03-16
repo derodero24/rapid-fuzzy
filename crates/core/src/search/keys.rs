@@ -32,7 +32,7 @@ pub fn search_keys(
 ) -> Vec<KeySearchResult> {
     let num_keys = key_texts.len();
 
-    if query.is_empty() || num_keys == 0 || weights.len() != num_keys {
+    if num_keys == 0 || weights.len() != num_keys {
         return Vec::new();
     }
 
@@ -46,6 +46,28 @@ pub fn search_keys(
         if texts.len() != num_items {
             return Vec::new();
         }
+    }
+
+    let return_all_on_empty = options
+        .as_ref()
+        .and_then(|o| o.return_all_on_empty)
+        .unwrap_or(false);
+
+    if return_all_on_empty && query.trim().is_empty() {
+        let max_results = options.as_ref().and_then(|o| o.max_results);
+        let limit = max_results.unwrap_or(num_items as u32) as usize;
+        return (0..num_items)
+            .take(limit)
+            .map(|i| KeySearchResult {
+                index: i as u32,
+                score: 1.0,
+                key_scores: vec![1.0; num_keys],
+            })
+            .collect();
+    }
+
+    if query.is_empty() {
+        return Vec::new();
     }
 
     let (max_results, min_score, case_matching) = match &options {
@@ -256,6 +278,7 @@ mod tests {
                 min_score: None,
                 include_positions: None,
                 is_case_sensitive: None,
+                return_all_on_empty: None,
             }),
         );
         assert!(results.len() <= 2);
@@ -279,6 +302,7 @@ mod tests {
                 min_score: Some(0.5),
                 include_positions: None,
                 is_case_sensitive: None,
+                return_all_on_empty: None,
             }),
         );
         for r in &results {
@@ -351,6 +375,7 @@ mod tests {
                 min_score: Some(1.0),
                 include_positions: None,
                 is_case_sensitive: Some(true),
+                return_all_on_empty: None,
             }),
         );
         assert_eq!(results.len(), 1);
@@ -389,5 +414,93 @@ mod tests {
                 sr.score
             );
         }
+    }
+
+    #[test]
+    fn test_return_all_on_empty() {
+        let key_texts = vec![vec![
+            "apple".to_string(),
+            "banana".to_string(),
+            "grape".to_string(),
+        ]];
+        let weights = vec![1.0];
+
+        let results = search_keys(
+            "".to_string(),
+            key_texts,
+            weights,
+            Some(SearchOptions {
+                max_results: None,
+                min_score: None,
+                include_positions: None,
+                is_case_sensitive: None,
+                return_all_on_empty: Some(true),
+            }),
+        );
+        assert_eq!(results.len(), 3);
+        for (i, r) in results.iter().enumerate() {
+            assert_eq!(r.index, i as u32);
+            assert!((r.score - 1.0).abs() < f64::EPSILON);
+        }
+    }
+
+    #[test]
+    fn test_return_all_on_empty_respects_max_results() {
+        let key_texts = vec![vec!["a".to_string(), "b".to_string(), "c".to_string()]];
+        let weights = vec![1.0];
+
+        let results = search_keys(
+            "".to_string(),
+            key_texts,
+            weights,
+            Some(SearchOptions {
+                max_results: Some(2),
+                min_score: None,
+                include_positions: None,
+                is_case_sensitive: None,
+                return_all_on_empty: Some(true),
+            }),
+        );
+        assert_eq!(results.len(), 2);
+    }
+
+    #[test]
+    fn test_return_all_on_empty_false_returns_empty() {
+        let key_texts = vec![vec!["apple".to_string()]];
+        let weights = vec![1.0];
+
+        let results = search_keys(
+            "".to_string(),
+            key_texts,
+            weights,
+            Some(SearchOptions {
+                max_results: None,
+                min_score: None,
+                include_positions: None,
+                is_case_sensitive: None,
+                return_all_on_empty: Some(false),
+            }),
+        );
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_return_all_on_empty_whitespace_query() {
+        let key_texts = vec![vec!["apple".to_string(), "banana".to_string()]];
+        let weights = vec![1.0];
+
+        let results = search_keys(
+            "  ".to_string(),
+            key_texts,
+            weights,
+            Some(SearchOptions {
+                max_results: None,
+                min_score: None,
+                include_positions: None,
+                is_case_sensitive: None,
+                return_all_on_empty: Some(true),
+            }),
+        );
+        assert_eq!(results.len(), 2);
     }
 }

@@ -519,6 +519,59 @@ describe('search', () => {
       }
     });
   });
+
+  describe('returnAllOnEmpty', () => {
+    const items = ['apple', 'banana', 'grape'];
+
+    it('should return all items when query is empty', () => {
+      const results = search('', items, { returnAllOnEmpty: true });
+      expect(results.length).toBe(3);
+      expect(results.map((r) => r.item)).toEqual(items);
+    });
+
+    it('should return items in original index order', () => {
+      const results = search('', items, { returnAllOnEmpty: true });
+      for (let i = 0; i < results.length; i++) {
+        expect(results[i]?.index).toBe(i);
+      }
+    });
+
+    it('should set score to 1.0 for all results', () => {
+      const results = search('', items, { returnAllOnEmpty: true });
+      for (const r of results) {
+        expect(r.score).toBe(1.0);
+      }
+    });
+
+    it('should return empty positions and no matchType', () => {
+      const results = search('', items, { returnAllOnEmpty: true });
+      for (const r of results) {
+        expect(r.positions).toEqual([]);
+        expect(r.matchType).toBeUndefined();
+      }
+    });
+
+    it('should respect maxResults', () => {
+      const results = search('', items, { returnAllOnEmpty: true, maxResults: 2 });
+      expect(results.length).toBe(2);
+    });
+
+    it('should treat whitespace-only query as empty', () => {
+      const results = search('  ', items, { returnAllOnEmpty: true });
+      expect(results.length).toBe(3);
+    });
+
+    it('should return empty when returnAllOnEmpty is false (default)', () => {
+      expect(search('', items)).toEqual([]);
+      expect(search('', items, { returnAllOnEmpty: false })).toEqual([]);
+    });
+
+    it('should perform normal search when query is non-empty', () => {
+      const results = search('apple', items, { returnAllOnEmpty: true });
+      expect(results.length).toBeGreaterThan(0);
+      expect(results.length).toBeLessThan(items.length);
+    });
+  });
 });
 
 describe('closest', () => {
@@ -1203,6 +1256,26 @@ describe('FuzzyIndex', () => {
     it('should respect minScore', () => {
       const index = new FuzzyIndex(['xyz']);
       expect(index.closest('hello', 0.99)).toBeNull();
+    });
+  });
+
+  describe('returnAllOnEmpty', () => {
+    it('should return all items when query is empty', () => {
+      const index = new FuzzyIndex(['apple', 'banana', 'grape']);
+      const results = index.search('', { returnAllOnEmpty: true });
+      expect(results.length).toBe(3);
+      expect(results.map((r) => r.item)).toEqual(['apple', 'banana', 'grape']);
+    });
+
+    it('should respect maxResults', () => {
+      const index = new FuzzyIndex(['apple', 'banana', 'grape']);
+      const results = index.search('', { returnAllOnEmpty: true, maxResults: 1 });
+      expect(results.length).toBe(1);
+    });
+
+    it('should return empty when option is not set', () => {
+      const index = new FuzzyIndex(['apple']);
+      expect(index.search('')).toEqual([]);
     });
   });
 

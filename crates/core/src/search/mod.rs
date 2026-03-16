@@ -80,6 +80,10 @@ pub struct SearchOptions {
     /// If true, matching is case-sensitive. Default is smart case
     /// (case-insensitive unless the query contains uppercase characters).
     pub is_case_sensitive: Option<bool>,
+    /// If true, return all items when the query is empty (or whitespace-only).
+    /// Useful for filter-as-you-type UIs where the full list should appear
+    /// before the user starts typing. Default is false.
+    pub return_all_on_empty: Option<bool>,
 }
 
 /// Compute the maximum possible score for a given pattern by scoring
@@ -414,16 +418,35 @@ pub fn search(
     items: Vec<String>,
     options: Option<Either<u32, SearchOptions>>,
 ) -> Vec<SearchResult> {
-    let (max_results, min_score, include_positions, case_matching) = match options {
-        Some(Either::A(max)) => (Some(max), None, false, CaseMatching::Smart),
-        Some(Either::B(opts)) => (
-            opts.max_results,
-            opts.min_score,
-            opts.include_positions.unwrap_or(false),
-            resolve_case_matching(opts.is_case_sensitive),
-        ),
-        None => (None, None, false, CaseMatching::Smart),
-    };
+    let (max_results, min_score, include_positions, case_matching, return_all_on_empty) =
+        match options {
+            Some(Either::A(max)) => (Some(max), None, false, CaseMatching::Smart, false),
+            Some(Either::B(opts)) => (
+                opts.max_results,
+                opts.min_score,
+                opts.include_positions.unwrap_or(false),
+                resolve_case_matching(opts.is_case_sensitive),
+                opts.return_all_on_empty.unwrap_or(false),
+            ),
+            None => (None, None, false, CaseMatching::Smart, false),
+        };
+
+    if return_all_on_empty && query.trim().is_empty() {
+        let limit = max_results.unwrap_or(items.len() as u32) as usize;
+        return items
+            .iter()
+            .enumerate()
+            .take(limit)
+            .map(|(i, item)| SearchResult {
+                item: item.clone(),
+                score: 1.0,
+                index: i as u32,
+                positions: Vec::new(),
+                match_type: None,
+            })
+            .collect();
+    }
+
     search_impl(
         query,
         items,

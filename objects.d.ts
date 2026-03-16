@@ -54,6 +54,7 @@ export interface ObjectIndexSearchOptions {
   maxResults?: number;
   minScore?: number;
   isCaseSensitive?: boolean;
+  returnAllOnEmpty?: boolean;
 }
 
 /**
