@@ -41,6 +41,21 @@ export declare class FuzzyIndex {
   remove(index: number): boolean
   /** Free the internal data. After calling this, the index is empty. */
   destroy(): void
+  /**
+   * Serialize the index to a compact binary format.
+   *
+   * The returned Buffer can be written to disk, stored in IndexedDB,
+   * or transferred over the network. Use `FuzzyIndex.deserialize()` to
+   * reconstruct the index.
+   */
+  serialize(): Buffer
+  /**
+   * Reconstruct a FuzzyIndex from a previously serialized Buffer.
+   *
+   * Pre-computes Utf32String and character masks from the stored items,
+   * so the returned index is immediately ready for searching.
+   */
+  static deserialize(data: Buffer): FuzzyIndex
 }
 
 /**
@@ -75,12 +90,14 @@ export declare class KeyedFuzzyIndex {
    * Add a single item to the index.
    *
    * `key_values` must have the same length as the number of keys.
+   * Throws if the length does not match.
    */
   add(keyValues: Array<string>): void
   /**
    * Add multiple items to the index at once.
    *
    * Each element of `items_key_values` is an array of key values for one item.
+   * Throws if any element has the wrong number of key values.
    */
   addMany(itemsKeyValues: Array<Array<string>>): void
   /**
@@ -204,6 +221,22 @@ export declare function levenshteinBatch(pairs: Array<Array<string>>): Array<num
 export declare function levenshteinMany(reference: string, candidates: Array<string>): Array<number>
 
 /**
+ * Classification of how a query matched an item.
+ *
+ * Derived from the matched character positions:
+ * - **Exact**: all positions consecutive from index 0, covering every character in the item.
+ * - **Prefix**: all positions consecutive from index 0, but the item is longer.
+ * - **Contains**: all positions consecutive (a substring match), not starting at 0.
+ * - **Fuzzy**: positions have gaps (character-level fuzzy match).
+ */
+export declare const enum MatchType {
+  Exact = 'Exact',
+  Prefix = 'Prefix',
+  Contains = 'Contains',
+  Fuzzy = 'Fuzzy'
+}
+
+/**
  * Compute the normalized Levenshtein similarity between two strings.
  *
  * Returns a value between 0.0 (completely different) and 1.0 (identical).
@@ -300,6 +333,8 @@ export interface SearchResult {
    * Empty unless `includePositions` is set to true in SearchOptions.
    */
   positions: Array<number>
+  /** How the query matched this item (e.g. exact, prefix, contains, or fuzzy). */
+  matchType: MatchType
 }
 
 /**

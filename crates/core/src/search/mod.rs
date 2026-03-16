@@ -13,6 +13,43 @@ use napi_derive::napi;
 use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
 use nucleo_matcher::{Config, Matcher, Utf32String};
 
+/// Classification of how a query matched an item.
+///
+/// Derived from the matched character positions:
+/// - **Exact**: all positions consecutive from index 0, covering every character in the item.
+/// - **Prefix**: all positions consecutive from index 0, but the item is longer.
+/// - **Contains**: all positions consecutive (a substring match), not starting at 0.
+/// - **Fuzzy**: positions have gaps (character-level fuzzy match).
+#[napi(string_enum)]
+#[derive(Debug)]
+pub enum MatchType {
+    Exact,
+    Prefix,
+    Contains,
+    Fuzzy,
+}
+
+/// Classify the match type from the matched character positions.
+pub(crate) fn classify_match(positions: &[u32], item_char_count: usize) -> MatchType {
+    if positions.is_empty() {
+        return MatchType::Fuzzy;
+    }
+
+    let is_consecutive = positions.len() == 1 || positions.windows(2).all(|w| w[1] == w[0] + 1);
+
+    if is_consecutive {
+        if positions[0] == 0 && positions.len() == item_char_count {
+            MatchType::Exact
+        } else if positions[0] == 0 {
+            MatchType::Prefix
+        } else {
+            MatchType::Contains
+        }
+    } else {
+        MatchType::Fuzzy
+    }
+}
+
 /// A single fuzzy search result with the matched item and its score.
 #[napi(object)]
 pub struct SearchResult {
@@ -25,6 +62,8 @@ pub struct SearchResult {
     /// Indices of matched characters in the item string.
     /// Empty unless `includePositions` is set to true in SearchOptions.
     pub positions: Vec<u32>,
+    /// How the query matched this item (e.g. exact, prefix, contains, or fuzzy).
+    pub match_type: MatchType,
 }
 
 /// Options for the search function.
@@ -134,16 +173,21 @@ pub(crate) fn search_over_items(
         scored.sort_unstable_by(cmp);
 
         // Pass 2: Construct results only for the final top-k items.
+        // Always compute positions for matchType classification.
         scored
             .into_iter()
             .map(|(index, score)| {
+                buf.clear();
+                let atoms = nucleo_matcher::Utf32Str::new(&items[index as usize], &mut buf);
+                let mut indices = Vec::new();
+                pattern.indices(atoms, &mut matcher, &mut indices);
+                indices.sort_unstable();
+                indices.dedup();
+
+                let item_char_count = items[index as usize].chars().count();
+                let match_type = classify_match(&indices, item_char_count);
+
                 let positions = if include_positions {
-                    buf.clear();
-                    let atoms = nucleo_matcher::Utf32Str::new(&items[index as usize], &mut buf);
-                    let mut indices = Vec::new();
-                    pattern.indices(atoms, &mut matcher, &mut indices);
-                    indices.sort_unstable();
-                    indices.dedup();
                     indices
                 } else {
                     Vec::new()
@@ -154,6 +198,7 @@ pub(crate) fn search_over_items(
                     score,
                     index,
                     positions,
+                    match_type,
                 }
             })
             .collect()
@@ -304,15 +349,20 @@ pub(crate) fn search_over_precomputed(
     scored.sort_unstable_by(cmp);
 
     // Pass 2: Construct results only for the final top-k items.
+    // Always compute positions for matchType classification.
     let results = scored
         .into_iter()
         .map(|(index, score)| {
+            let atoms = utf32_items[index as usize].slice(..);
+            let mut indices = Vec::new();
+            pattern.indices(atoms, &mut matcher, &mut indices);
+            indices.sort_unstable();
+            indices.dedup();
+
+            let item_char_count = items[index as usize].chars().count();
+            let match_type = classify_match(&indices, item_char_count);
+
             let positions = if include_positions {
-                let atoms = utf32_items[index as usize].slice(..);
-                let mut indices = Vec::new();
-                pattern.indices(atoms, &mut matcher, &mut indices);
-                indices.sort_unstable();
-                indices.dedup();
                 indices
             } else {
                 Vec::new()
@@ -323,6 +373,7 @@ pub(crate) fn search_over_precomputed(
                 score,
                 index,
                 positions,
+                match_type,
             }
         })
         .collect();
@@ -797,6 +848,126 @@ mod tests {
         );
         assert!(!results.is_empty());
         assert_eq!(results[0].positions, vec![0, 1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn test_match_type_exact() {
+        let items = vec!["apple".to_string(), "pineapple".to_string()];
+        let results = search_impl(
+            "apple".to_string(),
+            items,
+            None,
+            None,
+            false,
+            CaseMatching::Smart,
+        );
+        let exact = results.iter().find(|r| r.item == "apple").unwrap();
+        assert!(
+            matches!(exact.match_type, MatchType::Exact),
+            "expected Exact, got {:?}",
+            exact.match_type
+        );
+    }
+
+    #[test]
+    fn test_match_type_prefix() {
+        let items = vec!["application".to_string()];
+        let results = search_impl(
+            "app".to_string(),
+            items,
+            None,
+            None,
+            false,
+            CaseMatching::Smart,
+        );
+        assert!(!results.is_empty());
+        assert!(
+            matches!(results[0].match_type, MatchType::Prefix),
+            "expected Prefix, got {:?}",
+            results[0].match_type
+        );
+    }
+
+    #[test]
+    fn test_match_type_contains() {
+        let items = vec!["pineapple".to_string()];
+        let results = search_impl(
+            "apple".to_string(),
+            items,
+            None,
+            None,
+            false,
+            CaseMatching::Smart,
+        );
+        assert!(!results.is_empty());
+        assert!(
+            matches!(results[0].match_type, MatchType::Contains),
+            "expected Contains, got {:?}",
+            results[0].match_type
+        );
+    }
+
+    #[test]
+    fn test_match_type_fuzzy() {
+        let items = vec!["abcdef".to_string()];
+        let results = search_impl(
+            "adf".to_string(),
+            items,
+            None,
+            None,
+            false,
+            CaseMatching::Smart,
+        );
+        assert!(!results.is_empty());
+        assert!(
+            matches!(results[0].match_type, MatchType::Fuzzy),
+            "expected Fuzzy, got {:?}",
+            results[0].match_type
+        );
+    }
+
+    #[test]
+    fn test_match_type_always_populated() {
+        // matchType should be set regardless of includePositions
+        let items = vec!["hello".to_string()];
+        let without = search_impl(
+            "hello".to_string(),
+            items.clone(),
+            None,
+            None,
+            false,
+            CaseMatching::Smart,
+        );
+        let with = search_impl(
+            "hello".to_string(),
+            items,
+            None,
+            None,
+            true,
+            CaseMatching::Smart,
+        );
+        assert!(matches!(without[0].match_type, MatchType::Exact));
+        assert!(matches!(with[0].match_type, MatchType::Exact));
+    }
+
+    #[test]
+    fn test_match_type_case_insensitive_exact() {
+        // "apple" matching "Apple" should be Exact (smart case)
+        let items = vec!["Apple".to_string()];
+        let results = search_impl(
+            "apple".to_string(),
+            items,
+            None,
+            None,
+            false,
+            CaseMatching::Smart,
+        );
+        assert!(!results.is_empty());
+        assert!(
+            matches!(results[0].match_type, MatchType::Exact),
+            "expected Exact for case-insensitive match, got {:?}",
+            results[0].match_type
+        );
     }
 
     #[test]
