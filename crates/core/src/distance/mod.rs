@@ -330,6 +330,9 @@ fn partial_ratio_impl(a: &str, b: &str) -> f64 {
 /// Internal implementation of weighted_ratio.
 fn weighted_ratio_impl(a: &str, b: &str) -> f64 {
     let raw = rapid_lev::normalized_similarity(a.chars(), b.chars());
+    if raw == 1.0 {
+        return 1.0;
+    }
     let sort = token_sort_ratio_impl(a, b);
     let set = token_set_ratio_impl(a, b);
     let partial = partial_ratio_impl(a, b);
