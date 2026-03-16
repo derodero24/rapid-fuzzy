@@ -49,7 +49,7 @@ pnpm add rapid-fuzzy
 ### Runtime-specific notes
 
 - **Node.js** (>=20): Uses native bindings via napi-rs for best performance.
-- **Browser / Deno / Bun**: Falls back to a WASM build automatically.
+- **Browser / Deno / Bun**: Falls back to a WASM build automatically. The WASM binary is ~607 KB raw (~204 KB gzipped).
 
 > **Note**: rapid-fuzzy is pre-1.0 — the API is stable but minor versions may include additions.
 
@@ -351,7 +351,7 @@ cargo bench           # Rust internal benchmarks
 | **Highlight utility** | ✅ | — | — | ✅ | ✅ |
 | **Batch API** | ✅ | — | — | — | — |
 | **Node.js native** | ✅ napi-rs | — | — | — | — |
-| **Browser** | ✅ WASM | ✅ | ✅ | ✅ | ✅ |
+| **Browser** | ✅ WASM (~204 KB gzip) | ✅ | ✅ | ✅ | ✅ |
 | **TypeScript** | ✅ full | ✅ full | ✅ | ✅ | ✅ |
 
 ## Migration Guides
