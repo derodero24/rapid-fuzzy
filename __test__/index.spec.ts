@@ -825,6 +825,194 @@ describe('unicode', () => {
   });
 });
 
+describe('extended query syntax', () => {
+  describe('exclusion (!term)', () => {
+    const fruits = ['apple pie', 'apple juice', 'cherry pie', 'banana split'];
+
+    it('should exclude items matching negated term', () => {
+      const results = search('apple !pie', fruits);
+      const items = results.map((r) => r.item);
+      expect(items).toContain('apple juice');
+      expect(items).not.toContain('apple pie');
+    });
+
+    it('should not return items matching only the excluded term', () => {
+      const results = search('apple !pie', fruits);
+      const items = results.map((r) => r.item);
+      expect(items).not.toContain('cherry pie');
+      expect(items).not.toContain('banana split');
+    });
+
+    it('should return only non-matching items with negation-only query', () => {
+      const results = search('!pie', fruits);
+      const items = results.map((r) => r.item);
+      expect(items).toContain('apple juice');
+      expect(items).toContain('banana split');
+      expect(items).not.toContain('apple pie');
+      expect(items).not.toContain('cherry pie');
+    });
+
+    it('should return empty when all items match the excluded term', () => {
+      const results = search('!pie', ['pie', 'pie chart']);
+      expect(results).toEqual([]);
+    });
+  });
+
+  describe('prefix (^term)', () => {
+    const items = ['apple', 'pineapple', 'application', 'maple'];
+
+    it('should match only items starting with prefix term', () => {
+      const results = search('^app', items);
+      const matched = results.map((r) => r.item);
+      expect(matched).toContain('apple');
+      expect(matched).toContain('application');
+      expect(matched).not.toContain('pineapple');
+      expect(matched).not.toContain('maple');
+    });
+
+    it('should return empty when no items start with prefix', () => {
+      const results = search('^xyz', items);
+      expect(results).toEqual([]);
+    });
+  });
+
+  describe('suffix (term$)', () => {
+    const items = ['apple pie', 'pie chart', 'shepherd pie', 'pied piper'];
+
+    it('should match only items ending with suffix term', () => {
+      const results = search('pie$', items);
+      const matched = results.map((r) => r.item);
+      expect(matched).toContain('apple pie');
+      expect(matched).toContain('shepherd pie');
+      expect(matched).not.toContain('pie chart');
+      expect(matched).not.toContain('pied piper');
+    });
+
+    it('should return empty when no items end with suffix', () => {
+      const results = search('xyz$', items);
+      expect(results).toEqual([]);
+    });
+  });
+
+  describe("literal ('term)", () => {
+    const items = ['react', 'preact', 'reactive', 'redux'];
+
+    it('should match exact substring without fuzzy logic', () => {
+      const results = search("'react", items);
+      const matched = results.map((r) => r.item);
+      expect(matched).toContain('react');
+      expect(matched).toContain('preact');
+      expect(matched).toContain('reactive');
+      expect(matched).not.toContain('redux');
+    });
+
+    it('should return empty when no items contain the literal', () => {
+      const results = search("'xyz", items);
+      expect(results).toEqual([]);
+    });
+  });
+
+  describe('combined patterns', () => {
+    it('should combine prefix and exclusion', () => {
+      const items = ['apple pie', 'apple juice', 'cherry pie', 'apple cider'];
+      const results = search('^apple !pie', items);
+      const matched = results.map((r) => r.item);
+      expect(matched).toContain('apple juice');
+      expect(matched).toContain('apple cider');
+      expect(matched).not.toContain('apple pie');
+      expect(matched).not.toContain('cherry pie');
+    });
+
+    it('should combine prefix and suffix', () => {
+      const items = ['apple pie', 'apple juice', 'apricot pie'];
+      const results = search('^apple pie$', items);
+      const matched = results.map((r) => r.item);
+      expect(matched).toContain('apple pie');
+      expect(matched).not.toContain('apple juice');
+      expect(matched).not.toContain('apricot pie');
+    });
+  });
+
+  describe('FuzzyIndex parity', () => {
+    it('should support exclusion', () => {
+      const idx = new FuzzyIndex(['apple pie', 'apple juice', 'cherry pie']);
+      const results = idx.search('apple !pie');
+      const items = results.map((r) => r.item);
+      expect(items).toContain('apple juice');
+      expect(items).not.toContain('apple pie');
+    });
+
+    it('should support prefix', () => {
+      const idx = new FuzzyIndex(['apple', 'pineapple', 'application']);
+      const results = idx.search('^app');
+      const items = results.map((r) => r.item);
+      expect(items).toContain('apple');
+      expect(items).toContain('application');
+      expect(items).not.toContain('pineapple');
+    });
+
+    it('should support suffix', () => {
+      const idx = new FuzzyIndex(['apple pie', 'pie chart', 'shepherd pie']);
+      const results = idx.search('pie$');
+      const items = results.map((r) => r.item);
+      expect(items).toContain('apple pie');
+      expect(items).toContain('shepherd pie');
+      expect(items).not.toContain('pie chart');
+    });
+
+    it('should support literal', () => {
+      const idx = new FuzzyIndex(['react', 'preact', 'reactive', 'redux']);
+      const results = idx.search("'react");
+      const items = results.map((r) => r.item);
+      expect(items).toContain('react');
+      expect(items).toContain('preact');
+      expect(items).toContain('reactive');
+      expect(items).not.toContain('redux');
+    });
+
+    it('should support combined patterns', () => {
+      const idx = new FuzzyIndex(['apple pie', 'apple juice', 'cherry pie', 'apple cider']);
+      const results = idx.search('^apple !pie');
+      const items = results.map((r) => r.item);
+      expect(items).toContain('apple juice');
+      expect(items).toContain('apple cider');
+      expect(items).not.toContain('apple pie');
+      expect(items).not.toContain('cherry pie');
+    });
+  });
+
+  describe('edge cases', () => {
+    it('should handle diacritics with prefix syntax', () => {
+      const idx = new FuzzyIndex(['café au lait', 'cafe mocha', 'cappuccino']);
+      const results = idx.search('^café');
+      expect(results.map((r) => r.item)).toContain('café au lait');
+    });
+
+    it('should return positions with extended syntax when includePositions is true', () => {
+      const results = search('^app', ['apple', 'pineapple'], {
+        includePositions: true,
+      });
+      expect(results.length).toBeGreaterThan(0);
+      expect(results[0]?.positions.length).toBeGreaterThan(0);
+    });
+
+    it('should respect maxResults with extended syntax', () => {
+      const items = Array.from({ length: 20 }, (_, i) => `apple${i}`);
+      const results = search('^apple', items, { maxResults: 3 });
+      expect(results.length).toBeLessThanOrEqual(3);
+    });
+
+    it('should respect minScore with extended syntax', () => {
+      const results = search('^app', ['apple', 'application'], {
+        minScore: 0.5,
+      });
+      for (const r of results) {
+        expect(r.score).toBeGreaterThanOrEqual(0.5);
+      }
+    });
+  });
+});
+
 describe('FuzzyIndex', () => {
   const items = ['apple', 'banana', 'grape', 'orange', 'pineapple', 'mango'];
 
