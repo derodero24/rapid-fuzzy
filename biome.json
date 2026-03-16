@@ -126,6 +126,26 @@
           }
         }
       }
+    },
+    {
+      "includes": ["playground/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noDefaultExport": "off"
+          },
+          "performance": {
+            "noBarrelFile": "off",
+            "noReExportAll": "off"
+          },
+          "correctness": {
+            "noUndeclaredDependencies": "off"
+          },
+          "suspicious": {
+            "noConsole": "off"
+          }
+        }
+      }
     }
   ]
 }
