@@ -1317,6 +1317,141 @@ describe('FuzzyIndex', () => {
   });
 });
 
+describe('FuzzyIndex serialization', () => {
+  it('should round-trip serialize and deserialize', () => {
+    const items = ['TypeScript', 'JavaScript', 'Python', 'Rust'];
+    const index = new FuzzyIndex(items);
+    const original = index.search('type');
+
+    const buffer = index.serialize();
+    const restored = FuzzyIndex.deserialize(buffer);
+    const restoredResults = restored.search('type');
+
+    expect(restoredResults.length).toBe(original.length);
+    for (let i = 0; i < original.length; i++) {
+      expect(restoredResults[i]?.item).toBe(original[i]?.item);
+      expect(restoredResults[i]?.score).toBeCloseTo(original[i]?.score ?? 0);
+    }
+  });
+
+  it('should round-trip with Unicode data', () => {
+    const items = ['東京', '大阪', 'café', 'naïve', '🎉 party'];
+    const index = new FuzzyIndex(items);
+    const buffer = index.serialize();
+    const restored = FuzzyIndex.deserialize(buffer);
+    expect(restored.size).toBe(items.length);
+  });
+
+  it('should round-trip an empty index', () => {
+    const index = new FuzzyIndex([]);
+    const buffer = index.serialize();
+    const restored = FuzzyIndex.deserialize(buffer);
+    expect(restored.size).toBe(0);
+  });
+
+  it('should throw on invalid magic bytes', () => {
+    const buffer = Buffer.from([
+      0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ]);
+    expect(() => FuzzyIndex.deserialize(buffer)).toThrow();
+  });
+
+  it('should throw on truncated data', () => {
+    const index = new FuzzyIndex(['hello', 'world']);
+    const buffer = index.serialize();
+    const truncated = buffer.subarray(0, buffer.length - 3);
+    expect(() => FuzzyIndex.deserialize(truncated)).toThrow();
+  });
+
+  it('should throw on too-short data', () => {
+    const buffer = Buffer.from([0x01, 0x02]);
+    expect(() => FuzzyIndex.deserialize(buffer)).toThrow();
+  });
+});
+
+describe('KeyedFuzzyIndex error propagation', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { KeyedFuzzyIndex } = require('../index.js') as {
+    KeyedFuzzyIndex: typeof import('../index.js').KeyedFuzzyIndex;
+  };
+
+  it('should throw on negative weights', () => {
+    expect(() => new KeyedFuzzyIndex([['a']], [-1.0])).toThrow();
+  });
+
+  it('should throw on NaN weights', () => {
+    expect(() => new KeyedFuzzyIndex([['a']], [Number.NaN])).toThrow();
+  });
+
+  it('should throw on Infinity weights', () => {
+    expect(() => new KeyedFuzzyIndex([['a']], [Number.POSITIVE_INFINITY])).toThrow();
+  });
+
+  it('should throw on zero total weight', () => {
+    expect(() => new KeyedFuzzyIndex([['a']], [0.0])).toThrow();
+  });
+
+  it('should throw on mismatched key_texts column lengths', () => {
+    expect(() => new KeyedFuzzyIndex([['a', 'b'], ['c']], [1.0, 1.0])).toThrow();
+  });
+
+  it('should throw on mismatched weights count', () => {
+    expect(() => new KeyedFuzzyIndex([['a']], [1.0, 2.0])).toThrow();
+  });
+
+  it('should throw when add() receives wrong number of key values', () => {
+    const index = new KeyedFuzzyIndex([['a'], ['b']], [1.0, 1.0]);
+    expect(() => index.add(['only_one'])).toThrow();
+  });
+});
+
+describe('ESM/CJS export parity', () => {
+  it('should have matching exports between CJS and ESM', () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const fs = require('node:fs') as typeof import('node:fs');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const cjsBinding = require('../index.js') as Record<string, unknown>;
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const highlightModule = require('../highlight.js') as Record<string, unknown>;
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const objectsModule = require('../objects.js') as Record<string, unknown>;
+
+    const esmContent = fs.readFileSync(require.resolve('../index.mjs'), 'utf8');
+
+    // Internal classes consumed only by wrapper modules (not part of public ESM API)
+    const internalOnly = new Set(['KeyedFuzzyIndex']);
+
+    // Collect all CJS exports across the three modules
+    const allCjsExports = new Set([
+      ...Object.keys(cjsBinding),
+      ...Object.keys(highlightModule),
+      ...Object.keys(objectsModule),
+    ]);
+
+    // Extract named exports from ESM destructuring patterns
+    // e.g. export const { FuzzyIndex, search, ... } = { ... };
+    const destructureMatches = [...esmContent.matchAll(/export const \{([^}]+)\}/g)];
+    const allEsmExports = new Set(
+      destructureMatches.flatMap((m) =>
+        (m[1] ?? '')
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean),
+      ),
+    );
+
+    // Every public function/class in CJS should be available in ESM
+    const missingFromEsm: string[] = [];
+    for (const name of allCjsExports) {
+      if (!internalOnly.has(name) && !allEsmExports.has(name)) {
+        missingFromEsm.push(name);
+      }
+    }
+
+    expect(missingFromEsm).toEqual([]);
+  });
+});
+
 describe('searchKeys', () => {
   // Simulate: [{name: "John Smith", email: "john@example.com"},
   //            {name: "Jane Doe", email: "jane@example.com"},
