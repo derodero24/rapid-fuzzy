@@ -5,6 +5,7 @@ const binding = require('./index.js');
 
 export const {
   FuzzyIndex,
+  MatchType,
   closest,
   searchKeys,
   damerauLevenshtein,
