@@ -8,6 +8,7 @@ publish = false
 [dev-dependencies]
 criterion = { version = "4.4.1", package = "codspeed-criterion-compat" }
 strsim = { workspace = true }
+rapidfuzz = { workspace = true }
 nucleo-matcher = { workspace = true }
 
 [[bench]]
