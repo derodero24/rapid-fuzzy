@@ -318,6 +318,12 @@ export interface SearchOptions {
    * (case-insensitive unless the query contains uppercase characters).
    */
   isCaseSensitive?: boolean
+  /**
+   * If true, return all items when the query is empty (or whitespace-only).
+   * Useful for filter-as-you-type UIs where the full list should appear
+   * before the user starts typing. Default is false.
+   */
+  returnAllOnEmpty?: boolean
 }
 
 /** A single fuzzy search result with the matched item and its score. */

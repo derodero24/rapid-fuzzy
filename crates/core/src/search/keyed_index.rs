@@ -65,12 +65,34 @@ impl KeyedFuzzyIndex {
     pub fn search(&self, query: String, options: Option<SearchOptions>) -> Vec<KeySearchResult> {
         let num_keys = self.key_texts.len();
 
-        if query.is_empty() || num_keys == 0 {
+        if num_keys == 0 {
             return Vec::new();
         }
 
         let num_items = self.size() as usize;
         if num_items == 0 {
+            return Vec::new();
+        }
+
+        let return_all_on_empty = options
+            .as_ref()
+            .and_then(|o| o.return_all_on_empty)
+            .unwrap_or(false);
+
+        if return_all_on_empty && query.trim().is_empty() {
+            let max_results = options.as_ref().and_then(|o| o.max_results);
+            let limit = max_results.unwrap_or(num_items as u32) as usize;
+            return (0..num_items)
+                .take(limit)
+                .map(|i| KeySearchResult {
+                    index: i as u32,
+                    score: 1.0,
+                    key_scores: vec![1.0; num_keys],
+                })
+                .collect();
+        }
+
+        if query.is_empty() {
             return Vec::new();
         }
 
@@ -332,6 +354,7 @@ mod tests {
                 min_score: Some(0.9),
                 include_positions: None,
                 is_case_sensitive: None,
+                return_all_on_empty: None,
             }),
         );
         for r in &results {
@@ -349,6 +372,7 @@ mod tests {
                 min_score: None,
                 include_positions: None,
                 is_case_sensitive: None,
+                return_all_on_empty: None,
             }),
         );
         assert!(results.len() <= 1);
