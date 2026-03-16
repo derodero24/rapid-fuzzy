@@ -50,6 +50,37 @@ pub(crate) fn classify_match(positions: &[u32], item_char_count: usize) -> Match
     }
 }
 
+/// Classify the match type cheaply using the normalized score and string
+/// comparison, avoiding the cost of `pattern.indices()` when positions
+/// are not requested.
+///
+/// Fast path: score == 1.0 implies an exact match (all characters matched
+/// with maximum score). Otherwise, falls back to case-folded substring
+/// checks. Multi-term queries always classify as Fuzzy.
+pub(crate) fn classify_match_cheap(query: &str, item: &str, score: f64) -> MatchType {
+    // Score of 1.0 with matching length means a perfect match.
+    if (score - 1.0).abs() < f64::EPSILON && query.chars().count() == item.chars().count() {
+        return MatchType::Exact;
+    }
+
+    // Multi-term queries or queries with extended syntax: classify as Fuzzy
+    // since simple substring checks cannot handle them accurately.
+    if query.contains(' ') || query.contains('!') || query.contains('^') || query.contains('$') {
+        return MatchType::Fuzzy;
+    }
+
+    let query_lower: String = query.chars().flat_map(|c| c.to_lowercase()).collect();
+    let item_lower: String = item.chars().flat_map(|c| c.to_lowercase()).collect();
+
+    if item_lower.starts_with(&query_lower) {
+        MatchType::Prefix
+    } else if item_lower.contains(&query_lower) {
+        MatchType::Contains
+    } else {
+        MatchType::Fuzzy
+    }
+}
+
 /// A single fuzzy search result with the matched item and its score.
 #[napi(object)]
 pub struct SearchResult {
@@ -173,24 +204,22 @@ pub(crate) fn search_over_items(
         scored.sort_unstable_by(cmp);
 
         // Pass 2: Construct results only for the final top-k items.
-        // Always compute positions for matchType classification.
         scored
             .into_iter()
             .map(|(index, score)| {
-                buf.clear();
-                let atoms = nucleo_matcher::Utf32Str::new(&items[index as usize], &mut buf);
-                let mut indices = Vec::new();
-                pattern.indices(atoms, &mut matcher, &mut indices);
-                indices.sort_unstable();
-                indices.dedup();
-
-                let item_char_count = items[index as usize].chars().count();
-                let match_type = classify_match(&indices, item_char_count);
-
-                let positions = if include_positions {
-                    indices
+                let (positions, match_type) = if include_positions {
+                    buf.clear();
+                    let atoms = nucleo_matcher::Utf32Str::new(&items[index as usize], &mut buf);
+                    let mut indices = Vec::new();
+                    pattern.indices(atoms, &mut matcher, &mut indices);
+                    indices.sort_unstable();
+                    indices.dedup();
+                    let item_char_count = items[index as usize].chars().count();
+                    let mt = classify_match(&indices, item_char_count);
+                    (indices, mt)
                 } else {
-                    Vec::new()
+                    let mt = classify_match_cheap(query, &items[index as usize], score);
+                    (Vec::new(), mt)
                 };
 
                 SearchResult {
@@ -349,23 +378,21 @@ pub(crate) fn search_over_precomputed(
     scored.sort_unstable_by(cmp);
 
     // Pass 2: Construct results only for the final top-k items.
-    // Always compute positions for matchType classification.
     let results = scored
         .into_iter()
         .map(|(index, score)| {
-            let atoms = utf32_items[index as usize].slice(..);
-            let mut indices = Vec::new();
-            pattern.indices(atoms, &mut matcher, &mut indices);
-            indices.sort_unstable();
-            indices.dedup();
-
-            let item_char_count = items[index as usize].chars().count();
-            let match_type = classify_match(&indices, item_char_count);
-
-            let positions = if include_positions {
-                indices
+            let (positions, match_type) = if include_positions {
+                let atoms = utf32_items[index as usize].slice(..);
+                let mut indices = Vec::new();
+                pattern.indices(atoms, &mut matcher, &mut indices);
+                indices.sort_unstable();
+                indices.dedup();
+                let item_char_count = items[index as usize].chars().count();
+                let mt = classify_match(&indices, item_char_count);
+                (indices, mt)
             } else {
-                Vec::new()
+                let mt = classify_match_cheap(query, &items[index as usize], score);
+                (Vec::new(), mt)
             };
 
             SearchResult {
