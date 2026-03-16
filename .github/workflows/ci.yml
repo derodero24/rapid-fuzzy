@@ -58,6 +58,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm run check
       - run: pnpm run build
+      - name: Verify generated binding files are up to date
+        run: git diff --exit-code index.js index.d.ts browser.js
       - run: pnpm run typecheck
       - run: pnpm run publint
 
