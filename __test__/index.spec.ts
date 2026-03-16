@@ -430,39 +430,44 @@ describe('search', () => {
   });
 
   describe('matchType classification', () => {
-    it('should classify exact match', () => {
-      const results = search('apple', ['apple', 'pineapple', 'application']);
+    it('should classify exact match when includePositions is true', () => {
+      const results = search('apple', ['apple', 'pineapple'], { includePositions: true });
       const exact = results.find((r) => r.item === 'apple');
       expect(exact?.matchType).toBe('Exact');
     });
 
     it('should classify prefix match', () => {
-      const results = search('app', ['application']);
+      const results = search('app', ['application'], { includePositions: true });
       expect(results.length).toBeGreaterThan(0);
       expect(results[0]?.matchType).toBe('Prefix');
     });
 
     it('should classify contains match', () => {
-      const results = search('apple', ['pineapple']);
+      const results = search('apple', ['pineapple'], { includePositions: true });
       expect(results.length).toBeGreaterThan(0);
       expect(results[0]?.matchType).toBe('Contains');
     });
 
     it('should classify fuzzy match', () => {
-      const results = search('adf', ['abcdef']);
+      const results = search('adf', ['abcdef'], { includePositions: true });
       expect(results.length).toBeGreaterThan(0);
       expect(results[0]?.matchType).toBe('Fuzzy');
     });
 
-    it('should always be populated regardless of includePositions', () => {
-      const without = search('hello', ['hello']);
-      const with_ = search('hello', ['hello'], { includePositions: true });
-      expect(without[0]?.matchType).toBe('Exact');
-      expect(with_[0]?.matchType).toBe('Exact');
+    it('should be undefined when includePositions is false', () => {
+      const results = search('hello', ['hello']);
+      expect(results.length).toBeGreaterThan(0);
+      expect(results[0]?.matchType).toBeUndefined();
+    });
+
+    it('should be set when includePositions is true', () => {
+      const results = search('hello', ['hello'], { includePositions: true });
+      expect(results.length).toBeGreaterThan(0);
+      expect(results[0]?.matchType).toBe('Exact');
     });
 
     it('should classify case-insensitive exact match', () => {
-      const results = search('apple', ['Apple'], { minScore: 1.0 });
+      const results = search('apple', ['Apple'], { includePositions: true, minScore: 1.0 });
       expect(results.length).toBe(1);
       expect(results[0]?.matchType).toBe('Exact');
     });
@@ -967,9 +972,9 @@ describe('FuzzyIndex', () => {
       expect(results.length).toBe(3);
     });
 
-    it('should include matchType classification', () => {
+    it('should include matchType when includePositions is true', () => {
       const index = new FuzzyIndex(['apple', 'apple juice', 'pineapple']);
-      const results = index.search('apple');
+      const results = index.search('apple', { includePositions: true });
       const exact = results.find((r) => r.item === 'apple');
       const prefix = results.find((r) => r.item === 'apple juice');
       const contains = results.find((r) => r.item === 'pineapple');
@@ -978,11 +983,18 @@ describe('FuzzyIndex', () => {
       expect(contains?.matchType).toBe('Contains');
     });
 
+    it('should not include matchType without includePositions', () => {
+      const index = new FuzzyIndex(['apple']);
+      const results = index.search('apple');
+      expect(results.length).toBeGreaterThan(0);
+      expect(results[0]?.matchType).toBeUndefined();
+    });
+
     it('should have consistent matchType with standalone search', () => {
       const items = ['apple', 'apple juice', 'pineapple'];
       const index = new FuzzyIndex(items);
-      const indexResults = index.search('apple');
-      const standaloneResults = search('apple', items);
+      const indexResults = index.search('apple', { includePositions: true });
+      const standaloneResults = search('apple', items, { includePositions: true });
       for (let i = 0; i < indexResults.length; i++) {
         expect(indexResults[i]?.matchType).toBe(standaloneResults[i]?.matchType);
       }

@@ -333,8 +333,12 @@ export interface SearchResult {
    * Empty unless `includePositions` is set to true in SearchOptions.
    */
   positions: Array<number>
-  /** How the query matched this item (e.g. exact, prefix, contains, or fuzzy). */
-  matchType: MatchType
+  /**
+   * How the query matched this item (Exact, Prefix, Contains, or Fuzzy).
+   * Only present when `includePositions` is set to true in SearchOptions.
+   * Derived from positions at zero additional cost.
+   */
+  matchType?: MatchType
 }
 
 /**

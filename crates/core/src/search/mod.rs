@@ -21,7 +21,7 @@ use nucleo_matcher::{Config, Matcher, Utf32String};
 /// - **Contains**: all positions consecutive (a substring match), not starting at 0.
 /// - **Fuzzy**: positions have gaps (character-level fuzzy match).
 #[napi(string_enum)]
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum MatchType {
     Exact,
     Prefix,
@@ -50,68 +50,6 @@ pub(crate) fn classify_match(positions: &[u32], item_char_count: usize) -> Match
     }
 }
 
-/// Pre-computed query data for cheap match classification.
-/// Created once per search call and reused for every result.
-pub(crate) struct CheapClassifier {
-    /// Lowercased query characters (None if query uses extended syntax).
-    query_lower: Option<Vec<char>>,
-    /// Original query character count.
-    query_char_count: usize,
-}
-
-impl CheapClassifier {
-    pub(crate) fn new(query: &str) -> Self {
-        let query_char_count = query.chars().count();
-        // Multi-term queries or extended syntax: skip substring matching.
-        let query_lower = if query.contains(' ')
-            || query.contains('!')
-            || query.contains('^')
-            || query.contains('$')
-        {
-            None
-        } else {
-            Some(query.chars().flat_map(|c| c.to_lowercase()).collect())
-        };
-        Self {
-            query_lower,
-            query_char_count,
-        }
-    }
-
-    pub(crate) fn classify(&self, item: &str, score: f64) -> MatchType {
-        let item_char_count = item.chars().count();
-
-        // Fast path: score 1.0 with matching length → Exact.
-        if (score - 1.0).abs() < f64::EPSILON && self.query_char_count == item_char_count {
-            return MatchType::Exact;
-        }
-
-        let query_lower = match &self.query_lower {
-            Some(q) => q,
-            None => return MatchType::Fuzzy,
-        };
-
-        let qlen = query_lower.len();
-        if qlen > item_char_count {
-            return MatchType::Fuzzy;
-        }
-
-        // Case-insensitive substring scan over the item.
-        let item_chars: Vec<char> = item.chars().flat_map(|c| c.to_lowercase()).collect();
-        for start in 0..=(item_chars.len() - qlen) {
-            if item_chars[start..start + qlen] == query_lower[..] {
-                return if start == 0 {
-                    MatchType::Prefix
-                } else {
-                    MatchType::Contains
-                };
-            }
-        }
-
-        MatchType::Fuzzy
-    }
-}
-
 /// A single fuzzy search result with the matched item and its score.
 #[napi(object)]
 pub struct SearchResult {
@@ -124,8 +62,10 @@ pub struct SearchResult {
     /// Indices of matched characters in the item string.
     /// Empty unless `includePositions` is set to true in SearchOptions.
     pub positions: Vec<u32>,
-    /// How the query matched this item (e.g. exact, prefix, contains, or fuzzy).
-    pub match_type: MatchType,
+    /// How the query matched this item (Exact, Prefix, Contains, or Fuzzy).
+    /// Only present when `includePositions` is set to true in SearchOptions.
+    /// Derived from positions at zero additional cost.
+    pub match_type: Option<MatchType>,
 }
 
 /// Options for the search function.
@@ -235,11 +175,6 @@ pub(crate) fn search_over_items(
         scored.sort_unstable_by(cmp);
 
         // Pass 2: Construct results only for the final top-k items.
-        let classifier = if !include_positions {
-            Some(CheapClassifier::new(query))
-        } else {
-            None
-        };
         scored
             .into_iter()
             .map(|(index, score)| {
@@ -252,13 +187,9 @@ pub(crate) fn search_over_items(
                     indices.dedup();
                     let item_char_count = items[index as usize].chars().count();
                     let mt = classify_match(&indices, item_char_count);
-                    (indices, mt)
+                    (indices, Some(mt))
                 } else {
-                    let mt = classifier
-                        .as_ref()
-                        .unwrap()
-                        .classify(&items[index as usize], score);
-                    (Vec::new(), mt)
+                    (Vec::new(), None)
                 };
 
                 SearchResult {
@@ -417,11 +348,6 @@ pub(crate) fn search_over_precomputed(
     scored.sort_unstable_by(cmp);
 
     // Pass 2: Construct results only for the final top-k items.
-    let classifier = if !include_positions {
-        Some(CheapClassifier::new(query))
-    } else {
-        None
-    };
     let results = scored
         .into_iter()
         .map(|(index, score)| {
@@ -433,13 +359,9 @@ pub(crate) fn search_over_precomputed(
                 indices.dedup();
                 let item_char_count = items[index as usize].chars().count();
                 let mt = classify_match(&indices, item_char_count);
-                (indices, mt)
+                (indices, Some(mt))
             } else {
-                let mt = classifier
-                    .as_ref()
-                    .unwrap()
-                    .classify(&items[index as usize], score);
-                (Vec::new(), mt)
+                (Vec::new(), None)
             };
 
             SearchResult {
@@ -932,15 +854,11 @@ mod tests {
             items,
             None,
             None,
-            false,
+            true,
             CaseMatching::Smart,
         );
         let exact = results.iter().find(|r| r.item == "apple").unwrap();
-        assert!(
-            matches!(exact.match_type, MatchType::Exact),
-            "expected Exact, got {:?}",
-            exact.match_type
-        );
+        assert_eq!(exact.match_type, Some(MatchType::Exact));
     }
 
     #[test]
@@ -951,15 +869,11 @@ mod tests {
             items,
             None,
             None,
-            false,
+            true,
             CaseMatching::Smart,
         );
         assert!(!results.is_empty());
-        assert!(
-            matches!(results[0].match_type, MatchType::Prefix),
-            "expected Prefix, got {:?}",
-            results[0].match_type
-        );
+        assert_eq!(results[0].match_type, Some(MatchType::Prefix));
     }
 
     #[test]
@@ -970,15 +884,11 @@ mod tests {
             items,
             None,
             None,
-            false,
+            true,
             CaseMatching::Smart,
         );
         assert!(!results.is_empty());
-        assert!(
-            matches!(results[0].match_type, MatchType::Contains),
-            "expected Contains, got {:?}",
-            results[0].match_type
-        );
+        assert_eq!(results[0].match_type, Some(MatchType::Contains));
     }
 
     #[test]
@@ -989,30 +899,32 @@ mod tests {
             items,
             None,
             None,
+            true,
+            CaseMatching::Smart,
+        );
+        assert!(!results.is_empty());
+        assert_eq!(results[0].match_type, Some(MatchType::Fuzzy));
+    }
+
+    #[test]
+    fn test_match_type_none_without_positions() {
+        let items = vec!["hello".to_string()];
+        let results = search_impl(
+            "hello".to_string(),
+            items,
+            None,
+            None,
             false,
             CaseMatching::Smart,
         );
         assert!(!results.is_empty());
-        assert!(
-            matches!(results[0].match_type, MatchType::Fuzzy),
-            "expected Fuzzy, got {:?}",
-            results[0].match_type
-        );
+        assert_eq!(results[0].match_type, None);
     }
 
     #[test]
-    fn test_match_type_always_populated() {
-        // matchType should be set regardless of includePositions
+    fn test_match_type_present_with_positions() {
         let items = vec!["hello".to_string()];
-        let without = search_impl(
-            "hello".to_string(),
-            items.clone(),
-            None,
-            None,
-            false,
-            CaseMatching::Smart,
-        );
-        let with = search_impl(
+        let results = search_impl(
             "hello".to_string(),
             items,
             None,
@@ -1020,28 +932,23 @@ mod tests {
             true,
             CaseMatching::Smart,
         );
-        assert!(matches!(without[0].match_type, MatchType::Exact));
-        assert!(matches!(with[0].match_type, MatchType::Exact));
+        assert!(!results.is_empty());
+        assert_eq!(results[0].match_type, Some(MatchType::Exact));
     }
 
     #[test]
     fn test_match_type_case_insensitive_exact() {
-        // "apple" matching "Apple" should be Exact (smart case)
         let items = vec!["Apple".to_string()];
         let results = search_impl(
             "apple".to_string(),
             items,
             None,
             None,
-            false,
+            true,
             CaseMatching::Smart,
         );
         assert!(!results.is_empty());
-        assert!(
-            matches!(results[0].match_type, MatchType::Exact),
-            "expected Exact for case-insensitive match, got {:?}",
-            results[0].match_type
-        );
+        assert_eq!(results[0].match_type, Some(MatchType::Exact));
     }
 
     #[test]
