@@ -8,7 +8,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "rapid-fuzzy": "latest"
+    "rapid-fuzzy": "^0.6.0"
   },
   "devDependencies": {
     "vite": "^6.4.1"

@@ -20,6 +20,7 @@
         <input
           type="text"
           id="search-input"
+          aria-label="Search query"
           placeholder="Type to search…"
           autocomplete="off"
           spellcheck="false"
@@ -35,7 +36,7 @@
       <div class="results" id="search-results">
         <p class="placeholder">Results will appear here as you type.</p>
       </div>
-      <details class="syntax-help">
+      <details class="syntax-help" open>
         <summary>Extended query syntax (always active)</summary>
         <ul>
           <li><code>^prefix</code> — starts with</li>
@@ -51,8 +52,8 @@
     <section class="card" id="distance-section">
       <h2>String Distance / Similarity</h2>
       <div class="distance-inputs">
-        <input type="text" id="dist-a" placeholder="String A" value="kitten">
-        <input type="text" id="dist-b" placeholder="String B" value="sitting">
+        <input type="text" id="dist-a" aria-label="Distance input A" placeholder="String A" value="kitten">
+        <input type="text" id="dist-b" aria-label="Distance input B" placeholder="String B" value="sitting">
       </div>
       <div class="algorithm-select">
         <label for="algorithm">Algorithm:</label>

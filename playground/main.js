@@ -128,7 +128,7 @@ function runDistance() {
   const a = distA.value;
   const b = distB.value;
   const algo = algorithmSelect.value;
-  const config = distanceFunctions[algo];
+  const config = distanceFunctions[algo] ?? distanceFunctions.jaroWinkler;
 
   if (!a && !b) {
     distanceResult.innerHTML = '';
