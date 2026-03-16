@@ -188,11 +188,26 @@ impl KeyedFuzzyIndex {
             })
             .collect();
 
-        scored.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        // Sort by score descending, with original index as tiebreaker
+        // for deterministic ordering.
+        let cmp = |a: &(u32, f64), b: &(u32, f64)| {
+            let score_ord = b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal);
+            if score_ord != std::cmp::Ordering::Equal {
+                return score_ord;
+            }
+            a.0.cmp(&b.0)
+        };
 
+        // Top-k selection: use quickselect O(n) + sort O(k log k) instead of
+        // full sort O(n log n) when maxResults is set.
         if let Some(max) = max_results {
-            scored.truncate(max as usize);
+            let k = max as usize;
+            if scored.len() > k {
+                scored.select_nth_unstable_by(k, cmp);
+                scored.truncate(k);
+            }
         }
+        scored.sort_unstable_by(cmp);
 
         // Pass 2: Construct KeySearchResult only for the final top-k items.
         scored
@@ -455,6 +470,48 @@ mod tests {
     fn test_zero_total_weight_rejected() {
         let result = KeyedFuzzyIndex::new_impl(vec![vec!["a".into()]], vec![0.0]);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_deterministic_ordering_with_equal_scores() {
+        // Create items where multiple entries will have the same combined score
+        let index = KeyedFuzzyIndex::new_impl(
+            vec![
+                vec![
+                    "alpha".to_string(),
+                    "alpha".to_string(),
+                    "alpha".to_string(),
+                ],
+                vec![
+                    "x@test.com".to_string(),
+                    "y@test.com".to_string(),
+                    "z@test.com".to_string(),
+                ],
+            ],
+            vec![1.0, 1.0],
+        )
+        .unwrap();
+
+        // Run the same search twice — results should be identical
+        let results1 = index.search("alpha".to_string(), None);
+        let results2 = index.search("alpha".to_string(), None);
+
+        assert_eq!(results1.len(), results2.len());
+        for (r1, r2) in results1.iter().zip(results2.iter()) {
+            assert_eq!(r1.index, r2.index, "ordering should be deterministic");
+        }
+
+        // With equal scores, items should be sorted by original index ascending
+        for window in results1.windows(2) {
+            if (window[0].score - window[1].score).abs() < f64::EPSILON {
+                assert!(
+                    window[0].index < window[1].index,
+                    "equal scores should be ordered by index: {} vs {}",
+                    window[0].index,
+                    window[1].index
+                );
+            }
+        }
     }
 
     #[test]
