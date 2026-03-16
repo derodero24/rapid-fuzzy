@@ -57,7 +57,7 @@
   },
   "overrides": [
     {
-      "includes": ["index.mjs", "highlight.mjs"],
+      "includes": ["index.mjs", "highlight.mjs", "objects.mjs"],
       "linter": {
         "rules": {
           "performance": {

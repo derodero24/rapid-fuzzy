@@ -43,6 +43,26 @@
         "default": "./index.js"
       },
       "browser": "./browser.js"
+    },
+    "./highlight": {
+      "import": {
+        "types": "./highlight.d.ts",
+        "default": "./highlight.mjs"
+      },
+      "require": {
+        "types": "./highlight.d.ts",
+        "default": "./highlight.js"
+      }
+    },
+    "./objects": {
+      "import": {
+        "types": "./objects.d.ts",
+        "default": "./objects.mjs"
+      },
+      "require": {
+        "types": "./objects.d.ts",
+        "default": "./objects.js"
+      }
     }
   },
   "files": [
@@ -51,6 +71,7 @@
     "index.d.ts",
     "index.d.mts",
     "objects.js",
+    "objects.mjs",
     "objects.d.ts",
     "browser.js",
     "highlight.js",
