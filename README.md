@@ -67,6 +67,13 @@ pnpm add rapid-fuzzy
 - **Node.js** (>=20): Uses native bindings via napi-rs for best performance.
 - **Browser / Deno / Bun**: Falls back to a WASM build automatically. The WASM binary is ~607 KB raw (~200 KB gzipped).
 
+> **Browser WASM requirement**: The WASM build uses `SharedArrayBuffer` for threading, which requires the following HTTP headers on your page:
+> ```
+> Cross-Origin-Opener-Policy: same-origin
+> Cross-Origin-Embedder-Policy: require-corp
+> ```
+> Without these headers, you will see `SharedArrayBuffer is not defined`. See [MDN: SharedArrayBuffer](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/SharedArrayBuffer#security_requirements) for details.
+
 > **Note**: rapid-fuzzy is pre-1.0 — the API is stable but minor versions may include additions.
 
 ### Fuzzy Search
