@@ -157,10 +157,7 @@ pub(crate) fn search_over_items(
             if score_ord != std::cmp::Ordering::Equal {
                 return score_ord;
             }
-            let len_ord = items[a.0 as usize]
-                .chars()
-                .count()
-                .cmp(&items[b.0 as usize].chars().count());
+            let len_ord = items[a.0 as usize].len().cmp(&items[b.0 as usize].len());
             if len_ord != std::cmp::Ordering::Equal {
                 return len_ord;
             }
@@ -1191,6 +1188,62 @@ mod tests {
             let items = vec!["大阪".to_string(), "京都".to_string(), "東京都".to_string()];
             let result = closest("東京".to_string(), items, None);
             assert!(result.is_some());
+        }
+
+        #[test]
+        fn test_tiebreaker_consistent_for_unicode() {
+            // Verify standalone search and indexed search produce identical
+            // ordering for Unicode items where byte length != char count.
+            // "hello世界" = 11 bytes / 7 chars (CJK chars are 3 bytes each)
+            // "helloab" = 7 bytes / 7 chars
+            // Same char count (7) but different byte lengths (11 vs 7).
+            // Using .chars().count() would treat them as equal length;
+            // using .len() (byte length) correctly differentiates them.
+            // Both items contain the query's ASCII letters (h,e,l,o)
+            // so the bitmask pre-filter in the indexed path matches both.
+            use std::cell::RefCell;
+
+            use nucleo_matcher::{Config, Matcher, Utf32String};
+
+            let items = vec!["hello世界".to_string(), "helloab".to_string()];
+
+            let standalone = search_impl(
+                "hello".to_string(),
+                items.clone(),
+                None,
+                None,
+                false,
+                CaseMatching::Smart,
+            );
+
+            // Build precomputed context to test the indexed path.
+            let utf32_items: Vec<Utf32String> = items
+                .iter()
+                .map(|s| Utf32String::from(s.as_str()))
+                .collect();
+            let char_masks: Vec<u64> = items.iter().map(|s| compute_char_mask(s)).collect();
+            let matcher = RefCell::new(Matcher::new(Config::DEFAULT));
+            let ctx = PrecomputedSearch {
+                items: &items,
+                utf32_items: &utf32_items,
+                char_masks: &char_masks,
+                candidate_indices: None,
+                matcher: &matcher,
+            };
+            let indexed =
+                search_over_precomputed("hello", &ctx, None, None, false, CaseMatching::Smart);
+
+            assert_eq!(
+                standalone.len(),
+                indexed.results.len(),
+                "result count differs between standalone and indexed search"
+            );
+            for (s, i) in standalone.iter().zip(indexed.results.iter()) {
+                assert_eq!(
+                    s.item, i.item,
+                    "ordering differs between standalone and indexed search"
+                );
+            }
         }
 
         #[test]
