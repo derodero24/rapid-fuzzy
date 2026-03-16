@@ -20,6 +20,22 @@ Blazing-fast fuzzy search for JavaScript — powered by Rust, works everywhere.
 - **Type-safe**: Full TypeScript support with auto-generated type definitions
 - **Drop-in**: API compatible with popular fuzzy search libraries
 
+## Playground
+
+Try rapid-fuzzy in your browser — fuzzy search with match highlighting and string distance calculations.
+
+<img src=".github/assets/playground.png" alt="rapid-fuzzy Playground — fuzzy search and string distance demo" width="580" />
+
+```bash
+git clone https://github.com/derodero24/rapid-fuzzy.git
+cd rapid-fuzzy
+pnpm run build:wasm
+cd playground && npm install && npm run dev
+# Open http://localhost:5173
+```
+
+> **Note**: The playground uses WASM and requires a local dev server with specific CORS headers (configured automatically by Vite).
+
 ## Quick Start
 
 ```typescript
