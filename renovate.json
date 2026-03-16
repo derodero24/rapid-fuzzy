@@ -3,6 +3,7 @@
   "extends": ["config:recommended"],
   "baseBranchPatterns": ["develop"],
   "prConcurrentLimit": 10,
+  "ignoreDeps": ["string-similarity", "@types/string-similarity"],
   "lockFileMaintenance": {
     "enabled": true,
     "automerge": true,
