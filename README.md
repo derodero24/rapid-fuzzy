@@ -22,7 +22,7 @@ Blazing-fast fuzzy search for JavaScript — powered by Rust, works everywhere.
 
 ## Playground
 
-Try rapid-fuzzy in your browser — fuzzy search with match highlighting and string distance calculations.
+An interactive demo featuring fuzzy search with match highlighting and string distance calculations.
 
 <img src=".github/assets/playground.png" alt="rapid-fuzzy Playground — fuzzy search and string distance demo" width="580" />
 
