@@ -515,7 +515,12 @@ mod tests {
         ];
         let weights = vec![1.0, 1.0];
 
-        let results1 = search_keys("alpha".to_string(), key_texts.clone(), weights.clone(), None);
+        let results1 = search_keys(
+            "alpha".to_string(),
+            key_texts.clone(),
+            weights.clone(),
+            None,
+        );
         let results2 = search_keys("alpha".to_string(), key_texts, weights, None);
 
         assert_eq!(results1.len(), results2.len());
@@ -528,7 +533,8 @@ mod tests {
                 assert!(
                     window[0].index < window[1].index,
                     "equal scores should be ordered by index: {} vs {}",
-                    window[0].index, window[1].index
+                    window[0].index,
+                    window[1].index
                 );
             }
         }

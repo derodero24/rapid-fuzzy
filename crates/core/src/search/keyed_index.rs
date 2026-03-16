@@ -507,7 +507,8 @@ mod tests {
                 assert!(
                     window[0].index < window[1].index,
                     "equal scores should be ordered by index: {} vs {}",
-                    window[0].index, window[1].index
+                    window[0].index,
+                    window[1].index
                 );
             }
         }
