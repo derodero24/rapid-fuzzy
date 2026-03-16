@@ -40,16 +40,38 @@ impl KeyedFuzzyIndex {
     /// `key_texts[k]` is an array of strings for key `k`, one per item.
     /// All inner arrays must have the same length (the number of items).
     #[napi(constructor)]
-    pub fn new(key_texts: Vec<Vec<String>>, weights: Vec<f64>) -> Self {
-        let utf32_keys: Vec<Vec<Utf32String>> = key_texts.iter().map(|t| to_utf32(t)).collect();
+    pub fn new(key_texts: Vec<Vec<String>>, weights: Vec<f64>) -> napi::Result<Self> {
+        Self::new_impl(key_texts, weights).map_err(napi::Error::from_reason)
+    }
+
+    fn new_impl(key_texts: Vec<Vec<String>>, weights: Vec<f64>) -> Result<Self, String> {
+        let num_keys = key_texts.len();
+
+        if weights.len() != num_keys {
+            return Err(format!(
+                "Expected {} weights, got {}",
+                num_keys,
+                weights.len()
+            ));
+        }
+
+        if weights.iter().any(|w| !w.is_finite() || *w < 0.0) {
+            return Err("Weights must be finite non-negative numbers".to_string());
+        }
+
         let total_weight: f64 = weights.iter().sum();
-        Self {
+        if total_weight <= 0.0 {
+            return Err("Total weight must be greater than zero".to_string());
+        }
+
+        let utf32_keys: Vec<Vec<Utf32String>> = key_texts.iter().map(|t| to_utf32(t)).collect();
+        Ok(Self {
             key_texts,
             utf32_keys,
             weights,
             total_weight,
             matcher: RefCell::new(Matcher::new(Config::DEFAULT)),
-        }
+        })
     }
 
     /// Return the number of items in the index.
@@ -223,7 +245,7 @@ mod tests {
     use super::*;
 
     fn make_index() -> KeyedFuzzyIndex {
-        KeyedFuzzyIndex::new(
+        KeyedFuzzyIndex::new_impl(
             vec![
                 vec![
                     "John Smith".to_string(),
@@ -238,6 +260,7 @@ mod tests {
             ],
             vec![2.0, 1.0],
         )
+        .unwrap()
     }
 
     #[test]
@@ -360,5 +383,40 @@ mod tests {
         let results = index.search("john".to_string(), None);
         assert!(!results.is_empty());
         assert_eq!(results[0].key_scores.len(), 2);
+    }
+
+    #[test]
+    fn test_mismatched_weights_rejected() {
+        // Too few weights
+        let result = KeyedFuzzyIndex::new_impl(vec![vec!["a".into()], vec!["b".into()]], vec![1.0]);
+        assert!(result.is_err());
+
+        // Too many weights
+        let result = KeyedFuzzyIndex::new_impl(vec![vec!["a".into()]], vec![1.0, 2.0]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_negative_weight_rejected() {
+        let result = KeyedFuzzyIndex::new_impl(vec![vec!["a".into()]], vec![-1.0]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_nan_weight_rejected() {
+        let result = KeyedFuzzyIndex::new_impl(vec![vec!["a".into()]], vec![f64::NAN]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_infinity_weight_rejected() {
+        let result = KeyedFuzzyIndex::new_impl(vec![vec!["a".into()]], vec![f64::INFINITY]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_zero_total_weight_rejected() {
+        let result = KeyedFuzzyIndex::new_impl(vec![vec!["a".into()]], vec![0.0]);
+        assert!(result.is_err());
     }
 }
