@@ -903,7 +903,7 @@ describe('unicode', () => {
     it('should return positions spanning all matched terms', () => {
       const results = search('john smith', contacts, { includePositions: true });
       expect(results.length).toBeGreaterThan(0);
-      expect(results[0]!.positions.length).toBeGreaterThan(0);
+      expect(results[0]?.positions.length).toBeGreaterThan(0);
     });
 
     it('should work with FuzzyIndex', () => {

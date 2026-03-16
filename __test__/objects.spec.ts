@@ -185,7 +185,7 @@ describe('FuzzyObjectIndex', () => {
     const index = new FuzzyObjectIndex(users, { keys: ['name'] });
     const result = index.closest('jane');
     expect(result).not.toBeNull();
-    expect(result!.name).toBe('Jane Doe');
+    expect(result?.name).toBe('Jane Doe');
   });
 
   it('should return null from closest when minScore is too high', () => {
