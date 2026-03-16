@@ -510,6 +510,45 @@ mod tests {
     }
 
     #[test]
+    fn test_jaro_regression_vectors() {
+        let vectors: Vec<(&str, &str, f64)> = vec![
+            ("MARTHA", "MARHTA", 0.9444444444444445),
+            ("DWAYNE", "DUANE", 0.8222222222222223),
+            ("DIXON", "DICKSONX", 0.7666666666666666),
+            ("a jke", "jane a k", 0.6),
+            ("", "", 1.0),
+            ("a", "", 0.0),
+            ("a", "a", 1.0),
+        ];
+        for (a, b, expected) in vectors {
+            let score = jaro(a.into(), b.into());
+            assert!(
+                (score - expected).abs() <= f64::EPSILON,
+                "jaro({a:?}, {b:?}) = {score}, expected {expected}",
+            );
+        }
+    }
+
+    #[test]
+    fn test_jaro_winkler_regression_vectors() {
+        let vectors: Vec<(&str, &str, f64)> = vec![
+            ("MARTHA", "MARHTA", 0.9611111111111111),
+            ("DWAYNE", "DUANE", 0.84),
+            ("DIXON", "DICKSONX", 0.8133333333333332),
+            ("", "", 1.0),
+            ("a", "", 0.0),
+            ("a", "a", 1.0),
+        ];
+        for (a, b, expected) in vectors {
+            let score = jaro_winkler(a.into(), b.into());
+            assert!(
+                (score - expected).abs() <= f64::EPSILON,
+                "jaro_winkler({a:?}, {b:?}) = {score}, expected {expected}",
+            );
+        }
+    }
+
+    #[test]
     fn test_sorensen_dice() {
         let score = sorensen_dice("night".into(), "nacht".into());
         assert!(score > 0.0 && score < 1.0);
