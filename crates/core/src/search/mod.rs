@@ -50,33 +50,64 @@ pub(crate) fn classify_match(positions: &[u32], item_char_count: usize) -> Match
     }
 }
 
-/// Classify the match type cheaply using the normalized score and string
-/// comparison, avoiding the cost of `pattern.indices()` when positions
-/// are not requested.
-///
-/// Fast path: score == 1.0 implies an exact match (all characters matched
-/// with maximum score). Otherwise, falls back to case-folded substring
-/// checks. Multi-term queries always classify as Fuzzy.
-pub(crate) fn classify_match_cheap(query: &str, item: &str, score: f64) -> MatchType {
-    // Score of 1.0 with matching length means a perfect match.
-    if (score - 1.0).abs() < f64::EPSILON && query.chars().count() == item.chars().count() {
-        return MatchType::Exact;
+/// Pre-computed query data for cheap match classification.
+/// Created once per search call and reused for every result.
+pub(crate) struct CheapClassifier {
+    /// Lowercased query characters (None if query uses extended syntax).
+    query_lower: Option<Vec<char>>,
+    /// Original query character count.
+    query_char_count: usize,
+}
+
+impl CheapClassifier {
+    pub(crate) fn new(query: &str) -> Self {
+        let query_char_count = query.chars().count();
+        // Multi-term queries or extended syntax: skip substring matching.
+        let query_lower = if query.contains(' ')
+            || query.contains('!')
+            || query.contains('^')
+            || query.contains('$')
+        {
+            None
+        } else {
+            Some(query.chars().flat_map(|c| c.to_lowercase()).collect())
+        };
+        Self {
+            query_lower,
+            query_char_count,
+        }
     }
 
-    // Multi-term queries or queries with extended syntax: classify as Fuzzy
-    // since simple substring checks cannot handle them accurately.
-    if query.contains(' ') || query.contains('!') || query.contains('^') || query.contains('$') {
-        return MatchType::Fuzzy;
-    }
+    pub(crate) fn classify(&self, item: &str, score: f64) -> MatchType {
+        let item_char_count = item.chars().count();
 
-    let query_lower: String = query.chars().flat_map(|c| c.to_lowercase()).collect();
-    let item_lower: String = item.chars().flat_map(|c| c.to_lowercase()).collect();
+        // Fast path: score 1.0 with matching length → Exact.
+        if (score - 1.0).abs() < f64::EPSILON && self.query_char_count == item_char_count {
+            return MatchType::Exact;
+        }
 
-    if item_lower.starts_with(&query_lower) {
-        MatchType::Prefix
-    } else if item_lower.contains(&query_lower) {
-        MatchType::Contains
-    } else {
+        let query_lower = match &self.query_lower {
+            Some(q) => q,
+            None => return MatchType::Fuzzy,
+        };
+
+        let qlen = query_lower.len();
+        if qlen > item_char_count {
+            return MatchType::Fuzzy;
+        }
+
+        // Case-insensitive substring scan over the item.
+        let item_chars: Vec<char> = item.chars().flat_map(|c| c.to_lowercase()).collect();
+        for start in 0..=(item_chars.len() - qlen) {
+            if item_chars[start..start + qlen] == query_lower[..] {
+                return if start == 0 {
+                    MatchType::Prefix
+                } else {
+                    MatchType::Contains
+                };
+            }
+        }
+
         MatchType::Fuzzy
     }
 }
@@ -204,6 +235,11 @@ pub(crate) fn search_over_items(
         scored.sort_unstable_by(cmp);
 
         // Pass 2: Construct results only for the final top-k items.
+        let classifier = if !include_positions {
+            Some(CheapClassifier::new(query))
+        } else {
+            None
+        };
         scored
             .into_iter()
             .map(|(index, score)| {
@@ -218,7 +254,10 @@ pub(crate) fn search_over_items(
                     let mt = classify_match(&indices, item_char_count);
                     (indices, mt)
                 } else {
-                    let mt = classify_match_cheap(query, &items[index as usize], score);
+                    let mt = classifier
+                        .as_ref()
+                        .unwrap()
+                        .classify(&items[index as usize], score);
                     (Vec::new(), mt)
                 };
 
@@ -378,6 +417,11 @@ pub(crate) fn search_over_precomputed(
     scored.sort_unstable_by(cmp);
 
     // Pass 2: Construct results only for the final top-k items.
+    let classifier = if !include_positions {
+        Some(CheapClassifier::new(query))
+    } else {
+        None
+    };
     let results = scored
         .into_iter()
         .map(|(index, score)| {
@@ -391,7 +435,10 @@ pub(crate) fn search_over_precomputed(
                 let mt = classify_match(&indices, item_char_count);
                 (indices, mt)
             } else {
-                let mt = classify_match_cheap(query, &items[index as usize], score);
+                let mt = classifier
+                    .as_ref()
+                    .unwrap()
+                    .classify(&items[index as usize], score);
                 (Vec::new(), mt)
             };
 
