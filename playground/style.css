@@ -84,8 +84,7 @@ main {
   color: var(--text);
 }
 
-input[type="text"],
-select {
+input[type="text"] {
   width: 100%;
   padding: 0.6rem 0.75rem;
   background: var(--bg);
@@ -98,8 +97,7 @@ select {
   transition: border-color 0.15s;
 }
 
-input[type="text"]:focus,
-select:focus {
+input[type="text"]:focus {
   border-color: var(--accent);
 }
 
@@ -212,45 +210,87 @@ mark {
   color: var(--red);
 }
 
-/* Distance section */
+/* Distance section — algorithm grid */
 .distance-inputs {
   display: flex;
   gap: 0.5rem;
 }
 
-.algorithm-select {
-  margin-top: 0.5rem;
+.algorithm-grid {
+  margin-top: 0.75rem;
+}
+
+.algo-group {
+  margin-bottom: 0.75rem;
+}
+
+.algo-group:last-child {
+  margin-bottom: 0;
+}
+
+.algo-group-label {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0 0.5rem;
+  margin-bottom: 0.2rem;
+}
+
+.algo-item {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-}
-
-.algorithm-select label {
-  font-size: 0.85rem;
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-
-.algorithm-select select {
-  flex: 1;
-}
-
-.distance-result {
-  margin-top: 0.75rem;
-  padding: 0.75rem;
-  background: var(--bg);
-  border-radius: var(--radius);
+  padding: 0.3rem 0.5rem;
+  border-radius: 4px;
   font-family: var(--font-mono);
-  font-size: 1.25rem;
-  text-align: center;
-  min-height: 2.5rem;
+  font-size: 0.85rem;
 }
 
-.distance-label {
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  display: block;
-  margin-bottom: 0.25rem;
+.algo-item:hover {
+  background: var(--bg);
+}
+
+.algo-name {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text);
+}
+
+.algo-value {
+  white-space: nowrap;
+  min-width: 3.5rem;
+  text-align: right;
+}
+
+.algo-bar {
+  width: 48px;
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.algo-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.2s;
+}
+
+.bar-high {
+  background: var(--green);
+}
+
+.bar-mid {
+  background: var(--yellow);
+}
+
+.bar-low {
+  background: var(--red);
 }
 
 /* Syntax help */

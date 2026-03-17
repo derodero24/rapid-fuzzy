@@ -22,9 +22,14 @@ Blazing-fast fuzzy search for JavaScript — powered by Rust, works everywhere.
 
 ## Playground
 
-An interactive demo featuring fuzzy search with match highlighting and string distance calculations.
+Try rapid-fuzzy in the browser — no installation required.
+
+**[Open Playground](https://derodero24.github.io/rapid-fuzzy/)**
 
 <img src=".github/assets/playground.png" alt="rapid-fuzzy Playground — fuzzy search and string distance demo" width="580" />
+
+<details>
+<summary>Run locally</summary>
 
 ```bash
 git clone https://github.com/derodero24/rapid-fuzzy.git
@@ -35,6 +40,8 @@ cd playground && npm install && npm run dev
 ```
 
 > **Note**: The playground uses WASM and requires a local dev server with specific CORS headers (configured automatically by Vite).
+
+</details>
 
 ## Quick Start
 

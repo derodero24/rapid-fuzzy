@@ -50,18 +50,18 @@ const sampleItems = [
 ];
 
 // --- Distance algorithms ---
-const distanceFunctions = {
-  levenshtein: { fn: distance.levenshtein, type: 'distance' },
-  normalizedLevenshtein: { fn: distance.normalizedLevenshtein, type: 'similarity' },
-  damerauLevenshtein: { fn: distance.damerauLevenshtein, type: 'distance' },
-  jaro: { fn: distance.jaro, type: 'similarity' },
-  jaroWinkler: { fn: distance.jaroWinkler, type: 'similarity' },
-  sorensenDice: { fn: distance.sorensenDice, type: 'similarity' },
-  tokenSortRatio: { fn: distance.tokenSortRatio, type: 'similarity' },
-  tokenSetRatio: { fn: distance.tokenSetRatio, type: 'similarity' },
-  partialRatio: { fn: distance.partialRatio, type: 'similarity' },
-  weightedRatio: { fn: distance.weightedRatio, type: 'similarity' },
-};
+const algorithms = [
+  { label: 'Levenshtein', fn: distance.levenshtein, type: 'distance' },
+  { label: 'Damerau-Levenshtein', fn: distance.damerauLevenshtein, type: 'distance' },
+  { label: 'Normalized Levenshtein', fn: distance.normalizedLevenshtein, type: 'similarity' },
+  { label: 'Jaro', fn: distance.jaro, type: 'similarity' },
+  { label: 'Jaro-Winkler', fn: distance.jaroWinkler, type: 'similarity' },
+  { label: 'Sørensen-Dice', fn: distance.sorensenDice, type: 'similarity' },
+  { label: 'Token Sort Ratio', fn: distance.tokenSortRatio, type: 'similarity' },
+  { label: 'Token Set Ratio', fn: distance.tokenSetRatio, type: 'similarity' },
+  { label: 'Partial Ratio', fn: distance.partialRatio, type: 'similarity' },
+  { label: 'Weighted Ratio', fn: distance.weightedRatio, type: 'similarity' },
+];
 
 // --- DOM refs ---
 const searchInput = document.getElementById('search-input');
@@ -70,8 +70,7 @@ const searchTiming = document.getElementById('search-timing');
 const optPositions = document.getElementById('opt-positions');
 const distA = document.getElementById('dist-a');
 const distB = document.getElementById('dist-b');
-const algorithmSelect = document.getElementById('algorithm');
-const distanceResult = document.getElementById('distance-result');
+const algorithmGrid = document.getElementById('algorithm-grid');
 const loadingOverlay = document.getElementById('loading-overlay');
 
 // --- Search ---
@@ -127,28 +126,41 @@ function runSearch() {
 function runDistance() {
   const a = distA.value;
   const b = distB.value;
-  const algo = algorithmSelect.value;
-  const config = distanceFunctions[algo];
 
   if (!a && !b) {
-    distanceResult.innerHTML = '';
+    algorithmGrid.innerHTML = '';
     return;
   }
 
-  const result = config.fn(a, b);
-  const label = config.type === 'distance' ? 'Distance' : 'Similarity';
+  const distanceAlgos = algorithms.filter((algo) => algo.type === 'distance');
+  const similarityAlgos = algorithms.filter((algo) => algo.type === 'similarity');
 
-  let display;
-  if (config.type === 'distance') {
-    display = result;
-  } else {
-    display = result.toFixed(4);
+  let html = '';
+
+  html += '<div class="algo-group"><div class="algo-group-label">Distance</div>';
+  for (const algo of distanceAlgos) {
+    const value = algo.fn(a, b);
+    html += `<div class="algo-item">
+      <span class="algo-name">${algo.label}</span>
+      <span class="algo-value">${value}</span>
+    </div>`;
   }
+  html += '</div>';
 
-  distanceResult.innerHTML = `
-    <span class="distance-label">${label}</span>
-    ${display}
-  `;
+  html += '<div class="algo-group"><div class="algo-group-label">Similarity</div>';
+  for (const algo of similarityAlgos) {
+    const value = algo.fn(a, b);
+    const pct = (value * 100).toFixed(1);
+    const colorClass = value >= 0.8 ? 'bar-high' : value >= 0.5 ? 'bar-mid' : 'bar-low';
+    html += `<div class="algo-item">
+      <span class="algo-name">${algo.label}</span>
+      <span class="algo-value">${value.toFixed(4)}</span>
+      <div class="algo-bar"><div class="algo-bar-fill ${colorClass}" style="width:${pct}%"></div></div>
+    </div>`;
+  }
+  html += '</div>';
+
+  algorithmGrid.innerHTML = html;
 }
 
 // --- Utils ---
@@ -158,27 +170,27 @@ function escapeHtml(str) {
 
 // --- Init ---
 function init() {
-  // Verify WASM is loaded by calling a simple function
   try {
     distance.levenshtein('a', 'b');
   } catch {
     loadingOverlay.querySelector('p').textContent =
-      'Failed to load WASM module. Ensure CORS headers are set.';
+      'Failed to load WASM module. Please try a modern browser (Chrome, Firefox, Edge).';
     return;
   }
 
   loadingOverlay.classList.add('hidden');
 
-  // Event listeners
   searchInput.addEventListener('input', runSearch);
   optPositions.addEventListener('change', runSearch);
   distA.addEventListener('input', runDistance);
   distB.addEventListener('input', runDistance);
-  algorithmSelect.addEventListener('change', runDistance);
 
-  // Initial state
+  // Show results immediately
+  searchInput.value = 'typscript';
+  runSearch();
   runDistance();
   searchInput.focus();
+  searchInput.select();
 }
 
 init();
