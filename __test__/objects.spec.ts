@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-const { searchObjects } = require('../objects.js');
+const { searchObjects, FuzzyObjectIndex } = require('../objects.js');
 
 const users = [
   { name: 'John Smith', email: 'john@example.com', role: 'admin' },
@@ -133,13 +133,13 @@ describe('searchObjects', () => {
     expect(results.length).toBe(0);
   });
 
-  it('should return empty positions when includePositions is not set', () => {
+  it('should not include positions in results', () => {
     const results = searchObjects('john', users, {
       keys: ['name'],
     });
     expect(results.length).toBeGreaterThan(0);
     for (const r of results) {
-      expect(r.positions).toEqual([]);
+      expect(r).not.toHaveProperty('positions');
     }
   });
 
@@ -156,9 +156,43 @@ describe('searchObjects', () => {
   });
 });
 
-describe('FuzzyObjectIndex', () => {
-  const { FuzzyObjectIndex } = require('../objects.js');
+describe('searchObjects input validation', () => {
+  it('throws on undefined options', () => {
+    expect(() => searchObjects('query', [], undefined as never)).toThrow(TypeError);
+  });
 
+  it('throws on null options', () => {
+    expect(() => searchObjects('query', [], null as never)).toThrow(TypeError);
+  });
+
+  it('throws on empty keys array', () => {
+    expect(() => searchObjects('query', [], { keys: [] })).toThrow(TypeError);
+  });
+
+  it('throws on missing keys property', () => {
+    expect(() => searchObjects('query', [], {} as never)).toThrow(TypeError);
+  });
+});
+
+describe('FuzzyObjectIndex input validation', () => {
+  it('throws on undefined options', () => {
+    expect(() => new FuzzyObjectIndex([], undefined as never)).toThrow(TypeError);
+  });
+
+  it('throws on null options', () => {
+    expect(() => new FuzzyObjectIndex([], null as never)).toThrow(TypeError);
+  });
+
+  it('throws on empty keys array', () => {
+    expect(() => new FuzzyObjectIndex([], { keys: [] })).toThrow(TypeError);
+  });
+
+  it('throws on missing keys property', () => {
+    expect(() => new FuzzyObjectIndex([], {} as never)).toThrow(TypeError);
+  });
+});
+
+describe('FuzzyObjectIndex', () => {
   const users = [
     { name: 'John Smith', email: 'john@example.com' },
     { name: 'Jane Doe', email: 'jane@example.com' },
@@ -185,7 +219,7 @@ describe('FuzzyObjectIndex', () => {
     const index = new FuzzyObjectIndex(users, { keys: ['name'] });
     const result = index.closest('jane');
     expect(result).not.toBeNull();
-    expect(result!.name).toBe('Jane Doe');
+    expect(result?.name).toBe('Jane Doe');
   });
 
   it('should return null from closest when minScore is too high', () => {

@@ -31,9 +31,12 @@ function getNestedValue(obj, path) {
  * @param {number} [options.maxResults] - Maximum results to return.
  * @param {number} [options.minScore] - Minimum score threshold.
  * @param {boolean} [options.isCaseSensitive] - Enable case-sensitive matching.
- * @returns {Array<{ item: T; index: number; score: number; keyScores: number[]; positions: number[] }>}
+ * @returns {Array<{ item: T; index: number; score: number; keyScores: number[] }>}
  */
 function searchObjects(query, items, options) {
+  if (!options?.keys?.length) {
+    throw new TypeError('options.keys must be a non-empty array');
+  }
   const { keys, ...searchOpts } = options;
 
   const normalizedKeys = keys.map((k) =>
@@ -52,7 +55,6 @@ function searchObjects(query, items, options) {
     index: r.index,
     score: r.score,
     keyScores: r.keyScores,
-    positions: r.positions ?? [],
   }));
 }
 
@@ -78,6 +80,9 @@ class FuzzyObjectIndex {
    * @param {Array<string | { name: string; weight?: number }>} options.keys - Keys to search.
    */
   constructor(items, options) {
+    if (!options?.keys?.length) {
+      throw new TypeError('options.keys must be a non-empty array');
+    }
     this.#keys = options.keys.map((k) =>
       typeof k === 'string' ? { name: k, weight: 1.0 } : { name: k.name, weight: k.weight ?? 1.0 },
     );

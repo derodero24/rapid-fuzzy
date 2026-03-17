@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>rapid-fuzzy Playground</title>
+  <meta name="description" content="Interactive playground for rapid-fuzzy — Rust-powered fuzzy search and string distance for JavaScript.">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <script>window.coi = { quiet: true };</script>
+  <script src="coi-serviceworker.js"></script>
+
+  <header>
+    <h1>rapid-fuzzy <span class="badge">Playground</span></h1>
+    <p class="subtitle">Rust-powered fuzzy search for JavaScript — try it live.</p>
+  </header>
+
+  <main>
+    <!-- Search Demo -->
+    <section class="card" id="search-section">
+      <h2>Fuzzy Search</h2>
+      <div class="search-controls">
+        <input
+          type="text"
+          id="search-input"
+          aria-label="Search query"
+          placeholder="Type to search…"
+          autocomplete="off"
+          spellcheck="false"
+        >
+        <div class="options-row">
+          <label>
+            <input type="checkbox" id="opt-positions" checked>
+            Highlight matches
+          </label>
+        </div>
+      </div>
+      <div class="timing" id="search-timing"></div>
+      <div class="results" id="search-results">
+        <p class="placeholder">Results will appear here as you type.</p>
+      </div>
+      <details class="syntax-help">
+        <summary>Extended query syntax (always active)</summary>
+        <ul>
+          <li><code>^prefix</code> — starts with</li>
+          <li><code>suffix$</code> — ends with</li>
+          <li><code>'literal</code> — exact substring</li>
+          <li><code>!exclude</code> — exclude matches</li>
+          <li>Combine with spaces: <code>^type script !java</code></li>
+        </ul>
+      </details>
+    </section>
+
+    <!-- Distance Calculator -->
+    <section class="card" id="distance-section">
+      <h2>String Distance / Similarity</h2>
+      <div class="distance-inputs">
+        <input type="text" id="dist-a" aria-label="String A" placeholder="String A" value="kitten">
+        <input type="text" id="dist-b" aria-label="String B" placeholder="String B" value="sitting">
+      </div>
+      <div class="algorithm-grid" id="algorithm-grid"></div>
+    </section>
+  </main>
+
+  <footer>
+    <p>
+      <a href="https://github.com/derodero24/rapid-fuzzy" target="_blank" rel="noopener">GitHub</a>
+      ·
+      <a href="https://www.npmjs.com/package/rapid-fuzzy" target="_blank" rel="noopener">npm</a>
+    </p>
+  </footer>
+
+  <div id="loading-overlay">
+    <div class="spinner"></div>
+    <p>Loading WASM module…</p>
+  </div>
+
+  <script type="module" src="/main.js"></script>
+</body>
+</html>

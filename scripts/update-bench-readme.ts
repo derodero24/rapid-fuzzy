@@ -135,10 +135,12 @@ if (damerauSuite) {
   distLines.push(`| Damerau-Levenshtein | ${cell(dl, true)} | — | — | — |`);
 }
 
-// Search table (includes FuzzyIndex column)
+// Search table (includes FuzzyIndex column + uFuzzy)
 const searchLines: string[] = [];
-searchLines.push('| Dataset size | rapid-fuzzy | rapid-fuzzy (indexed) | fuse.js | fuzzysort |');
-searchLines.push('|---|---:|---:|---:|---:|');
+searchLines.push(
+  '| Dataset size | rapid-fuzzy | rapid-fuzzy (indexed) | fuse.js | fuzzysort | uFuzzy |',
+);
+searchLines.push('|---|---:|---:|---:|---:|---:|');
 
 for (const size of ['Small (20 items)', 'Medium (1K items)', 'Large (10K items)']) {
   const s = findSuite(`Fuzzy Search — ${size}`);
@@ -147,9 +149,10 @@ for (const size of ['Small (20 items)', 'Medium (1K items)', 'Large (10K items)'
   const fi = s.get('rapid-fuzzy (FuzzyIndex)') ?? null;
   const fj = s.get('fuse.js') ?? null;
   const fs = s.get('fuzzysort') ?? null;
-  const b = best([rf, fi, fj, fs]);
+  const uf = s.get('uFuzzy') ?? null;
+  const b = best([rf, fi, fj, fs, uf]);
   searchLines.push(
-    `| ${size.replace(/\s*\(/, ' (').replace(' items)', ' items)')} | ${cell(rf, rf === b)} | ${cell(fi, fi === b)} | ${cell(fj, fj === b)} | ${cell(fs, fs === b)} |`,
+    `| ${size} | ${cell(rf, rf === b)} | ${cell(fi, fi === b)} | ${cell(fj, fj === b)} | ${cell(fs, fs === b)} | ${cell(uf, uf === b)} |`,
   );
 }
 
@@ -203,12 +206,17 @@ function replaceSection(
   return `${content.slice(0, tableStart)}${table}\n\n${content.slice(tableEnd)}`;
 }
 
-readme = replaceSection(readme, '### Distance Functions', '> **Note**', distLines.join('\n'));
+readme = replaceSection(
+  readme,
+  '### Distance Functions',
+  '> **Note**',
+  `${distLines.join('\n')}\n\n</details>`,
+);
 readme = replaceSection(
   readme,
   '### Search Performance',
   '### Closest Match',
-  searchLines.join('\n'),
+  `${searchLines.join('\n')}\n\n</details>`,
 );
 readme = replaceSection(
   readme,

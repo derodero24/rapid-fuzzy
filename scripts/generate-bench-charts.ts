@@ -109,20 +109,97 @@ const COLORS: Record<string, string> = {
   'string-similarity': '#94a3b8',
 };
 
-function generateSvg(data: ChartData): string {
-  const barHeight = 26;
-  const barGap = 5;
-  const groupGap = 24;
-  const labelWidth = 160;
-  const chartWidth = 640;
-  const barAreaWidth = chartWidth - labelWidth - 20;
-  const headerHeight = 52;
-  const paddingX = 20;
-  const paddingBottom = 24;
+interface ChartLayout {
+  barHeight: number;
+  barGap: number;
+  groupGap: number;
+  labelWidth: number;
+  barAreaWidth: number;
+  paddingX: number;
+}
 
-  // Calculate total height
-  // Each group contributes: 22px (label) + n × (barHeight + barGap) + (groupGap - barGap) trailing
+const LAYOUT: ChartLayout = {
+  barHeight: 26,
+  barGap: 5,
+  groupGap: 24,
+  labelWidth: 160,
+  barAreaWidth: 640 - 160 - 20,
+  paddingX: 20,
+};
+
+function buildValueText(bar: BarEntry, group: { bars: BarEntry[] }): string {
+  const formatted = formatNumber(bar.value);
+  let text = `${formatted} ops/s`;
+
+  const isRapidFuzzy = bar.label === 'rapid-fuzzy' || bar.label === 'rapid-fuzzy (indexed)';
+  if (!isRapidFuzzy) return text;
+
+  const rfEntry = group.bars.find((b) => b.label === 'rapid-fuzzy');
+  const fuseEntry = group.bars.find((b) => b.label === 'fuse.js');
+  if (rfEntry && fuseEntry && fuseEntry.value > 0) {
+    const mult = Math.round(rfEntry.value / fuseEntry.value);
+    if (mult >= 2) text += ` — ${mult}x vs fuse.js`;
+  }
+
+  return text;
+}
+
+function renderBar(
+  bar: BarEntry,
+  group: { bars: BarEntry[] },
+  y: number,
+  groupMax: number,
+): string[] {
+  const { barHeight, labelWidth, barAreaWidth, paddingX } = LAYOUT;
+  const barWidth = Math.max(4, (bar.value / groupMax) * barAreaWidth);
+  const color = COLORS[bar.label] ?? '#94a3b8';
+  const isRapidFuzzy = bar.label === 'rapid-fuzzy' || bar.label === 'rapid-fuzzy (indexed)';
+  const x = paddingX + labelWidth;
+  const textY = y + barHeight / 2 + 4;
+
+  const valueText = buildValueText(bar, group);
+  const textX = barWidth > 200 ? x + barWidth - 8 : x + barWidth + 8;
+  const anchor = barWidth > 200 ? 'end' : 'start';
+  const fillAttr = barWidth > 200 && isRapidFuzzy ? ' fill="#ffffff"' : '';
+
+  return [
+    `<text x="${x - 8}" y="${textY}" class="bar-label" text-anchor="end">${escapeXml(bar.label)}</text>`,
+    `<rect x="${x}" y="${y}" width="${barWidth}" height="${barHeight}" rx="4" fill="${color}" opacity="${isRapidFuzzy ? 1 : 0.6}" />`,
+    `<text x="${textX}" y="${textY}" class="bar-value" text-anchor="${anchor}"${fillAttr}>${escapeXml(valueText)}</text>`,
+  ];
+}
+
+function renderGroup(
+  group: ChartData['groups'][number],
+  startY: number,
+): { lines: string[]; endY: number } {
+  const { barHeight, barGap, groupGap, paddingX } = LAYOUT;
+  const lines: string[] = [];
+  let y = startY;
+
+  lines.push(
+    `<text x="${paddingX}" y="${y + 14}" class="group-label">${escapeXml(group.groupLabel)}</text>`,
+  );
+  y += 22;
+
+  const sorted = [...group.bars].sort((a, b) => b.value - a.value);
+  const groupMax = sorted[0]?.value ?? 1;
+
+  for (const bar of sorted) {
+    lines.push(...renderBar(bar, group, y, groupMax));
+    y += barHeight + barGap;
+  }
+
+  return { lines, endY: y + groupGap - barGap };
+}
+
+function generateSvg(data: ChartData): string {
+  const { barHeight, barGap, groupGap, paddingX } = LAYOUT;
+  const chartWidth = 640;
+  const headerHeight = 52;
+  const paddingBottom = 24;
   const groupLabelHeight = 22;
+
   let totalBarHeight = 0;
   for (const group of data.groups) {
     totalBarHeight +=
@@ -132,96 +209,31 @@ function generateSvg(data: ChartData): string {
   const svgWidth = chartWidth + paddingX * 2;
   const svgHeight = headerHeight + totalBarHeight + paddingBottom;
 
-  const lines: string[] = [];
-  lines.push(
+  const lines: string[] = [
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${svgWidth} ${svgHeight}" width="${svgWidth}" height="${svgHeight}">`,
-  );
-  lines.push('<style>');
-  lines.push(
+    '<style>',
     '  text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }',
-  );
-  lines.push('  .title { font-size: 16px; font-weight: 600; fill: #1f2937; }');
-  lines.push('  .subtitle { font-size: 12px; fill: #6b7280; }');
-  lines.push('  .group-label { font-size: 13px; font-weight: 600; fill: #374151; }');
-  lines.push('  .bar-label { font-size: 12px; fill: #4b5563; }');
-  lines.push('  .bar-value { font-size: 12px; fill: #374151; font-weight: 500; }');
-  lines.push('  .multiplier { font-size: 11px; fill: #059669; font-weight: 600; }');
-  lines.push('</style>');
-
-  // Background
-  lines.push(`<rect width="${svgWidth}" height="${svgHeight}" rx="8" fill="#ffffff" />`);
-  lines.push(
+    '  .title { font-size: 16px; font-weight: 600; fill: #1f2937; }',
+    '  .subtitle { font-size: 12px; fill: #6b7280; }',
+    '  .group-label { font-size: 13px; font-weight: 600; fill: #374151; }',
+    '  .bar-label { font-size: 12px; fill: #4b5563; }',
+    '  .bar-value { font-size: 12px; fill: #374151; font-weight: 500; }',
+    '  .multiplier { font-size: 11px; fill: #059669; font-weight: 600; }',
+    '</style>',
+    `<rect width="${svgWidth}" height="${svgHeight}" rx="8" fill="#ffffff" />`,
     `<rect x="0.5" y="0.5" width="${svgWidth - 1}" height="${svgHeight - 1}" rx="8" fill="none" stroke="#e5e7eb" />`,
-  );
+    `<text x="${paddingX}" y="28" class="title">${escapeXml(data.title)}</text>`,
+  ];
 
-  // Title
-  lines.push(`<text x="${paddingX}" y="28" class="title">${escapeXml(data.title)}</text>`);
   if (data.subtitle) {
     lines.push(`<text x="${paddingX}" y="44" class="subtitle">${escapeXml(data.subtitle)}</text>`);
   }
 
   let y = headerHeight;
-
   for (const group of data.groups) {
-    // Group label
-    lines.push(
-      `<text x="${paddingX}" y="${y + 14}" class="group-label">${escapeXml(group.groupLabel)}</text>`,
-    );
-    y += 22;
-
-    // Sort bars by value descending
-    const sorted = [...group.bars].sort((a, b) => b.value - a.value);
-    // Per-group scale: largest bar in this group fills the available width
-    const groupMax = sorted[0]?.value ?? 1;
-    const rfEntry = group.bars.find((b) => b.label === 'rapid-fuzzy');
-
-    for (const bar of sorted) {
-      const barWidth = Math.max(4, (bar.value / groupMax) * barAreaWidth);
-      const color = COLORS[bar.label] ?? '#94a3b8';
-      const isRapidFuzzy = bar.label === 'rapid-fuzzy' || bar.label === 'rapid-fuzzy (indexed)';
-      const x = paddingX + labelWidth;
-
-      // Label
-      lines.push(
-        `<text x="${x - 8}" y="${y + barHeight / 2 + 4}" class="bar-label" text-anchor="end">${escapeXml(bar.label)}</text>`,
-      );
-
-      // Bar
-      lines.push(
-        `<rect x="${x}" y="${y}" width="${barWidth}" height="${barHeight}" rx="4" fill="${color}" opacity="${isRapidFuzzy ? 1 : 0.6}" />`,
-      );
-
-      // Value + multiplier inside or after bar
-      const formatted = formatNumber(bar.value);
-      let valueText = `${formatted} ops/s`;
-
-      // Show "Nx faster" for rapid-fuzzy vs fuse.js
-      if (isRapidFuzzy && rfEntry) {
-        const fuseEntry = group.bars.find((b) => b.label === 'fuse.js');
-        if (fuseEntry && fuseEntry.value > 0) {
-          const mult = Math.round(rfEntry.value / fuseEntry.value);
-          if (mult >= 2) {
-            valueText += ` — ${mult}x vs fuse.js`;
-          }
-        }
-      }
-
-      const textX = barWidth > 200 ? x + barWidth - 8 : x + barWidth + 8;
-      const anchor = barWidth > 200 ? 'end' : 'start';
-      const textFill = barWidth > 200 && isRapidFuzzy ? '#ffffff' : '';
-      const cls =
-        isRapidFuzzy && rfEntry && group.bars.some((b) => b.label === 'fuse.js')
-          ? 'bar-value'
-          : 'bar-value';
-
-      lines.push(
-        `<text x="${textX}" y="${y + barHeight / 2 + 4}" class="${cls}" text-anchor="${anchor}"${textFill ? ` fill="${textFill}"` : ''}>${escapeXml(valueText)}</text>`,
-      );
-
-      y += barHeight + barGap;
-    }
-
-    y += groupGap - barGap;
+    const result = renderGroup(group, y);
+    lines.push(...result.lines);
+    y = result.endY;
   }
 
   lines.push('</svg>');

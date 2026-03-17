@@ -67,16 +67,36 @@ impl FuzzyIndex {
         query: String,
         options: Option<Either<u32, SearchOptions>>,
     ) -> Vec<SearchResult> {
-        let (max_results, min_score, include_positions, case_matching) = match options {
-            Some(Either::A(max)) => (Some(max), None, false, CaseMatching::Smart),
-            Some(Either::B(opts)) => (
-                opts.max_results,
-                opts.min_score,
-                opts.include_positions.unwrap_or(false),
-                resolve_case_matching(opts.is_case_sensitive),
-            ),
-            None => (None, None, false, CaseMatching::Smart),
-        };
+        let (max_results, min_score, include_positions, case_matching, return_all_on_empty) =
+            match options {
+                Some(Either::A(max)) => (Some(max), None, false, CaseMatching::Smart, false),
+                Some(Either::B(opts)) => (
+                    opts.max_results,
+                    opts.min_score,
+                    opts.include_positions.unwrap_or(false),
+                    resolve_case_matching(opts.is_case_sensitive),
+                    opts.return_all_on_empty.unwrap_or(false),
+                ),
+                None => (None, None, false, CaseMatching::Smart, false),
+            };
+
+        if return_all_on_empty && query.trim().is_empty() {
+            let limit = max_results.unwrap_or(self.items.len() as u32) as usize;
+            return self
+                .items
+                .iter()
+                .enumerate()
+                .take(limit)
+                .map(|(i, item)| SearchResult {
+                    item: item.clone(),
+                    score: 1.0,
+                    index: i as u32,
+                    positions: Vec::new(),
+                    match_type: None,
+                })
+                .collect();
+        }
+
         self.search_impl(
             &query,
             max_results,

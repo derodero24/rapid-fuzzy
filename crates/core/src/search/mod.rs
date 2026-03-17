@@ -13,6 +13,43 @@ use napi_derive::napi;
 use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
 use nucleo_matcher::{Config, Matcher, Utf32String};
 
+/// Classification of how a query matched an item.
+///
+/// Derived from the matched character positions:
+/// - **Exact**: all positions consecutive from index 0, covering every character in the item.
+/// - **Prefix**: all positions consecutive from index 0, but the item is longer.
+/// - **Contains**: all positions consecutive (a substring match), not starting at 0.
+/// - **Fuzzy**: positions have gaps (character-level fuzzy match).
+#[napi(string_enum)]
+#[derive(Debug, PartialEq)]
+pub enum MatchType {
+    Exact,
+    Prefix,
+    Contains,
+    Fuzzy,
+}
+
+/// Classify the match type from the matched character positions.
+pub(crate) fn classify_match(positions: &[u32], item_char_count: usize) -> MatchType {
+    if positions.is_empty() {
+        return MatchType::Fuzzy;
+    }
+
+    let is_consecutive = positions.len() == 1 || positions.windows(2).all(|w| w[1] == w[0] + 1);
+
+    if is_consecutive {
+        if positions[0] == 0 && positions.len() == item_char_count {
+            MatchType::Exact
+        } else if positions[0] == 0 {
+            MatchType::Prefix
+        } else {
+            MatchType::Contains
+        }
+    } else {
+        MatchType::Fuzzy
+    }
+}
+
 /// A single fuzzy search result with the matched item and its score.
 #[napi(object)]
 pub struct SearchResult {
@@ -25,6 +62,10 @@ pub struct SearchResult {
     /// Indices of matched characters in the item string.
     /// Empty unless `includePositions` is set to true in SearchOptions.
     pub positions: Vec<u32>,
+    /// How the query matched this item (Exact, Prefix, Contains, or Fuzzy).
+    /// Only present when `includePositions` is set to true in SearchOptions.
+    /// Derived from positions at zero additional cost.
+    pub match_type: Option<MatchType>,
 }
 
 /// Options for the search function.
@@ -39,6 +80,10 @@ pub struct SearchOptions {
     /// If true, matching is case-sensitive. Default is smart case
     /// (case-insensitive unless the query contains uppercase characters).
     pub is_case_sensitive: Option<bool>,
+    /// If true, return all items when the query is empty (or whitespace-only).
+    /// Useful for filter-as-you-type UIs where the full list should appear
+    /// before the user starts typing. Default is false.
+    pub return_all_on_empty: Option<bool>,
 }
 
 /// Compute the maximum possible score for a given pattern by scoring
@@ -112,10 +157,7 @@ pub(crate) fn search_over_items(
             if score_ord != std::cmp::Ordering::Equal {
                 return score_ord;
             }
-            let len_ord = items[a.0 as usize]
-                .chars()
-                .count()
-                .cmp(&items[b.0 as usize].chars().count());
+            let len_ord = items[a.0 as usize].len().cmp(&items[b.0 as usize].len());
             if len_ord != std::cmp::Ordering::Equal {
                 return len_ord;
             }
@@ -137,16 +179,18 @@ pub(crate) fn search_over_items(
         scored
             .into_iter()
             .map(|(index, score)| {
-                let positions = if include_positions {
+                let (positions, match_type) = if include_positions {
                     buf.clear();
                     let atoms = nucleo_matcher::Utf32Str::new(&items[index as usize], &mut buf);
                     let mut indices = Vec::new();
                     pattern.indices(atoms, &mut matcher, &mut indices);
                     indices.sort_unstable();
                     indices.dedup();
-                    indices
+                    let item_char_count = items[index as usize].chars().count();
+                    let mt = classify_match(&indices, item_char_count);
+                    (indices, Some(mt))
                 } else {
-                    Vec::new()
+                    (Vec::new(), None)
                 };
 
                 SearchResult {
@@ -154,6 +198,7 @@ pub(crate) fn search_over_items(
                     score,
                     index,
                     positions,
+                    match_type,
                 }
             })
             .collect()
@@ -307,15 +352,17 @@ pub(crate) fn search_over_precomputed(
     let results = scored
         .into_iter()
         .map(|(index, score)| {
-            let positions = if include_positions {
+            let (positions, match_type) = if include_positions {
                 let atoms = utf32_items[index as usize].slice(..);
                 let mut indices = Vec::new();
                 pattern.indices(atoms, &mut matcher, &mut indices);
                 indices.sort_unstable();
                 indices.dedup();
-                indices
+                let item_char_count = items[index as usize].chars().count();
+                let mt = classify_match(&indices, item_char_count);
+                (indices, Some(mt))
             } else {
-                Vec::new()
+                (Vec::new(), None)
             };
 
             SearchResult {
@@ -323,6 +370,7 @@ pub(crate) fn search_over_precomputed(
                 score,
                 index,
                 positions,
+                match_type,
             }
         })
         .collect();
@@ -367,16 +415,35 @@ pub fn search(
     items: Vec<String>,
     options: Option<Either<u32, SearchOptions>>,
 ) -> Vec<SearchResult> {
-    let (max_results, min_score, include_positions, case_matching) = match options {
-        Some(Either::A(max)) => (Some(max), None, false, CaseMatching::Smart),
-        Some(Either::B(opts)) => (
-            opts.max_results,
-            opts.min_score,
-            opts.include_positions.unwrap_or(false),
-            resolve_case_matching(opts.is_case_sensitive),
-        ),
-        None => (None, None, false, CaseMatching::Smart),
-    };
+    let (max_results, min_score, include_positions, case_matching, return_all_on_empty) =
+        match options {
+            Some(Either::A(max)) => (Some(max), None, false, CaseMatching::Smart, false),
+            Some(Either::B(opts)) => (
+                opts.max_results,
+                opts.min_score,
+                opts.include_positions.unwrap_or(false),
+                resolve_case_matching(opts.is_case_sensitive),
+                opts.return_all_on_empty.unwrap_or(false),
+            ),
+            None => (None, None, false, CaseMatching::Smart, false),
+        };
+
+    if return_all_on_empty && query.trim().is_empty() {
+        let limit = max_results.unwrap_or(items.len() as u32) as usize;
+        return items
+            .iter()
+            .enumerate()
+            .take(limit)
+            .map(|(i, item)| SearchResult {
+                item: item.clone(),
+                score: 1.0,
+                index: i as u32,
+                positions: Vec::new(),
+                match_type: None,
+            })
+            .collect();
+    }
+
     search_impl(
         query,
         items,
@@ -800,6 +867,111 @@ mod tests {
     }
 
     #[test]
+    fn test_match_type_exact() {
+        let items = vec!["apple".to_string(), "pineapple".to_string()];
+        let results = search_impl(
+            "apple".to_string(),
+            items,
+            None,
+            None,
+            true,
+            CaseMatching::Smart,
+        );
+        let exact = results.iter().find(|r| r.item == "apple").unwrap();
+        assert_eq!(exact.match_type, Some(MatchType::Exact));
+    }
+
+    #[test]
+    fn test_match_type_prefix() {
+        let items = vec!["application".to_string()];
+        let results = search_impl(
+            "app".to_string(),
+            items,
+            None,
+            None,
+            true,
+            CaseMatching::Smart,
+        );
+        assert!(!results.is_empty());
+        assert_eq!(results[0].match_type, Some(MatchType::Prefix));
+    }
+
+    #[test]
+    fn test_match_type_contains() {
+        let items = vec!["pineapple".to_string()];
+        let results = search_impl(
+            "apple".to_string(),
+            items,
+            None,
+            None,
+            true,
+            CaseMatching::Smart,
+        );
+        assert!(!results.is_empty());
+        assert_eq!(results[0].match_type, Some(MatchType::Contains));
+    }
+
+    #[test]
+    fn test_match_type_fuzzy() {
+        let items = vec!["abcdef".to_string()];
+        let results = search_impl(
+            "adf".to_string(),
+            items,
+            None,
+            None,
+            true,
+            CaseMatching::Smart,
+        );
+        assert!(!results.is_empty());
+        assert_eq!(results[0].match_type, Some(MatchType::Fuzzy));
+    }
+
+    #[test]
+    fn test_match_type_none_without_positions() {
+        let items = vec!["hello".to_string()];
+        let results = search_impl(
+            "hello".to_string(),
+            items,
+            None,
+            None,
+            false,
+            CaseMatching::Smart,
+        );
+        assert!(!results.is_empty());
+        assert_eq!(results[0].match_type, None);
+    }
+
+    #[test]
+    fn test_match_type_present_with_positions() {
+        let items = vec!["hello".to_string()];
+        let results = search_impl(
+            "hello".to_string(),
+            items,
+            None,
+            None,
+            true,
+            CaseMatching::Smart,
+        );
+        assert!(!results.is_empty());
+        assert_eq!(results[0].match_type, Some(MatchType::Exact));
+    }
+
+    #[test]
+    fn test_match_type_case_insensitive_exact() {
+        let items = vec!["Apple".to_string()];
+        let results = search_impl(
+            "apple".to_string(),
+            items,
+            None,
+            None,
+            true,
+            CaseMatching::Smart,
+        );
+        assert!(!results.is_empty());
+        assert_eq!(results[0].match_type, Some(MatchType::Exact));
+    }
+
+    #[test]
     fn test_positions_score_consistency() {
         let items = vec![
             "apple".to_string(),
@@ -1016,6 +1188,62 @@ mod tests {
             let items = vec!["大阪".to_string(), "京都".to_string(), "東京都".to_string()];
             let result = closest("東京".to_string(), items, None);
             assert!(result.is_some());
+        }
+
+        #[test]
+        fn test_tiebreaker_consistent_for_unicode() {
+            // Verify standalone search and indexed search produce identical
+            // ordering for Unicode items where byte length != char count.
+            // "hello世界" = 11 bytes / 7 chars (CJK chars are 3 bytes each)
+            // "helloab" = 7 bytes / 7 chars
+            // Same char count (7) but different byte lengths (11 vs 7).
+            // Using .chars().count() would treat them as equal length;
+            // using .len() (byte length) correctly differentiates them.
+            // Both items contain the query's ASCII letters (h,e,l,o)
+            // so the bitmask pre-filter in the indexed path matches both.
+            use std::cell::RefCell;
+
+            use nucleo_matcher::{Config, Matcher, Utf32String};
+
+            let items = vec!["hello世界".to_string(), "helloab".to_string()];
+
+            let standalone = search_impl(
+                "hello".to_string(),
+                items.clone(),
+                None,
+                None,
+                false,
+                CaseMatching::Smart,
+            );
+
+            // Build precomputed context to test the indexed path.
+            let utf32_items: Vec<Utf32String> = items
+                .iter()
+                .map(|s| Utf32String::from(s.as_str()))
+                .collect();
+            let char_masks: Vec<u64> = items.iter().map(|s| compute_char_mask(s)).collect();
+            let matcher = RefCell::new(Matcher::new(Config::DEFAULT));
+            let ctx = PrecomputedSearch {
+                items: &items,
+                utf32_items: &utf32_items,
+                char_masks: &char_masks,
+                candidate_indices: None,
+                matcher: &matcher,
+            };
+            let indexed =
+                search_over_precomputed("hello", &ctx, None, None, false, CaseMatching::Smart);
+
+            assert_eq!(
+                standalone.len(),
+                indexed.results.len(),
+                "result count differs between standalone and indexed search"
+            );
+            for (s, i) in standalone.iter().zip(indexed.results.iter()) {
+                assert_eq!(
+                    s.item, i.item,
+                    "ordering differs between standalone and indexed search"
+                );
+            }
         }
 
         #[test]

@@ -108,18 +108,18 @@ For single-pair Levenshtein distance, fastest-levenshtein is still faster due to
 
 | Operation | rapid-fuzzy | fastest-levenshtein | leven |
 |---|---:|---:|---:|
-| Single pair | 528,195 ops/s | **739,107 ops/s** | 221,817 ops/s |
+| Single pair | 564,605 ops/s | **758,533 ops/s** | 214,205 ops/s |
 
-rapid-fuzzy is 2.4x faster than leven and within 1.4x of fastest-levenshtein.
+rapid-fuzzy is 2.6x faster than leven and within 1.3x of fastest-levenshtein.
 
 For closest-match scenarios, rapid-fuzzy pulls ahead — especially with `FuzzyIndex` for repeated searches:
 
 | Closest match | rapid-fuzzy | FuzzyIndex | fastest-levenshtein |
 |---|---:|---:|---:|
-| 1,000 items | 8,304 ops/s | **60,469 ops/s** | 8,946 ops/s |
-| 10,000 items | 757 ops/s | **4,103 ops/s** | 604 ops/s |
+| 1,000 items | 8,194 ops/s | **978,009 ops/s** | 6,869 ops/s |
+| 10,000 items | 892 ops/s | **152,196 ops/s** | 679 ops/s |
 
-`FuzzyIndex` pre-computes internal data structures, making it **6.8x faster** than fastest-levenshtein for closest-match on 1K items. For repeated searches against the same dataset, always prefer `FuzzyIndex`:
+`FuzzyIndex` pre-computes internal data structures, making it **142x faster** than fastest-levenshtein for closest-match on 1K items. For repeated searches against the same dataset, always prefer `FuzzyIndex`:
 
 ```typescript
 import { FuzzyIndex } from 'rapid-fuzzy';

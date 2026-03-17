@@ -2,6 +2,8 @@ use std::collections::BTreeSet;
 
 use napi_derive::napi;
 use rapidfuzz::distance::damerau_levenshtein as rapid_damerau;
+use rapidfuzz::distance::jaro as rapid_jaro;
+use rapidfuzz::distance::jaro_winkler as rapid_jw;
 use rapidfuzz::distance::levenshtein as rapid_lev;
 
 /// Apply a distance/similarity function to each pair in a batch.
@@ -92,7 +94,7 @@ pub fn damerau_levenshtein_many(reference: String, candidates: Vec<String>) -> V
 /// Returns a value between 0.0 (completely different) and 1.0 (identical).
 #[napi]
 pub fn jaro(a: String, b: String) -> f64 {
-    strsim::jaro(&a, &b)
+    rapid_jaro::similarity(a.chars(), b.chars())
 }
 
 /// Compute the Jaro similarity for multiple pairs of strings in a single call.
@@ -100,7 +102,7 @@ pub fn jaro(a: String, b: String) -> f64 {
 /// Returns an array of similarity scores in the same order as the input pairs.
 #[napi]
 pub fn jaro_batch(pairs: Vec<Vec<String>>) -> Vec<f64> {
-    batch_apply(&pairs, strsim::jaro)
+    batch_apply(&pairs, |a, b| rapid_jaro::similarity(a.chars(), b.chars()))
 }
 
 /// Compute the Jaro similarity from one reference string to many candidates.
@@ -108,7 +110,11 @@ pub fn jaro_batch(pairs: Vec<Vec<String>>) -> Vec<f64> {
 /// Returns an array of similarity scores, one per candidate, in the same order as the input.
 #[napi]
 pub fn jaro_many(reference: String, candidates: Vec<String>) -> Vec<f64> {
-    many_apply(&reference, &candidates, strsim::jaro)
+    let scorer = rapid_jaro::BatchComparator::new(reference.chars());
+    candidates
+        .iter()
+        .map(|c| scorer.similarity(c.chars()))
+        .collect()
 }
 
 /// Compute the Jaro-Winkler similarity between two strings.
@@ -117,7 +123,7 @@ pub fn jaro_many(reference: String, candidates: Vec<String>) -> Vec<f64> {
 /// Returns a value between 0.0 and 1.0.
 #[napi]
 pub fn jaro_winkler(a: String, b: String) -> f64 {
-    strsim::jaro_winkler(&a, &b)
+    rapid_jw::similarity(a.chars(), b.chars())
 }
 
 /// Compute the Jaro-Winkler similarity for multiple pairs of strings in a single call.
@@ -125,7 +131,7 @@ pub fn jaro_winkler(a: String, b: String) -> f64 {
 /// Returns an array of similarity scores in the same order as the input pairs.
 #[napi]
 pub fn jaro_winkler_batch(pairs: Vec<Vec<String>>) -> Vec<f64> {
-    batch_apply(&pairs, strsim::jaro_winkler)
+    batch_apply(&pairs, |a, b| rapid_jw::similarity(a.chars(), b.chars()))
 }
 
 /// Compute the Jaro-Winkler similarity from one reference string to many candidates.
@@ -133,7 +139,11 @@ pub fn jaro_winkler_batch(pairs: Vec<Vec<String>>) -> Vec<f64> {
 /// Returns an array of similarity scores, one per candidate, in the same order as the input.
 #[napi]
 pub fn jaro_winkler_many(reference: String, candidates: Vec<String>) -> Vec<f64> {
-    many_apply(&reference, &candidates, strsim::jaro_winkler)
+    let scorer = rapid_jw::BatchComparator::new(reference.chars());
+    candidates
+        .iter()
+        .map(|c| scorer.similarity(c.chars()))
+        .collect()
 }
 
 /// Compute the Sorensen-Dice coefficient between two strings.
@@ -320,6 +330,9 @@ fn partial_ratio_impl(a: &str, b: &str) -> f64 {
 /// Internal implementation of weighted_ratio.
 fn weighted_ratio_impl(a: &str, b: &str) -> f64 {
     let raw = rapid_lev::normalized_similarity(a.chars(), b.chars());
+    if raw == 1.0 {
+        return 1.0;
+    }
     let sort = token_sort_ratio_impl(a, b);
     let set = token_set_ratio_impl(a, b);
     let partial = partial_ratio_impl(a, b);
@@ -497,6 +510,45 @@ mod tests {
         let result = jaro_winkler_many("MARTHA".to_string(), candidates);
         assert!(result[0] > 0.96);
         assert_eq!(result[1], 1.0);
+    }
+
+    #[test]
+    fn test_jaro_regression_vectors() {
+        let vectors: Vec<(&str, &str, f64)> = vec![
+            ("MARTHA", "MARHTA", 0.9444444444444445),
+            ("DWAYNE", "DUANE", 0.8222222222222223),
+            ("DIXON", "DICKSONX", 0.7666666666666666),
+            ("a jke", "jane a k", 0.6),
+            ("", "", 1.0),
+            ("a", "", 0.0),
+            ("a", "a", 1.0),
+        ];
+        for (a, b, expected) in vectors {
+            let score = jaro(a.into(), b.into());
+            assert!(
+                (score - expected).abs() <= f64::EPSILON,
+                "jaro({a:?}, {b:?}) = {score}, expected {expected}",
+            );
+        }
+    }
+
+    #[test]
+    fn test_jaro_winkler_regression_vectors() {
+        let vectors: Vec<(&str, &str, f64)> = vec![
+            ("MARTHA", "MARHTA", 0.9611111111111111),
+            ("DWAYNE", "DUANE", 0.84),
+            ("DIXON", "DICKSONX", 0.8133333333333332),
+            ("", "", 1.0),
+            ("a", "", 0.0),
+            ("a", "a", 1.0),
+        ];
+        for (a, b, expected) in vectors {
+            let score = jaro_winkler(a.into(), b.into());
+            assert!(
+                (score - expected).abs() <= f64::EPSILON,
+                "jaro_winkler({a:?}, {b:?}) = {score}, expected {expected}",
+            );
+        }
     }
 
     #[test]

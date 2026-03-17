@@ -1,6 +1,6 @@
 # Migrating from fuse.js to rapid-fuzzy
 
-[fuse.js](https://www.fusejs.io/) is a popular fuzzy search library written in pure JavaScript. rapid-fuzzy provides significantly faster fuzzy search powered by the nucleo algorithm (same engine used by the Helix editor), while offering a simpler API for common use cases.
+[fuse.js](https://www.fusejs.io/) is a popular fuzzy search library written in pure JavaScript. However, fuse.js has been effectively unmaintained since March 2025 — the maintainer does periodic releases but does not engage with issues or community PRs. rapid-fuzzy provides significantly faster fuzzy search powered by the nucleo algorithm (same engine used by the Helix editor), while offering a simpler API for common use cases and active maintenance.
 
 ## Installation
 
@@ -146,8 +146,8 @@ rapid-fuzzy is significantly faster than fuse.js for fuzzy search:
 
 | Dataset size | rapid-fuzzy | FuzzyIndex | fuse.js | Speedup |
 |---|---:|---:|---:|---:|
-| 1,000 items | 6,531 ops/s | 22,014 ops/s | 395 ops/s | **17x / 56x** |
-| 10,000 items | 794 ops/s | 3,985 ops/s | 20 ops/s | **40x / 199x** |
+| 1,000 items | 6,827 ops/s | 79,616 ops/s | 366 ops/s | **19x / 218x** |
+| 10,000 items | 827 ops/s | 136,294 ops/s | 18 ops/s | **46x / 7,572x** |
 
 The performance advantage grows with dataset size because rapid-fuzzy's Rust-based nucleo engine scales better than fuse.js's pure JavaScript implementation.
 

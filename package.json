@@ -1,6 +1,6 @@
 {
   "name": "rapid-fuzzy",
-  "version": "0.6.0",
+  "version": "1.0.0",
   "description": "Rust-powered fuzzy search and string distance for JavaScript/TypeScript. 10-50x faster than fuse.js/leven.",
   "license": "MIT",
   "author": "derodero24",
@@ -12,11 +12,15 @@
   "keywords": [
     "fuzzy",
     "fuzzy-search",
+    "fuzzy-matching",
     "string-distance",
+    "string-similarity",
     "levenshtein",
     "jaro-winkler",
+    "hamming",
+    "damerau-levenshtein",
     "rust",
-    "napi",
+    "napi-rs",
     "wasm",
     "typescript",
     "search",
@@ -39,6 +43,26 @@
         "default": "./index.js"
       },
       "browser": "./browser.js"
+    },
+    "./highlight": {
+      "import": {
+        "types": "./highlight.d.ts",
+        "default": "./highlight.mjs"
+      },
+      "require": {
+        "types": "./highlight.d.ts",
+        "default": "./highlight.js"
+      }
+    },
+    "./objects": {
+      "import": {
+        "types": "./objects.d.ts",
+        "default": "./objects.mjs"
+      },
+      "require": {
+        "types": "./objects.d.ts",
+        "default": "./objects.js"
+      }
     }
   },
   "files": [
@@ -47,6 +71,7 @@
     "index.d.ts",
     "index.d.mts",
     "objects.js",
+    "objects.mjs",
     "objects.d.ts",
     "browser.js",
     "highlight.js",

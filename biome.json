@@ -5,6 +5,9 @@
     "clientKind": "git",
     "useIgnoreFile": true
   },
+  "files": {
+    "includes": ["**", "!playground/public"]
+  },
   "formatter": {
     "enabled": true,
     "indentStyle": "space",
@@ -57,7 +60,7 @@
   },
   "overrides": [
     {
-      "includes": ["index.mjs", "highlight.mjs"],
+      "includes": ["index.mjs", "highlight.mjs", "objects.mjs"],
       "linter": {
         "rules": {
           "performance": {
@@ -123,6 +126,26 @@
         "rules": {
           "performance": {
             "noReExportAll": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["playground/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noDefaultExport": "off"
+          },
+          "performance": {
+            "noBarrelFile": "off",
+            "noReExportAll": "off"
+          },
+          "correctness": {
+            "noUndeclaredDependencies": "off"
+          },
+          "suspicious": {
+            "noConsole": "off"
           }
         }
       }
