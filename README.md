@@ -39,7 +39,7 @@ cd playground && npm install && npm run dev
 # Open http://localhost:5173
 ```
 
-> **Note**: The playground uses WASM and requires a local dev server with specific CORS headers (configured automatically by Vite).
+> **Note**: The playground uses WASM and requires cross-origin isolation headers (COOP/COEP), configured automatically by Vite for local dev.
 
 </details>
 
