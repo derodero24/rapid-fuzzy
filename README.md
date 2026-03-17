@@ -10,8 +10,6 @@
 
 Blazing-fast fuzzy search for JavaScript — powered by Rust, works everywhere.
 
-<img src=".github/assets/demo.svg" alt="rapid-fuzzy demo — fuzzy search, query syntax, FuzzyIndex, and string distance" width="580" />
-
 ## Features
 
 - **Fast**: Up to 7,000x faster than fuse.js with FuzzyIndex (Rust + napi-rs)
@@ -22,26 +20,7 @@ Blazing-fast fuzzy search for JavaScript — powered by Rust, works everywhere.
 
 ## Playground
 
-Try rapid-fuzzy in the browser — no installation required.
-
-**[Open Playground](https://derodero24.github.io/rapid-fuzzy/)**
-
-<img src=".github/assets/playground.png" alt="rapid-fuzzy Playground — fuzzy search and string distance demo" width="580" />
-
-<details>
-<summary>Run locally</summary>
-
-```bash
-git clone https://github.com/derodero24/rapid-fuzzy.git
-cd rapid-fuzzy
-pnpm run build:wasm
-cd playground && npm install && npm run dev
-# Open http://localhost:5173
-```
-
-> **Note**: The playground uses WASM and requires cross-origin isolation headers (COOP/COEP), configured automatically by Vite for local dev.
-
-</details>
+Try rapid-fuzzy in the browser — no installation required: **[Open Playground](https://derodero24.github.io/rapid-fuzzy/)**
 
 ## Quick Start
 
@@ -81,7 +60,7 @@ pnpm add rapid-fuzzy
 > ```
 > Without these headers, you will see `SharedArrayBuffer is not defined`. See [MDN: SharedArrayBuffer](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/SharedArrayBuffer#security_requirements) for details.
 
-> **Note**: rapid-fuzzy is pre-1.0 — the API is stable but minor versions may include additions.
+## API
 
 ### Fuzzy Search
 
@@ -99,9 +78,6 @@ const results = search('typscript', [
 
 // With options: filter by minimum score and limit results
 search('app', items, { maxResults: 5, minScore: 0.3 });
-
-// Backward compatible: pass a number for maxResults
-search('app', items, 5);
 
 // Get matched character positions for highlighting
 const [match] = search('hlo', ['hello world'], { includePositions: true });
@@ -230,7 +206,8 @@ highlightRanges(item, positions);
 // → [{ start: 0, end: 1, matched: true }, { start: 1, end: 2, matched: false }, ...]
 ```
 
-### Token-Based Matching
+<details>
+<summary><strong>Token-Based Matching</strong></summary>
 
 Order-independent and partial string matching, inspired by Python's [RapidFuzz](https://github.com/rapidfuzz/RapidFuzz):
 
@@ -257,7 +234,10 @@ weightedRatio('John Smith', 'Smith, John'); // 1.0
 
 All token-based functions include `Batch` and `Many` variants (e.g., `tokenSortRatioBatch`, `tokenSortRatioMany`).
 
-### Batch Operations
+</details>
+
+<details>
+<summary><strong>Batch Operations</strong></summary>
 
 All distance functions have `Batch` and `Many` variants that amortize FFI overhead:
 
@@ -278,6 +258,8 @@ levenshteinMany('kitten', ['sitting', 'kittens', 'kitchen']);
 ```
 
 > **Tip**: Prefer batch/many variants over calling single-pair functions in a loop — they are significantly faster for multiple comparisons.
+
+</details>
 
 ## Choosing an Algorithm
 
@@ -349,20 +331,11 @@ Measured on Apple M-series with Node.js v22 using [Vitest bench](https://vitest.
 
 > In indexed mode (`FuzzyIndex`), rapid-fuzzy is up to **224x faster** than fastest-levenshtein for closest-match lookups.
 
-### Why these numbers matter
+### Key takeaways
 
-- **vs fuse.js**: `FuzzyIndex` is **218x faster** on medium datasets and **7,572x faster** on large datasets. Even standalone `search()` is 19x / 46x faster.
-- **Indexed mode**: `FuzzyIndex` keeps data on the Rust side with an incremental search cache, delivering sub-millisecond autocomplete. On large datasets this is **165x faster** than standalone `search()`.
-- **vs fuzzysort**: `FuzzyIndex` now **outperforms fuzzysort** on medium-and-above datasets — 1.2x faster at 1K and 4.9x at 10K.
-- **vs uFuzzy**: `FuzzyIndex` is **2.6x faster** at medium and **21x faster** at large datasets.
-- **vs fastest-levenshtein**: With `FuzzyIndex`, closest-match is **142x faster** at 1K and **224x faster** at 10K.
-
-Run benchmarks yourself:
-
-```bash
-pnpm run bench        # JavaScript benchmarks
-cargo bench           # Rust internal benchmarks
-```
+- **vs fuse.js**: `FuzzyIndex` is **218x–7,572x faster** depending on dataset size. Even standalone `search()` is 19–46x faster.
+- **Indexed mode**: `FuzzyIndex` keeps data on the Rust side with incremental caching — **165x faster** than standalone `search()` on large datasets, delivering sub-millisecond autocomplete.
+- **vs fuzzysort / uFuzzy**: `FuzzyIndex` outperforms both on 1K+ datasets (up to 4.9x vs fuzzysort, 21x vs uFuzzy).
 
 ## Why rapid-fuzzy?
 
