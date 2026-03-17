@@ -188,18 +188,17 @@ uFuzzy is a highly optimized pure JavaScript library that uses regex-based match
 
 | Dataset size | rapid-fuzzy | FuzzyIndex | uFuzzy |
 |---|---:|---:|---:|
-| Small (20 items) | 220,621 ops/s | 403,559 ops/s | **933,599 ops/s** |
-| Medium (1K items) | 6,654 ops/s | 21,658 ops/s | **26,986 ops/s** |
-| Large (10K items) | 812 ops/s | 4,638 ops/s | **6,234 ops/s** |
-| XL (50K items) | — | 864 ops/s | **1,271 ops/s** |
+| Small (20 items) | 287,682 ops/s | 404,271 ops/s | **927,173 ops/s** |
+| Medium (1K items) | 6,827 ops/s | **79,616 ops/s** | 30,099 ops/s |
+| Large (10K items) | 827 ops/s | **136,294 ops/s** | 6,461 ops/s |
 
 Measured on Apple M-series with Node.js v22.
 
-uFuzzy is faster because it uses optimized regex-based matching in pure JavaScript, avoiding FFI overhead entirely. If raw search speed and minimal memory usage are your primary concerns and you don't need the features below, uFuzzy is an excellent choice.
+uFuzzy is faster on small datasets because it uses optimized regex-based matching in pure JavaScript, avoiding FFI overhead entirely. However, with `FuzzyIndex`, rapid-fuzzy is **2.6x faster** at 1K items and **21x faster** at 10K items thanks to Rust-side indexing with incremental caching.
 
 ## Why Choose rapid-fuzzy Over uFuzzy?
 
-While uFuzzy wins on raw speed and memory efficiency, rapid-fuzzy offers capabilities that uFuzzy does not:
+rapid-fuzzy with `FuzzyIndex` outperforms uFuzzy on real-world dataset sizes (1K+), while offering capabilities that uFuzzy does not:
 
 - **9 distance algorithms**: Levenshtein, Damerau-Levenshtein, Jaro, Jaro-Winkler, Sorensen-Dice, and more — useful beyond search
 - **Simpler API**: Returns ready-to-use sorted results instead of three arrays requiring manual assembly

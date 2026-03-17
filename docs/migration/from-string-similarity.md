@@ -97,7 +97,7 @@ rapid-fuzzy's `sorensenDice` is **1.8x faster** than string-similarity's `compar
 
 | Operation | rapid-fuzzy | string-similarity |
 |---|---:|---:|
-| Sorensen-Dice (single pair) | **149,567 ops/s** | 82,908 ops/s |
+| Sorensen-Dice (single pair) | **152,317 ops/s** | 86,399 ops/s |
 
 ## Key Differences
 
