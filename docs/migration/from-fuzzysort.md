@@ -163,17 +163,17 @@ fuzzysort uses a substring-based matching algorithm that is extremely fast for r
 
 | Dataset size | rapid-fuzzy | FuzzyIndex | fuzzysort |
 |---|---:|---:|---:|
-| Small (20 items) | 220,621 ops/s | 403,559 ops/s | **2,586,477 ops/s** |
-| Medium (1K items) | 6,654 ops/s | 21,658 ops/s | **63,706 ops/s** |
-| Large (10K items) | 812 ops/s | 4,638 ops/s | **26,957 ops/s** |
+| Small (20 items) | 287,682 ops/s | 404,271 ops/s | **2,655,421 ops/s** |
+| Medium (1K items) | 6,827 ops/s | **79,616 ops/s** | 63,831 ops/s |
+| Large (10K items) | 827 ops/s | **136,294 ops/s** | 27,897 ops/s |
 
 Measured on Apple M-series with Node.js v22.
 
-fuzzysort is faster because it uses optimized substring matching — a fundamentally simpler operation than fuzzy matching with out-of-order support. If raw substring search speed is your primary concern and you don't need the features below, fuzzysort is an excellent choice.
+fuzzysort is faster on small datasets because it uses optimized substring matching — a fundamentally simpler operation than fuzzy matching with out-of-order support. However, with `FuzzyIndex`, rapid-fuzzy outperforms fuzzysort on medium-and-above datasets (1.2x at 1K, 4.9x at 10K) thanks to Rust-side indexing with incremental caching.
 
 ## Why Choose rapid-fuzzy Over fuzzysort?
 
-While fuzzysort wins on raw speed, rapid-fuzzy offers capabilities that fuzzysort does not:
+rapid-fuzzy with `FuzzyIndex` matches or exceeds fuzzysort's speed on real-world dataset sizes, while offering capabilities that fuzzysort does not:
 
 - **9 distance algorithms**: Levenshtein, Damerau-Levenshtein, Jaro, Jaro-Winkler, Sorensen-Dice, and more — useful beyond search
 - **Query syntax**: Exclude (`!term`), prefix (`^term`), suffix (`term$`), exact (`'term`) operators
