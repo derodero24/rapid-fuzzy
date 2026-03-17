@@ -4,9 +4,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>rapid-fuzzy Playground</title>
+  <meta name="description" content="Interactive playground for rapid-fuzzy — Rust-powered fuzzy search and string distance for JavaScript.">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
+  <script>window.coi = { quiet: true };</script>
+  <script src="coi-serviceworker.js"></script>
+
   <header>
     <h1>rapid-fuzzy <span class="badge">Playground</span></h1>
     <p class="subtitle">Rust-powered fuzzy search for JavaScript — try it live.</p>
@@ -52,25 +56,10 @@
     <section class="card" id="distance-section">
       <h2>String Distance / Similarity</h2>
       <div class="distance-inputs">
-        <input type="text" id="dist-a" aria-label="Distance input A" placeholder="String A" value="kitten">
-        <input type="text" id="dist-b" aria-label="Distance input B" placeholder="String B" value="sitting">
+        <input type="text" id="dist-a" aria-label="String A" placeholder="String A" value="kitten">
+        <input type="text" id="dist-b" aria-label="String B" placeholder="String B" value="sitting">
       </div>
-      <div class="algorithm-select">
-        <label for="algorithm">Algorithm:</label>
-        <select id="algorithm">
-          <option value="levenshtein">Levenshtein</option>
-          <option value="normalizedLevenshtein">Normalized Levenshtein</option>
-          <option value="damerauLevenshtein">Damerau-Levenshtein</option>
-          <option value="jaro">Jaro</option>
-          <option value="jaroWinkler" selected>Jaro-Winkler</option>
-          <option value="sorensenDice">Sørensen-Dice</option>
-          <option value="tokenSortRatio">Token Sort Ratio</option>
-          <option value="tokenSetRatio">Token Set Ratio</option>
-          <option value="partialRatio">Partial Ratio</option>
-          <option value="weightedRatio">Weighted Ratio</option>
-        </select>
-      </div>
-      <div class="distance-result" id="distance-result"></div>
+      <div class="algorithm-grid" id="algorithm-grid"></div>
     </section>
   </main>
 

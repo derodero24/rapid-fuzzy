@@ -10,12 +10,22 @@ const root = resolve(__dirname, '..');
 const localWasmEntry = resolve(root, 'rapid-fuzzy.wasi-browser.js');
 const useLocalAliases = existsSync(localWasmEntry);
 
+const corsHeaders = {
+  'Cross-Origin-Opener-Policy': 'same-origin',
+  'Cross-Origin-Embedder-Policy': 'require-corp',
+};
+
 export default defineConfig({
+  base: process.env.GITHUB_ACTIONS ? '/rapid-fuzzy/' : '/',
+  build: {
+    // WASM entry uses top-level await (requires es2022+)
+    target: 'es2022',
+  },
   server: {
-    headers: {
-      'Cross-Origin-Opener-Policy': 'same-origin',
-      'Cross-Origin-Embedder-Policy': 'require-corp',
-    },
+    headers: corsHeaders,
+  },
+  preview: {
+    headers: corsHeaders,
   },
   resolve: {
     alias: useLocalAliases
