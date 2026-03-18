@@ -7,8 +7,8 @@ use nucleo_matcher::pattern::CaseMatching;
 use nucleo_matcher::{Config, Matcher, Utf32String};
 
 use super::{
-    PrecomputedSearch, SearchOptions, SearchResult, compute_char_mask, resolve_case_matching,
-    search_over_precomputed,
+    IndexSearchResult, PrecomputedSearch, SearchOptions, SearchResult, compute_char_mask,
+    resolve_case_matching, search_over_precomputed, search_over_precomputed_indices,
 };
 
 /// A persistent fuzzy search index backed by Rust-side data.
@@ -114,6 +114,52 @@ impl FuzzyIndex {
     pub fn closest(&self, query: String, min_score: Option<f64>) -> Option<String> {
         let results = self.search_impl(&query, Some(1), min_score, false, CaseMatching::Smart);
         results.into_iter().next().map(|r| r.item)
+    }
+
+    /// Search the index, returning only indices and scores (no item strings).
+    ///
+    /// This is more efficient than `search()` when you maintain your own data
+    /// array and only need the index to look up the original item. Avoids
+    /// String cloning overhead for each result.
+    #[napi]
+    pub fn search_indices(
+        &self,
+        query: String,
+        options: Option<Either<u32, SearchOptions>>,
+    ) -> Vec<IndexSearchResult> {
+        let (max_results, min_score, include_positions, case_matching, return_all_on_empty) =
+            match options {
+                Some(Either::A(max)) => (Some(max), None, false, CaseMatching::Smart, false),
+                Some(Either::B(opts)) => (
+                    opts.max_results,
+                    opts.min_score,
+                    opts.include_positions.unwrap_or(false),
+                    resolve_case_matching(opts.is_case_sensitive),
+                    opts.return_all_on_empty.unwrap_or(false),
+                ),
+                None => (None, None, false, CaseMatching::Smart, false),
+            };
+
+        if return_all_on_empty && query.trim().is_empty() {
+            let limit = max_results.unwrap_or(self.items.len() as u32) as usize;
+            return (0..self.items.len())
+                .take(limit)
+                .map(|i| IndexSearchResult {
+                    index: i as u32,
+                    score: 1.0,
+                    positions: Vec::new(),
+                    match_type: None,
+                })
+                .collect();
+        }
+
+        self.search_indices_impl(
+            &query,
+            max_results,
+            min_score,
+            include_positions,
+            case_matching,
+        )
     }
 
     /// Add a single item to the index.
@@ -297,6 +343,54 @@ impl FuzzyIndex {
         };
 
         let outcome = search_over_precomputed(
+            query,
+            &ctx,
+            max_results,
+            min_score,
+            include_positions,
+            case_matching,
+        );
+
+        // Update incremental cache.
+        *self.last_query.borrow_mut() = query.to_owned();
+        *self.last_matching_indices.borrow_mut() = outcome.all_matching_indices;
+
+        outcome.results
+    }
+
+    fn search_indices_impl(
+        &self,
+        query: &str,
+        max_results: Option<u32>,
+        min_score: Option<f64>,
+        include_positions: bool,
+        case_matching: CaseMatching,
+    ) -> Vec<IndexSearchResult> {
+        let candidates: Option<Vec<u32>> = {
+            let last_q = self.last_query.borrow();
+            let last_idx = self.last_matching_indices.borrow();
+            if !last_q.is_empty()
+                && !last_idx.is_empty()
+                && query.len() > last_q.len()
+                && query.starts_with(last_q.as_str())
+                && !query.contains('!')
+                && !last_q.contains('!')
+            {
+                Some(last_idx.clone())
+            } else {
+                None
+            }
+        };
+
+        let ctx = PrecomputedSearch {
+            items: &self.items,
+            utf32_items: &self.utf32_items,
+            char_masks: &self.char_masks,
+            candidate_indices: candidates.as_deref(),
+            matcher: &self.matcher,
+        };
+
+        let outcome = search_over_precomputed_indices(
             query,
             &ctx,
             max_results,
@@ -571,5 +665,76 @@ mod tests {
     fn test_deserialize_bad_version() {
         let data = b"RFZI\xFF\x00\x00\x00\x00\x00\x00\x00";
         assert!(FuzzyIndex::deserialize_impl(data).is_err());
+    }
+
+    #[test]
+    fn test_search_indices_basic() {
+        let index = FuzzyIndex::new(vec![
+            "TypeScript".into(),
+            "JavaScript".into(),
+            "Python".into(),
+        ]);
+        let results =
+            index.search_indices_impl("typscript", None, None, false, CaseMatching::Smart);
+        assert!(!results.is_empty());
+        assert_eq!(results[0].index, 0); // TypeScript
+    }
+
+    #[test]
+    fn test_search_indices_no_item_field() {
+        let index = FuzzyIndex::new(vec!["hello".into(), "world".into()]);
+        let results = index.search_indices_impl("hello", None, None, false, CaseMatching::Smart);
+        assert!(!results.is_empty());
+        // IndexSearchResult has index and score but no item field
+        assert_eq!(results[0].index, 0);
+        assert!((results[0].score - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_search_indices_consistent_with_search() {
+        let items = vec![
+            "apple".into(),
+            "application".into(),
+            "banana".into(),
+            "grape".into(),
+        ];
+        let index = FuzzyIndex::new(items);
+        let full = index.search_impl("apple", None, None, false, CaseMatching::Smart);
+        let indices_only =
+            index.search_indices_impl("apple", None, None, false, CaseMatching::Smart);
+        assert_eq!(full.len(), indices_only.len());
+        for (f, i) in full.iter().zip(indices_only.iter()) {
+            assert_eq!(f.index, i.index);
+            assert!((f.score - i.score).abs() < f64::EPSILON);
+        }
+    }
+
+    #[test]
+    fn test_search_indices_with_positions() {
+        let index = FuzzyIndex::new(vec!["hello".into()]);
+        let results = index.search_indices_impl("hello", None, None, true, CaseMatching::Smart);
+        assert!(!results.is_empty());
+        assert_eq!(results[0].positions, vec![0, 1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn test_search_indices_min_score() {
+        let index = FuzzyIndex::new(vec!["apple".into(), "xyz".into()]);
+        let results =
+            index.search_indices_impl("apple", None, Some(0.5), false, CaseMatching::Smart);
+        for r in &results {
+            assert!(r.score >= 0.5);
+        }
+    }
+
+    #[test]
+    fn test_search_indices_max_results() {
+        let index = FuzzyIndex::new(vec![
+            "apple".into(),
+            "application".into(),
+            "appetizer".into(),
+        ]);
+        let results = index.search_indices_impl("app", Some(2), None, false, CaseMatching::Smart);
+        assert!(results.len() <= 2);
     }
 }

@@ -29,6 +29,14 @@ export declare class FuzzyIndex {
    * If minScore is provided, returns null when the best match scores below the threshold.
    */
   closest(query: string, minScore?: number | undefined | null): string | null
+  /**
+   * Search the index, returning only indices and scores (no item strings).
+   *
+   * This is more efficient than `search()` when you maintain your own data
+   * array and only need the index to look up the original item. Avoids
+   * String cloning overhead for each result.
+   */
+  searchIndices(query: string, options?: number | SearchOptions | undefined | null): Array<IndexSearchResult>
   /** Add a single item to the index. */
   add(item: string): void
   /** Add multiple items to the index at once. */
@@ -141,6 +149,30 @@ export declare function damerauLevenshteinBatch(pairs: Array<Array<string>>): Ar
  * will return `max_distance + 1` (enabling early termination for better performance).
  */
 export declare function damerauLevenshteinMany(reference: string, candidates: Array<string>, maxDistance?: number | undefined | null): Array<number>
+
+/**
+ * A lightweight search result containing only index and score (no item string).
+ *
+ * Use this when you maintain your own data array and only need the index
+ * to look up the original item. Avoids String cloning overhead.
+ */
+export interface IndexSearchResult {
+  /** The index of the item in the original input array. */
+  index: number
+  /** The match score normalized to 0.0-1.0 range (1.0 is a perfect match). */
+  score: number
+  /**
+   * Indices of matched characters in the item string.
+   * Empty unless `includePositions` is set to true in SearchOptions.
+   */
+  positions: Array<number>
+  /**
+   * How the query matched this item (Exact, Prefix, Contains, or Fuzzy).
+   * Only present when `includePositions` is set to true in SearchOptions.
+   * Derived from positions at zero additional cost.
+   */
+  matchType?: MatchType
+}
 
 /**
  * Compute the Jaro similarity between two strings.

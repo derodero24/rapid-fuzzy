@@ -68,6 +68,25 @@ pub struct SearchResult {
     pub match_type: Option<MatchType>,
 }
 
+/// A lightweight search result containing only index and score (no item string).
+///
+/// Use this when you maintain your own data array and only need the index
+/// to look up the original item. Avoids String cloning overhead.
+#[napi(object)]
+pub struct IndexSearchResult {
+    /// The index of the item in the original input array.
+    pub index: u32,
+    /// The match score normalized to 0.0-1.0 range (1.0 is a perfect match).
+    pub score: f64,
+    /// Indices of matched characters in the item string.
+    /// Empty unless `includePositions` is set to true in SearchOptions.
+    pub positions: Vec<u32>,
+    /// How the query matched this item (Exact, Prefix, Contains, or Fuzzy).
+    /// Only present when `includePositions` is set to true in SearchOptions.
+    /// Derived from positions at zero additional cost.
+    pub match_type: Option<MatchType>,
+}
+
 /// Options for the search function.
 #[napi(object)]
 pub struct SearchOptions {
@@ -260,6 +279,14 @@ pub(crate) struct PrecomputedSearchResult {
     pub all_matching_indices: Vec<u32>,
 }
 
+/// Lightweight result of `search_over_precomputed_indices`: index-only results.
+pub(crate) struct PrecomputedIndexSearchResult {
+    /// Top-k index-only results (sorted, truncated).
+    pub results: Vec<IndexSearchResult>,
+    /// Indices of ALL items that matched (before truncation), for incremental cache.
+    pub all_matching_indices: Vec<u32>,
+}
+
 /// Search over pre-computed Utf32String items with a reusable Matcher.
 ///
 /// Used by FuzzyIndex to avoid per-search string conversion and Matcher allocation.
@@ -376,6 +403,117 @@ pub(crate) fn search_over_precomputed(
         .collect();
 
     PrecomputedSearchResult {
+        results,
+        all_matching_indices,
+    }
+}
+
+/// Index-only variant of `search_over_precomputed`.
+///
+/// Reuses the same Pass 1 (scoring, filtering, top-k selection) but builds
+/// lightweight `IndexSearchResult` objects in Pass 2 — no String cloning.
+pub(crate) fn search_over_precomputed_indices(
+    query: &str,
+    ctx: &PrecomputedSearch<'_>,
+    max_results: Option<u32>,
+    min_score: Option<f64>,
+    include_positions: bool,
+    case_matching: CaseMatching,
+) -> PrecomputedIndexSearchResult {
+    let items = ctx.items;
+    let utf32_items = ctx.utf32_items;
+    let matcher_cell = ctx.matcher;
+    if query.is_empty() || items.is_empty() {
+        return PrecomputedIndexSearchResult {
+            results: Vec::new(),
+            all_matching_indices: Vec::new(),
+        };
+    }
+
+    let mut matcher = matcher_cell.borrow_mut();
+    let pattern = Pattern::parse(query, case_matching, Normalization::Smart);
+    let max_score = compute_max_score(query, &pattern, &mut matcher);
+    let threshold = min_score.unwrap_or(0.0);
+    let query_mask = compute_query_mask(query);
+    let char_masks = ctx.char_masks;
+
+    let mut score_item = |index: u32| -> Option<(u32, f64)> {
+        let idx = index as usize;
+        if query_mask != 0 && (char_masks[idx] & query_mask) != query_mask {
+            return None;
+        }
+        let atoms = utf32_items[idx].slice(..);
+        let raw_score = pattern.score(atoms, &mut matcher)?;
+        let normalized = (raw_score as f64 / max_score).min(1.0);
+        if normalized >= threshold {
+            Some((index, normalized))
+        } else {
+            None
+        }
+    };
+
+    let mut scored: Vec<(u32, f64)> = match ctx.candidate_indices {
+        Some(candidates) => candidates.iter().filter_map(|&i| score_item(i)).collect(),
+        None => (0..utf32_items.len() as u32)
+            .filter_map(&mut score_item)
+            .collect(),
+    };
+
+    let total = utf32_items.len();
+    let all_matching_indices: Vec<u32> = if total > 0 && scored.len() < total / 2 {
+        scored.iter().map(|&(index, _)| index).collect()
+    } else {
+        Vec::new()
+    };
+
+    let cmp = |a: &(u32, f64), b: &(u32, f64)| {
+        let score_ord = b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal);
+        if score_ord != std::cmp::Ordering::Equal {
+            return score_ord;
+        }
+        let len_ord = items[a.0 as usize].len().cmp(&items[b.0 as usize].len());
+        if len_ord != std::cmp::Ordering::Equal {
+            return len_ord;
+        }
+        a.0.cmp(&b.0)
+    };
+
+    if let Some(max) = max_results {
+        let k = max as usize;
+        if scored.len() > k {
+            scored.select_nth_unstable_by(k, cmp);
+            scored.truncate(k);
+        }
+    }
+    scored.sort_unstable_by(cmp);
+
+    // Pass 2: Build IndexSearchResult without String cloning.
+    let results = scored
+        .into_iter()
+        .map(|(index, score)| {
+            let (positions, match_type) = if include_positions {
+                let atoms = utf32_items[index as usize].slice(..);
+                let mut indices = Vec::new();
+                pattern.indices(atoms, &mut matcher, &mut indices);
+                indices.sort_unstable();
+                indices.dedup();
+                let item_char_count = items[index as usize].chars().count();
+                let mt = classify_match(&indices, item_char_count);
+                (indices, Some(mt))
+            } else {
+                (Vec::new(), None)
+            };
+
+            IndexSearchResult {
+                index,
+                score,
+                positions,
+                match_type,
+            }
+        })
+        .collect();
+
+    PrecomputedIndexSearchResult {
         results,
         all_matching_indices,
     }
