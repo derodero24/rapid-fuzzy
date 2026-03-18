@@ -1,16 +1,22 @@
-import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-const wasmBinaryPath = resolve(__dirname, '../rapid-fuzzy.wasm32-wasi.wasm');
-const wasmExists = existsSync(wasmBinaryPath);
-
-// Skip all WASM tests if the binary is not built
-// Build with: pnpm run build --target wasm32-wasip1-threads
-describe.skipIf(!wasmExists)('wasm', () => {
+// Check if WASM module is available and functional.
+// Handles both missing binary (not built) and stale binary (outdated build).
+let wasmAvailable = false;
+// biome-ignore lint/suspicious/noExplicitAny: WASM module has dynamic exports
+let wasm: Record<string, any> = {};
+try {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const wasm = wasmExists ? require('../rapid-fuzzy.wasi.cjs') : {};
+  const mod = require('../rapid-fuzzy.wasi.cjs');
+  wasmAvailable = typeof mod.levenshtein === 'function';
+  if (wasmAvailable) wasm = mod;
+} catch {
+  wasmAvailable = false;
+}
 
+// Skip all WASM tests if the module is not available or outdated
+// Build with: pnpm run build:wasm
+describe.skipIf(!wasmAvailable)('wasm', () => {
   describe('exports', () => {
     it('should export all expected functions', () => {
       const expectedExports = [

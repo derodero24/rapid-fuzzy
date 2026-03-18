@@ -27,6 +27,21 @@ pnpm test          # JS/TS tests
 cargo test         # Rust unit tests
 ```
 
+### WASM testing (optional)
+
+WASM tests are automatically skipped if the WASM binary is not built. To run the full test suite including WASM:
+
+```bash
+# Install the WASM target
+rustup target add wasm32-wasip1-threads
+
+# Build the WASM binary
+pnpm run build:wasm
+
+# Run all tests including WASM
+pnpm test
+```
+
 ### GitHub Codespaces / Dev Containers
 
 You can skip local setup entirely by using [GitHub Codespaces](https://github.com/codespaces) or [VS Code Dev Containers](https://code.visualstudio.com/docs/devcontainers/containers). The repository includes a devcontainer configuration with all required tools pre-installed.
