@@ -170,6 +170,12 @@ jobs:
         if: matrix.settings.target == 'wasm32-wasip1-threads'
         run: pnpm run build --target wasm32-wasip1-threads
 
+      - name: Optimize WASM with wasm-opt
+        if: matrix.settings.target == 'wasm32-wasip1-threads'
+        run: |
+          sudo apt-get update && sudo apt-get install -y binaryen
+          pnpm run optimize:wasm
+
       - name: Upload artifact
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
         with:

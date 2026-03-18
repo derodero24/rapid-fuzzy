@@ -101,6 +101,8 @@
     "postbuild": "node scripts/patch-binding.js",
     "build:debug": "napi build --manifest-path crates/core/Cargo.toml --platform --js index.js --dts index.d.ts --output-dir .",
     "build:wasm": "napi build --manifest-path crates/core/Cargo.toml --platform --release --js index.js --dts index.d.ts --output-dir . --target wasm32-wasip1-threads",
+    "postbuild:wasm": "node scripts/optimize-wasm.js",
+    "optimize:wasm": "node scripts/optimize-wasm.js",
     "artifacts": "napi artifacts",
     "prepublishOnly": "napi prepublish -t npm",
     "version": "napi version",
