@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 
 use napi_derive::napi;
 use rapidfuzz::distance::damerau_levenshtein as rapid_damerau;
+use rapidfuzz::distance::hamming as rapid_hamming;
 use rapidfuzz::distance::jaro as rapid_jaro;
 use rapidfuzz::distance::jaro_winkler as rapid_jw;
 use rapidfuzz::distance::levenshtein as rapid_lev;
@@ -125,6 +126,73 @@ pub fn damerau_levenshtein_many(
         None => candidates
             .iter()
             .map(|c| scorer.distance(c.chars()) as u32)
+            .collect(),
+    }
+}
+
+/// Compute the Hamming distance between two strings.
+///
+/// The Hamming distance counts the number of positions at which the corresponding
+/// characters differ. It is only defined for strings of equal length.
+/// Returns `null` if the strings have different lengths.
+#[napi]
+pub fn hamming(a: String, b: String) -> Option<u32> {
+    rapid_hamming::distance(a.chars(), b.chars())
+        .ok()
+        .map(|d| d as u32)
+}
+
+/// Compute the Hamming distance for multiple pairs of strings in a single call.
+///
+/// Returns an array of distances in the same order as the input pairs.
+/// Each pair must be an array of exactly two strings `[a, b]`.
+/// Returns `null` for pairs with different lengths.
+#[napi]
+pub fn hamming_batch(pairs: Vec<Vec<String>>) -> Vec<Option<u32>> {
+    pairs
+        .iter()
+        .map(|pair| {
+            if pair.len() >= 2 {
+                rapid_hamming::distance(pair[0].chars(), pair[1].chars())
+                    .ok()
+                    .map(|d| d as u32)
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+/// Compute the Hamming distance from one reference string to many candidates.
+///
+/// Returns an array of distances, one per candidate, in the same order as the input.
+/// Returns `null` for candidates with a different length than the reference.
+/// If `max_distance` is provided, candidates with distance exceeding the threshold
+/// will also return `null` (enabling early termination for better performance).
+#[napi]
+pub fn hamming_many(
+    reference: String,
+    candidates: Vec<String>,
+    max_distance: Option<u32>,
+) -> Vec<Option<u32>> {
+    let scorer = rapid_hamming::BatchComparator::new(reference.chars());
+    match max_distance {
+        Some(cutoff) => {
+            let args = rapid_hamming::Args::default().score_cutoff(cutoff as usize);
+            candidates
+                .iter()
+                .map(|c| {
+                    scorer
+                        .distance_with_args(c.chars(), &args)
+                        .ok()
+                        .flatten()
+                        .map(|d| d as u32)
+                })
+                .collect()
+        }
+        None => candidates
+            .iter()
+            .map(|c| scorer.distance(c.chars()).ok().map(|d| d as u32))
             .collect(),
     }
 }
@@ -831,6 +899,37 @@ mod tests {
     }
 
     #[test]
+    fn test_hamming() {
+        assert_eq!(hamming("karolin".into(), "kathrin".into()), Some(3));
+        assert_eq!(hamming("".into(), "".into()), Some(0));
+        assert_eq!(hamming("abc".into(), "abc".into()), Some(0));
+        // Different lengths return None
+        assert_eq!(hamming("abc".into(), "ab".into()), None);
+        assert_eq!(hamming("".into(), "a".into()), None);
+    }
+
+    #[test]
+    fn test_hamming_batch() {
+        let pairs = vec![
+            vec!["karolin".to_string(), "kathrin".to_string()],
+            vec!["abc".to_string(), "abc".to_string()],
+            vec!["abc".to_string(), "ab".to_string()],
+        ];
+        assert_eq!(hamming_batch(pairs), vec![Some(3), Some(0), None]);
+    }
+
+    #[test]
+    fn test_hamming_many() {
+        let candidates = vec![
+            "kathrin".to_string(),
+            "karolin".to_string(),
+            "abc".to_string(),
+        ];
+        let result = hamming_many("karolin".to_string(), candidates, None);
+        assert_eq!(result, vec![Some(3), Some(0), None]);
+    }
+
+    #[test]
     fn test_jaro_winkler() {
         let score = jaro_winkler("MARTHA".into(), "MARHTA".into());
         assert!(score > 0.96);
@@ -966,6 +1065,36 @@ mod tests {
         }
 
         #[test]
+        fn test_hamming_many_with_cutoff() {
+            let candidates = vec![
+                "kathrin".to_string(), // dist=3, exceeds cutoff 2 -> None
+                "karolin".to_string(), // dist=0, within cutoff
+                "abc".to_string(),     // different length -> None
+            ];
+            let result = hamming_many("karolin".to_string(), candidates, Some(2));
+            assert_eq!(result, vec![None, Some(0), None]);
+        }
+
+        #[test]
+        fn test_hamming_many_without_cutoff() {
+            let candidates = vec![
+                "kathrin".to_string(),
+                "karolin".to_string(),
+                "abc".to_string(),
+            ];
+            let result = hamming_many("karolin".to_string(), candidates, None);
+            assert_eq!(result, vec![Some(3), Some(0), None]);
+        }
+
+        #[test]
+        fn test_hamming_many_cutoff_zero() {
+            // max_distance = 0 means only exact matches pass
+            let candidates = vec!["karolin".to_string(), "kathrin".to_string()];
+            let result = hamming_many("karolin".to_string(), candidates, Some(0));
+            assert_eq!(result, vec![Some(0), None]);
+        }
+
+        #[test]
         fn test_jaro_many_with_cutoff() {
             let candidates = vec![
                 "MARHTA".to_string(),
@@ -1090,6 +1219,26 @@ mod tests {
                     damerau_levenshtein(a.clone(), b.clone()),
                     damerau_levenshtein(b, a)
                 );
+            }
+
+            // --- Hamming properties ---
+
+            #[test]
+            fn hamming_identity(a in ".*") {
+                prop_assert_eq!(hamming(a.clone(), a), Some(0));
+            }
+
+            #[test]
+            fn hamming_symmetry(a in ".*", b in ".*") {
+                prop_assert_eq!(
+                    hamming(a.clone(), b.clone()),
+                    hamming(b, a)
+                );
+            }
+
+            #[test]
+            fn hamming_none_for_different_lengths(a in ".{1,10}", b in ".{11,20}") {
+                prop_assert_eq!(hamming(a, b), None);
             }
 
             // --- Normalized Levenshtein properties ---
