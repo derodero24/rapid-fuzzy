@@ -62,7 +62,7 @@ for (const wasmFile of wasmFiles) {
   try {
     // wasm-opt in-place: write to temp then rename
     const tmpFile = `${wasmFile}.opt`;
-    execFileSync(wasmOpt, [optLevel, '-o', tmpFile, wasmFile], {
+    execFileSync(wasmOpt, [optLevel, '--all-features', '-o', tmpFile, wasmFile], {
       stdio: 'pipe',
       timeout: 120_000,
     });
