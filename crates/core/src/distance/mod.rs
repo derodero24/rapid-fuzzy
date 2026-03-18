@@ -325,7 +325,11 @@ fn token_sort_ratio_impl(a: &str, b: &str) -> f64 {
 fn token_set_ratio_impl(a: &str, b: &str) -> f64 {
     let norm_a = normalize_str(a);
     let norm_b = normalize_str(b);
+    token_set_ratio_from_normalized(&norm_a, &norm_b)
+}
 
+/// Token set ratio from pre-normalized strings (already lowercased and whitespace-collapsed).
+fn token_set_ratio_from_normalized(norm_a: &str, norm_b: &str) -> f64 {
     if norm_a.is_empty() && norm_b.is_empty() {
         return 1.0;
     }
@@ -377,7 +381,11 @@ fn token_set_ratio_impl(a: &str, b: &str) -> f64 {
 fn partial_ratio_impl(a: &str, b: &str) -> f64 {
     let norm_a = normalize_str(a);
     let norm_b = normalize_str(b);
+    partial_ratio_from_normalized(&norm_a, &norm_b)
+}
 
+/// Partial ratio from pre-normalized strings (already lowercased and whitespace-collapsed).
+fn partial_ratio_from_normalized(norm_a: &str, norm_b: &str) -> f64 {
     if norm_a.is_empty() && norm_b.is_empty() {
         return 1.0;
     }
@@ -386,9 +394,9 @@ fn partial_ratio_impl(a: &str, b: &str) -> f64 {
     }
 
     let (shorter, longer) = if norm_a.chars().count() <= norm_b.chars().count() {
-        (&norm_a, &norm_b)
+        (norm_a, norm_b)
     } else {
-        (&norm_b, &norm_a)
+        (norm_b, norm_a)
     };
 
     let short_len = shorter.chars().count();
@@ -423,8 +431,12 @@ fn weighted_ratio_impl(a: &str, b: &str) -> f64 {
         return 1.0;
     }
     let sort = token_sort_ratio_impl(a, b);
-    let set = token_set_ratio_impl(a, b);
-    let partial = partial_ratio_impl(a, b);
+
+    // Pre-normalize once and share across token_set_ratio and partial_ratio.
+    let norm_a = normalize_str(a);
+    let norm_b = normalize_str(b);
+    let set = token_set_ratio_from_normalized(&norm_a, &norm_b);
+    let partial = partial_ratio_from_normalized(&norm_a, &norm_b);
 
     // Return the best score across all methods
     [raw, sort, set, partial]
