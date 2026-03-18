@@ -6,8 +6,7 @@ use nucleo_matcher::{Config, Matcher, Utf32String};
 
 use super::keys::KeySearchResult;
 use super::{
-    SearchOptions, compute_char_mask, compute_max_score, compute_query_mask,
-    resolve_case_matching,
+    SearchOptions, compute_char_mask, compute_max_score, compute_query_mask, resolve_case_matching,
 };
 
 /// A persistent multi-key fuzzy search index backed by Rust-side data.
@@ -157,9 +156,7 @@ impl KeyedFuzzyIndex {
         let query_mask = compute_query_mask(&query);
 
         // Identify keys with non-zero weight to skip unnecessary scoring.
-        let active_keys: Vec<usize> = (0..num_keys)
-            .filter(|&k| self.weights[k] > 0.0)
-            .collect();
+        let active_keys: Vec<usize> = (0..num_keys).filter(|&k| self.weights[k] > 0.0).collect();
 
         // Pre-compute the sum of active weights for early exit upper-bound.
         let active_total_weight: f64 = active_keys.iter().map(|&k| self.weights[k]).sum();
@@ -183,14 +180,10 @@ impl KeyedFuzzyIndex {
 
                     // Per-key char_mask pre-filter: skip expensive scoring if
                     // the item for this key cannot contain the query characters.
-                    if query_mask != 0
-                        && (self.key_char_masks[k][i] & query_mask) != query_mask
-                    {
+                    if query_mask != 0 && (self.key_char_masks[k][i] & query_mask) != query_mask {
                         // Upper bound check: even if all remaining keys score 1.0,
                         // can we still reach the threshold?
-                        if threshold > 0.0
-                            && weighted_sum + remaining_weight < threshold_weighted
-                        {
+                        if threshold > 0.0 && weighted_sum + remaining_weight < threshold_weighted {
                             return None;
                         }
                         continue;
@@ -211,9 +204,7 @@ impl KeyedFuzzyIndex {
                     // Early exit: if even perfect scores on remaining keys
                     // cannot lift the combined score above the threshold,
                     // skip the remaining keys for this item.
-                    if threshold > 0.0
-                        && weighted_sum + remaining_weight < threshold_weighted
-                    {
+                    if threshold > 0.0 && weighted_sum + remaining_weight < threshold_weighted {
                         return None;
                     }
                 }
