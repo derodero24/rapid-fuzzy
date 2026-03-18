@@ -137,8 +137,10 @@ export declare function damerauLevenshteinBatch(pairs: Array<Array<string>>): Ar
  * Compute the Damerau-Levenshtein distance from one reference string to many candidates.
  *
  * Returns an array of distances, one per candidate, in the same order as the input.
+ * If `max_distance` is provided, candidates with distance exceeding the threshold
+ * will return `max_distance + 1` (enabling early termination for better performance).
  */
-export declare function damerauLevenshteinMany(reference: string, candidates: Array<string>): Array<number>
+export declare function damerauLevenshteinMany(reference: string, candidates: Array<string>, maxDistance?: number | undefined | null): Array<number>
 
 /**
  * Compute the Jaro similarity between two strings.
@@ -158,8 +160,10 @@ export declare function jaroBatch(pairs: Array<Array<string>>): Array<number>
  * Compute the Jaro similarity from one reference string to many candidates.
  *
  * Returns an array of similarity scores, one per candidate, in the same order as the input.
+ * If `min_similarity` is provided, candidates with similarity below the threshold
+ * will return `0.0` (enabling early termination for better performance).
  */
-export declare function jaroMany(reference: string, candidates: Array<string>): Array<number>
+export declare function jaroMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number>
 
 /**
  * Compute the Jaro-Winkler similarity between two strings.
@@ -180,8 +184,10 @@ export declare function jaroWinklerBatch(pairs: Array<Array<string>>): Array<num
  * Compute the Jaro-Winkler similarity from one reference string to many candidates.
  *
  * Returns an array of similarity scores, one per candidate, in the same order as the input.
+ * If `min_similarity` is provided, candidates with similarity below the threshold
+ * will return `0.0` (enabling early termination for better performance).
  */
-export declare function jaroWinklerMany(reference: string, candidates: Array<string>): Array<number>
+export declare function jaroWinklerMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number>
 
 /** A single result from multi-key fuzzy search. */
 export interface KeySearchResult {
@@ -217,8 +223,10 @@ export declare function levenshteinBatch(pairs: Array<Array<string>>): Array<num
  * Compute the Levenshtein distance from one reference string to many candidates.
  *
  * Returns an array of distances, one per candidate, in the same order as the input.
+ * If `max_distance` is provided, candidates with distance exceeding the threshold
+ * will return `max_distance + 1` (enabling early termination for better performance).
  */
-export declare function levenshteinMany(reference: string, candidates: Array<string>): Array<number>
+export declare function levenshteinMany(reference: string, candidates: Array<string>, maxDistance?: number | undefined | null): Array<number>
 
 /**
  * Classification of how a query matched an item.
@@ -254,8 +262,10 @@ export declare function normalizedLevenshteinBatch(pairs: Array<Array<string>>):
  * Compute the normalized Levenshtein similarity from one reference string to many candidates.
  *
  * Returns an array of similarity scores, one per candidate, in the same order as the input.
+ * If `min_similarity` is provided, candidates with similarity below the threshold
+ * will return `0.0` (enabling early termination for better performance).
  */
-export declare function normalizedLevenshteinMany(reference: string, candidates: Array<string>): Array<number>
+export declare function normalizedLevenshteinMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number>
 
 /**
  * Compute the partial ratio between two strings.
