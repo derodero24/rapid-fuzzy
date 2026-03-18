@@ -206,14 +206,22 @@ impl FuzzyIndex {
             return Err("Invalid data: bad magic bytes".into());
         }
 
-        let version = u32::from_le_bytes(bytes[4..8].try_into().unwrap());
+        let version = u32::from_le_bytes(
+            bytes[4..8]
+                .try_into()
+                .map_err(|_| "Invalid data: truncated header".to_string())?,
+        );
         if version != SERIALIZE_VERSION {
             return Err(format!(
                 "Unsupported format version: expected {SERIALIZE_VERSION}, got {version}"
             ));
         }
 
-        let count = u32::from_le_bytes(bytes[8..12].try_into().unwrap()) as usize;
+        let count = u32::from_le_bytes(
+            bytes[8..12]
+                .try_into()
+                .map_err(|_| "Invalid data: truncated header".to_string())?,
+        ) as usize;
         let mut offset = header_size;
 
         // Reject obviously invalid counts before allocating.
@@ -230,7 +238,11 @@ impl FuzzyIndex {
             if offset + 4 > bytes.len() {
                 return Err("Invalid data: truncated".into());
             }
-            let len = u32::from_le_bytes(bytes[offset..offset + 4].try_into().unwrap()) as usize;
+            let len = u32::from_le_bytes(
+                bytes[offset..offset + 4]
+                    .try_into()
+                    .map_err(|_| "Invalid data: truncated".to_string())?,
+            ) as usize;
             offset += 4;
             if offset + len > bytes.len() {
                 return Err("Invalid data: truncated".into());
