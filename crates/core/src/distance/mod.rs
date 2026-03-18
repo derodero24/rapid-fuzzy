@@ -330,8 +330,12 @@ fn token_set_ratio_impl(a: &str, b: &str) -> f64 {
 
 /// Token set ratio from pre-normalized strings (already lowercased and whitespace-collapsed).
 fn token_set_ratio_from_normalized(norm_a: &str, norm_b: &str) -> f64 {
-    if norm_a.is_empty() && norm_b.is_empty() {
-        return 1.0;
+    if norm_a.is_empty() || norm_b.is_empty() {
+        return if norm_a.is_empty() && norm_b.is_empty() {
+            1.0
+        } else {
+            0.0
+        };
     }
 
     let tokens_a: BTreeSet<&str> = norm_a.split_whitespace().collect();
@@ -518,8 +522,12 @@ pub fn token_set_ratio_many(reference: String, candidates: Vec<String>) -> Vec<f
         .map(|c| {
             let norm_c = normalize_str(c);
 
-            if norm_ref.is_empty() && norm_c.is_empty() {
-                return 1.0;
+            if norm_ref.is_empty() || norm_c.is_empty() {
+                return if norm_ref.is_empty() && norm_c.is_empty() {
+                    1.0
+                } else {
+                    0.0
+                };
             }
 
             let tokens_c: BTreeSet<&str> = norm_c.split_whitespace().collect();
@@ -690,8 +698,12 @@ pub fn weighted_ratio_many(reference: String, candidates: Vec<String>) -> Vec<f6
 
             // Token set ratio (reuse pre-computed norm_ref and tokens_ref)
             let set = {
-                if norm_ref.is_empty() && norm_c.is_empty() {
-                    1.0
+                if norm_ref.is_empty() || norm_c.is_empty() {
+                    if norm_ref.is_empty() && norm_c.is_empty() {
+                        1.0
+                    } else {
+                        0.0
+                    }
                 } else {
                     let tokens_c: BTreeSet<&str> = norm_c.split_whitespace().collect();
                     let tokens_ref_borrowed: BTreeSet<&str> =
@@ -1325,6 +1337,14 @@ mod tests {
         #[test]
         fn test_empty_strings() {
             assert_eq!(token_set_ratio("".into(), "".into()), 1.0);
+        }
+
+        #[test]
+        fn test_one_empty_returns_zero() {
+            assert_eq!(token_set_ratio("".into(), "foo".into()), 0.0);
+            assert_eq!(token_set_ratio("foo".into(), "".into()), 0.0);
+            assert_eq!(token_set_ratio("  ".into(), "foo".into()), 0.0);
+            assert_eq!(token_set_ratio("foo".into(), "  ".into()), 0.0);
         }
 
         #[test]
