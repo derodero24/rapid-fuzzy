@@ -151,6 +151,34 @@ export declare function damerauLevenshteinBatch(pairs: Array<Array<string>>): Ar
 export declare function damerauLevenshteinMany(reference: string, candidates: Array<string>, maxDistance?: number | undefined | null): Array<number>
 
 /**
+ * Compute the Hamming distance between two strings.
+ *
+ * The Hamming distance counts the number of positions at which the corresponding
+ * characters differ. It is only defined for strings of equal length.
+ * Returns `null` if the strings have different lengths.
+ */
+export declare function hamming(a: string, b: string): number | null
+
+/**
+ * Compute the Hamming distance for multiple pairs of strings in a single call.
+ *
+ * Returns an array of distances in the same order as the input pairs.
+ * Each pair must be an array of exactly two strings `[a, b]`.
+ * Returns `null` for pairs with different lengths.
+ */
+export declare function hammingBatch(pairs: Array<Array<string>>): Array<number | undefined | null>
+
+/**
+ * Compute the Hamming distance from one reference string to many candidates.
+ *
+ * Returns an array of distances, one per candidate, in the same order as the input.
+ * Returns `null` for candidates with a different length than the reference.
+ * If `max_distance` is provided, candidates with distance exceeding the threshold
+ * will also return `null` (enabling early termination for better performance).
+ */
+export declare function hammingMany(reference: string, candidates: Array<string>, maxDistance?: number | undefined | null): Array<number | undefined | null>
+
+/**
  * A lightweight search result containing only index and score (no item string).
  *
  * Use this when you maintain your own data array and only need the index
