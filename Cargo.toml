@@ -4,6 +4,7 @@ resolver = "2"
 
 [workspace.package]
 edition = "2024"
+rust-version = "1.85"
 license = "MIT"
 repository = "https://github.com/derodero24/rapid-fuzzy"
 
