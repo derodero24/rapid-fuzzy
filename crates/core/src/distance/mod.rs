@@ -470,7 +470,18 @@ pub fn token_sort_ratio_batch(pairs: Vec<Vec<String>>) -> Vec<f64> {
 /// Returns an array of similarity scores, one per candidate, in the same order as the input.
 #[napi]
 pub fn token_sort_ratio_many(reference: String, candidates: Vec<String>) -> Vec<f64> {
-    many_apply(&reference, &candidates, token_sort_ratio_impl)
+    let sorted_ref = sorted_tokens(&reference).join(" ");
+    candidates
+        .iter()
+        .map(|c| {
+            let sorted_c = sorted_tokens(c).join(" ");
+            if sorted_ref.is_empty() && sorted_c.is_empty() {
+                1.0
+            } else {
+                rapid_lev::normalized_similarity(sorted_ref.chars(), sorted_c.chars())
+            }
+        })
+        .collect()
 }
 
 // --- Token Set Ratio ---
@@ -499,7 +510,60 @@ pub fn token_set_ratio_batch(pairs: Vec<Vec<String>>) -> Vec<f64> {
 /// Returns an array of similarity scores, one per candidate, in the same order as the input.
 #[napi]
 pub fn token_set_ratio_many(reference: String, candidates: Vec<String>) -> Vec<f64> {
-    many_apply(&reference, &candidates, token_set_ratio_impl)
+    let norm_ref = normalize_str(&reference);
+    let tokens_ref: BTreeSet<&str> = norm_ref.split_whitespace().collect();
+
+    candidates
+        .iter()
+        .map(|c| {
+            let norm_c = normalize_str(c);
+
+            if norm_ref.is_empty() && norm_c.is_empty() {
+                return 1.0;
+            }
+
+            let tokens_c: BTreeSet<&str> = norm_c.split_whitespace().collect();
+
+            let diff_ref: Vec<&str> = tokens_ref.difference(&tokens_c).copied().collect();
+            let diff_c: Vec<&str> = tokens_c.difference(&tokens_ref).copied().collect();
+
+            if diff_ref.is_empty() && diff_c.is_empty() {
+                return 1.0;
+            }
+
+            let sect_str: String = tokens_ref
+                .intersection(&tokens_c)
+                .copied()
+                .collect::<Vec<_>>()
+                .join(" ");
+
+            let combined_ref = if diff_ref.is_empty() {
+                std::borrow::Cow::Borrowed(sect_str.as_str())
+            } else {
+                std::borrow::Cow::Owned(format!("{} {}", sect_str, diff_ref.join(" ")))
+            };
+            let combined_c = if diff_c.is_empty() {
+                std::borrow::Cow::Borrowed(sect_str.as_str())
+            } else {
+                std::borrow::Cow::Owned(format!("{} {}", sect_str, diff_c.join(" ")))
+            };
+
+            let score_ab =
+                rapid_lev::normalized_similarity(combined_ref.chars(), combined_c.chars());
+            let score_a = if diff_ref.is_empty() {
+                1.0
+            } else {
+                rapid_lev::normalized_similarity(sect_str.chars(), combined_ref.chars())
+            };
+            let score_b = if diff_c.is_empty() {
+                1.0
+            } else {
+                rapid_lev::normalized_similarity(sect_str.chars(), combined_c.chars())
+            };
+
+            f64::max(score_ab, f64::max(score_a, score_b))
+        })
+        .collect()
 }
 
 // --- Partial Ratio ---
@@ -528,7 +592,51 @@ pub fn partial_ratio_batch(pairs: Vec<Vec<String>>) -> Vec<f64> {
 /// Returns an array of similarity scores, one per candidate, in the same order as the input.
 #[napi]
 pub fn partial_ratio_many(reference: String, candidates: Vec<String>) -> Vec<f64> {
-    many_apply(&reference, &candidates, partial_ratio_impl)
+    let norm_ref = normalize_str(&reference);
+
+    candidates
+        .iter()
+        .map(|c| {
+            let norm_c = normalize_str(c);
+
+            if norm_ref.is_empty() && norm_c.is_empty() {
+                return 1.0;
+            }
+            if norm_ref.is_empty() || norm_c.is_empty() {
+                return 0.0;
+            }
+
+            let (shorter, longer) = if norm_ref.chars().count() <= norm_c.chars().count() {
+                (norm_ref.as_str(), norm_c.as_str())
+            } else {
+                (norm_c.as_str(), norm_ref.as_str())
+            };
+
+            let short_len = shorter.chars().count();
+            let long_len = longer.chars().count();
+
+            if short_len == long_len {
+                return rapid_lev::normalized_similarity(shorter.chars(), longer.chars());
+            }
+
+            let long_chars: Vec<char> = longer.chars().collect();
+            let scorer = rapid_lev::BatchComparator::new(shorter.chars());
+            let mut best = 0.0_f64;
+
+            for start in 0..=(long_len - short_len) {
+                let window = long_chars[start..start + short_len].iter().copied();
+                let args = rapid_lev::Args::default().score_cutoff(best);
+                if let Some(score) = scorer.normalized_similarity_with_args(window, &args) {
+                    best = score;
+                    if best == 1.0 {
+                        break;
+                    }
+                }
+            }
+
+            best
+        })
+        .collect()
 }
 
 // --- Weighted Ratio ---
@@ -557,7 +665,129 @@ pub fn weighted_ratio_batch(pairs: Vec<Vec<String>>) -> Vec<f64> {
 /// Returns an array of similarity scores, one per candidate, in the same order as the input.
 #[napi]
 pub fn weighted_ratio_many(reference: String, candidates: Vec<String>) -> Vec<f64> {
-    many_apply(&reference, &candidates, weighted_ratio_impl)
+    let norm_ref = normalize_str(&reference);
+    let sorted_ref = sorted_tokens(&reference).join(" ");
+    let tokens_ref: BTreeSet<String> = norm_ref.split_whitespace().map(String::from).collect();
+    let ref_scorer = rapid_lev::BatchComparator::new(norm_ref.chars());
+
+    candidates
+        .iter()
+        .map(|c| {
+            // Raw normalized Levenshtein (reuse BatchComparator for reference)
+            let norm_c = normalize_str(c);
+            let raw = ref_scorer.normalized_similarity(norm_c.chars());
+            if raw == 1.0 {
+                return 1.0;
+            }
+
+            // Token sort ratio (reuse pre-computed sorted_ref)
+            let sorted_c = sorted_tokens(c).join(" ");
+            let sort = if sorted_ref.is_empty() && sorted_c.is_empty() {
+                1.0
+            } else {
+                rapid_lev::normalized_similarity(sorted_ref.chars(), sorted_c.chars())
+            };
+
+            // Token set ratio (reuse pre-computed norm_ref and tokens_ref)
+            let set = {
+                if norm_ref.is_empty() && norm_c.is_empty() {
+                    1.0
+                } else {
+                    let tokens_c: BTreeSet<&str> = norm_c.split_whitespace().collect();
+                    let tokens_ref_borrowed: BTreeSet<&str> =
+                        tokens_ref.iter().map(|s| s.as_str()).collect();
+
+                    let diff_ref: Vec<&str> =
+                        tokens_ref_borrowed.difference(&tokens_c).copied().collect();
+                    let diff_c: Vec<&str> =
+                        tokens_c.difference(&tokens_ref_borrowed).copied().collect();
+
+                    if diff_ref.is_empty() && diff_c.is_empty() {
+                        1.0
+                    } else {
+                        let sect_str: String = tokens_ref_borrowed
+                            .intersection(&tokens_c)
+                            .copied()
+                            .collect::<Vec<_>>()
+                            .join(" ");
+
+                        let combined_ref = if diff_ref.is_empty() {
+                            std::borrow::Cow::Borrowed(sect_str.as_str())
+                        } else {
+                            std::borrow::Cow::Owned(format!("{} {}", sect_str, diff_ref.join(" ")))
+                        };
+                        let combined_c = if diff_c.is_empty() {
+                            std::borrow::Cow::Borrowed(sect_str.as_str())
+                        } else {
+                            std::borrow::Cow::Owned(format!("{} {}", sect_str, diff_c.join(" ")))
+                        };
+
+                        let score_ab = rapid_lev::normalized_similarity(
+                            combined_ref.chars(),
+                            combined_c.chars(),
+                        );
+                        let score_a = if diff_ref.is_empty() {
+                            1.0
+                        } else {
+                            rapid_lev::normalized_similarity(sect_str.chars(), combined_ref.chars())
+                        };
+                        let score_b = if diff_c.is_empty() {
+                            1.0
+                        } else {
+                            rapid_lev::normalized_similarity(sect_str.chars(), combined_c.chars())
+                        };
+
+                        f64::max(score_ab, f64::max(score_a, score_b))
+                    }
+                }
+            };
+
+            // Partial ratio (reuse pre-computed norm_ref)
+            let partial = {
+                if norm_ref.is_empty() && norm_c.is_empty() {
+                    1.0
+                } else if norm_ref.is_empty() || norm_c.is_empty() {
+                    0.0
+                } else {
+                    let (shorter, longer) = if norm_ref.chars().count() <= norm_c.chars().count() {
+                        (norm_ref.as_str(), norm_c.as_str())
+                    } else {
+                        (norm_c.as_str(), norm_ref.as_str())
+                    };
+
+                    let short_len = shorter.chars().count();
+                    let long_len = longer.chars().count();
+
+                    if short_len == long_len {
+                        rapid_lev::normalized_similarity(shorter.chars(), longer.chars())
+                    } else {
+                        let long_chars: Vec<char> = longer.chars().collect();
+                        let scorer = rapid_lev::BatchComparator::new(shorter.chars());
+                        let mut best = 0.0_f64;
+
+                        for start in 0..=(long_len - short_len) {
+                            let window = long_chars[start..start + short_len].iter().copied();
+                            let args = rapid_lev::Args::default().score_cutoff(best);
+                            if let Some(score) =
+                                scorer.normalized_similarity_with_args(window, &args)
+                            {
+                                best = score;
+                                if best == 1.0 {
+                                    break;
+                                }
+                            }
+                        }
+
+                        best
+                    }
+                }
+            };
+
+            [raw, sort, set, partial]
+                .into_iter()
+                .fold(0.0_f64, f64::max)
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -1306,6 +1536,152 @@ mod tests {
         fn test_token_sort_ratio_emoji() {
             let score = token_sort_ratio("🎉 🎊".into(), "🎊 🎉".into());
             assert_eq!(score, 1.0);
+        }
+    }
+
+    mod many_equivalence_tests {
+        use super::*;
+
+        /// Candidates shared across all equivalence tests.
+        fn test_candidates() -> Vec<String> {
+            vec![
+                "hello world".to_string(),
+                "Mets New York".to_string(),
+                "".to_string(),
+                "completely different string".to_string(),
+                "東京 タワー".to_string(),
+                "hello".to_string(),
+                "  extra   spaces  ".to_string(),
+            ]
+        }
+
+        #[test]
+        fn token_sort_ratio_many_matches_impl() {
+            let reference = "New York Mets".to_string();
+            let candidates = test_candidates();
+            let many_results = token_sort_ratio_many(reference.clone(), candidates.clone());
+            let individual: Vec<f64> = candidates
+                .iter()
+                .map(|c| token_sort_ratio_impl(&reference, c))
+                .collect();
+            assert_eq!(many_results.len(), individual.len());
+            for (i, (m, s)) in many_results.iter().zip(individual.iter()).enumerate() {
+                assert!(
+                    (m - s).abs() < f64::EPSILON,
+                    "token_sort_ratio mismatch at index {}: many={}, single={}",
+                    i,
+                    m,
+                    s
+                );
+            }
+        }
+
+        #[test]
+        fn token_set_ratio_many_matches_impl() {
+            let reference = "Mariners vs Yankees".to_string();
+            let candidates = test_candidates();
+            let many_results = token_set_ratio_many(reference.clone(), candidates.clone());
+            let individual: Vec<f64> = candidates
+                .iter()
+                .map(|c| token_set_ratio_impl(&reference, c))
+                .collect();
+            assert_eq!(many_results.len(), individual.len());
+            for (i, (m, s)) in many_results.iter().zip(individual.iter()).enumerate() {
+                assert!(
+                    (m - s).abs() < f64::EPSILON,
+                    "token_set_ratio mismatch at index {}: many={}, single={}",
+                    i,
+                    m,
+                    s
+                );
+            }
+        }
+
+        #[test]
+        fn partial_ratio_many_matches_impl() {
+            let reference = "hello".to_string();
+            let candidates = test_candidates();
+            let many_results = partial_ratio_many(reference.clone(), candidates.clone());
+            let individual: Vec<f64> = candidates
+                .iter()
+                .map(|c| partial_ratio_impl(&reference, c))
+                .collect();
+            assert_eq!(many_results.len(), individual.len());
+            for (i, (m, s)) in many_results.iter().zip(individual.iter()).enumerate() {
+                assert!(
+                    (m - s).abs() < f64::EPSILON,
+                    "partial_ratio mismatch at index {}: many={}, single={}",
+                    i,
+                    m,
+                    s
+                );
+            }
+        }
+
+        #[test]
+        fn weighted_ratio_many_matches_impl() {
+            let reference = "New York Mets".to_string();
+            let candidates = test_candidates();
+            let many_results = weighted_ratio_many(reference.clone(), candidates.clone());
+            let individual: Vec<f64> = candidates
+                .iter()
+                .map(|c| weighted_ratio_impl(&reference, c))
+                .collect();
+            assert_eq!(many_results.len(), individual.len());
+            for (i, (m, s)) in many_results.iter().zip(individual.iter()).enumerate() {
+                assert!(
+                    (m - s).abs() < f64::EPSILON,
+                    "weighted_ratio mismatch at index {}: many={}, single={}",
+                    i,
+                    m,
+                    s
+                );
+            }
+        }
+
+        #[test]
+        fn many_with_empty_reference() {
+            let reference = "".to_string();
+            let candidates = vec!["hello".to_string(), "".to_string(), "world".to_string()];
+
+            let tsr = token_sort_ratio_many(reference.clone(), candidates.clone());
+            let tsr_expected: Vec<f64> = candidates
+                .iter()
+                .map(|c| token_sort_ratio_impl(&reference, c))
+                .collect();
+            assert_eq!(tsr, tsr_expected);
+
+            let tsetr = token_set_ratio_many(reference.clone(), candidates.clone());
+            let tsetr_expected: Vec<f64> = candidates
+                .iter()
+                .map(|c| token_set_ratio_impl(&reference, c))
+                .collect();
+            assert_eq!(tsetr, tsetr_expected);
+
+            let pr = partial_ratio_many(reference.clone(), candidates.clone());
+            let pr_expected: Vec<f64> = candidates
+                .iter()
+                .map(|c| partial_ratio_impl(&reference, c))
+                .collect();
+            assert_eq!(pr, pr_expected);
+
+            let wr = weighted_ratio_many(reference.clone(), candidates.clone());
+            let wr_expected: Vec<f64> = candidates
+                .iter()
+                .map(|c| weighted_ratio_impl(&reference, c))
+                .collect();
+            assert_eq!(wr, wr_expected);
+        }
+
+        #[test]
+        fn many_with_empty_candidates() {
+            let reference = "hello world".to_string();
+            let candidates: Vec<String> = vec![];
+
+            assert!(token_sort_ratio_many(reference.clone(), candidates.clone()).is_empty());
+            assert!(token_set_ratio_many(reference.clone(), candidates.clone()).is_empty());
+            assert!(partial_ratio_many(reference.clone(), candidates.clone()).is_empty());
+            assert!(weighted_ratio_many(reference, candidates).is_empty());
         }
     }
 
