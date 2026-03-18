@@ -162,11 +162,7 @@ pub fn jaro_many(
             let args = rapid_jaro::Args::default().score_cutoff(cutoff);
             candidates
                 .iter()
-                .map(|c| {
-                    scorer
-                        .similarity_with_args(c.chars(), &args)
-                        .unwrap_or(0.0)
-                })
+                .map(|c| scorer.similarity_with_args(c.chars(), &args).unwrap_or(0.0))
                 .collect()
         }
         None => candidates
@@ -210,11 +206,7 @@ pub fn jaro_winkler_many(
             let args = rapid_jw::Args::default().score_cutoff(cutoff);
             candidates
                 .iter()
-                .map(|c| {
-                    scorer
-                        .similarity_with_args(c.chars(), &args)
-                        .unwrap_or(0.0)
-                })
+                .map(|c| scorer.similarity_with_args(c.chars(), &args).unwrap_or(0.0))
                 .collect()
         }
         None => candidates
@@ -678,7 +670,11 @@ mod tests {
 
         #[test]
         fn test_levenshtein_many_with_cutoff() {
-            let candidates = vec!["sitting".to_string(), "kitten".to_string(), "abcdef".to_string()];
+            let candidates = vec![
+                "sitting".to_string(),
+                "kitten".to_string(),
+                "abcdef".to_string(),
+            ];
             // max_distance = 2: "sitting" (dist=3) exceeds, "kitten" (dist=0) passes, "abcdef" (dist=5) exceeds
             let result = levenshtein_many("kitten".to_string(), candidates, Some(2));
             assert_eq!(result, vec![3, 0, 3]); // sentinel = max_distance + 1 = 3
@@ -693,7 +689,11 @@ mod tests {
 
         #[test]
         fn test_damerau_levenshtein_many_with_cutoff() {
-            let candidates = vec!["sitting".to_string(), "kitten".to_string(), "abcdef".to_string()];
+            let candidates = vec![
+                "sitting".to_string(),
+                "kitten".to_string(),
+                "abcdef".to_string(),
+            ];
             let result = damerau_levenshtein_many("kitten".to_string(), candidates, Some(2));
             // "sitting" has DL distance 3 (exceeds cutoff 2 -> sentinel 3)
             // "kitten" has DL distance 0 (within cutoff)
@@ -713,7 +713,11 @@ mod tests {
 
         #[test]
         fn test_jaro_many_with_cutoff() {
-            let candidates = vec!["MARHTA".to_string(), "XXXXXX".to_string(), "MARTHA".to_string()];
+            let candidates = vec![
+                "MARHTA".to_string(),
+                "XXXXXX".to_string(),
+                "MARTHA".to_string(),
+            ];
             // min_similarity = 0.9: "MARHTA" (high sim ~0.94) passes, "XXXXXX" (low sim) -> 0.0
             let result = jaro_many("MARTHA".to_string(), candidates, Some(0.9));
             assert!(result[0] > 0.9);
@@ -731,7 +735,11 @@ mod tests {
 
         #[test]
         fn test_jaro_winkler_many_with_cutoff() {
-            let candidates = vec!["MARHTA".to_string(), "XXXXXX".to_string(), "MARTHA".to_string()];
+            let candidates = vec![
+                "MARHTA".to_string(),
+                "XXXXXX".to_string(),
+                "MARTHA".to_string(),
+            ];
             let result = jaro_winkler_many("MARTHA".to_string(), candidates, Some(0.9));
             assert!(result[0] > 0.9);
             assert_eq!(result[1], 0.0);
@@ -748,7 +756,11 @@ mod tests {
 
         #[test]
         fn test_normalized_levenshtein_many_with_cutoff() {
-            let candidates = vec!["kitten".to_string(), "abcdef".to_string(), "kittens".to_string()];
+            let candidates = vec![
+                "kitten".to_string(),
+                "abcdef".to_string(),
+                "kittens".to_string(),
+            ];
             // min_similarity = 0.8: "kitten" (identical, 1.0) passes, "abcdef" (low sim) -> 0.0
             let result = normalized_levenshtein_many("kitten".to_string(), candidates, Some(0.8));
             assert_eq!(result[0], 1.0);
