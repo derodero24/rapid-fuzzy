@@ -49,13 +49,33 @@ pub fn levenshtein_batch(pairs: Vec<Vec<String>>) -> Vec<u32> {
 /// Compute the Levenshtein distance from one reference string to many candidates.
 ///
 /// Returns an array of distances, one per candidate, in the same order as the input.
+/// If `max_distance` is provided, candidates with distance exceeding the threshold
+/// will return `max_distance + 1` (enabling early termination for better performance).
 #[napi]
-pub fn levenshtein_many(reference: String, candidates: Vec<String>) -> Vec<u32> {
+pub fn levenshtein_many(
+    reference: String,
+    candidates: Vec<String>,
+    max_distance: Option<u32>,
+) -> Vec<u32> {
     let scorer = rapid_lev::BatchComparator::new(reference.chars());
-    candidates
-        .iter()
-        .map(|c| scorer.distance(c.chars()) as u32)
-        .collect()
+    match max_distance {
+        Some(cutoff) => {
+            let args = rapid_lev::Args::default().score_cutoff(cutoff as usize);
+            let sentinel = cutoff + 1;
+            candidates
+                .iter()
+                .map(|c| {
+                    scorer
+                        .distance_with_args(c.chars(), &args)
+                        .map_or(sentinel, |d| d as u32)
+                })
+                .collect()
+        }
+        None => candidates
+            .iter()
+            .map(|c| scorer.distance(c.chars()) as u32)
+            .collect(),
+    }
 }
 
 /// Compute the Damerau-Levenshtein distance between two strings.
@@ -80,13 +100,33 @@ pub fn damerau_levenshtein_batch(pairs: Vec<Vec<String>>) -> Vec<u32> {
 /// Compute the Damerau-Levenshtein distance from one reference string to many candidates.
 ///
 /// Returns an array of distances, one per candidate, in the same order as the input.
+/// If `max_distance` is provided, candidates with distance exceeding the threshold
+/// will return `max_distance + 1` (enabling early termination for better performance).
 #[napi]
-pub fn damerau_levenshtein_many(reference: String, candidates: Vec<String>) -> Vec<u32> {
+pub fn damerau_levenshtein_many(
+    reference: String,
+    candidates: Vec<String>,
+    max_distance: Option<u32>,
+) -> Vec<u32> {
     let scorer = rapid_damerau::BatchComparator::new(reference.chars());
-    candidates
-        .iter()
-        .map(|c| scorer.distance(c.chars()) as u32)
-        .collect()
+    match max_distance {
+        Some(cutoff) => {
+            let args = rapid_damerau::Args::default().score_cutoff(cutoff as usize);
+            let sentinel = cutoff + 1;
+            candidates
+                .iter()
+                .map(|c| {
+                    scorer
+                        .distance_with_args(c.chars(), &args)
+                        .map_or(sentinel, |d| d as u32)
+                })
+                .collect()
+        }
+        None => candidates
+            .iter()
+            .map(|c| scorer.distance(c.chars()) as u32)
+            .collect(),
+    }
 }
 
 /// Compute the Jaro similarity between two strings.
@@ -108,13 +148,32 @@ pub fn jaro_batch(pairs: Vec<Vec<String>>) -> Vec<f64> {
 /// Compute the Jaro similarity from one reference string to many candidates.
 ///
 /// Returns an array of similarity scores, one per candidate, in the same order as the input.
+/// If `min_similarity` is provided, candidates with similarity below the threshold
+/// will return `0.0` (enabling early termination for better performance).
 #[napi]
-pub fn jaro_many(reference: String, candidates: Vec<String>) -> Vec<f64> {
+pub fn jaro_many(
+    reference: String,
+    candidates: Vec<String>,
+    min_similarity: Option<f64>,
+) -> Vec<f64> {
     let scorer = rapid_jaro::BatchComparator::new(reference.chars());
-    candidates
-        .iter()
-        .map(|c| scorer.similarity(c.chars()))
-        .collect()
+    match min_similarity {
+        Some(cutoff) => {
+            let args = rapid_jaro::Args::default().score_cutoff(cutoff);
+            candidates
+                .iter()
+                .map(|c| {
+                    scorer
+                        .similarity_with_args(c.chars(), &args)
+                        .unwrap_or(0.0)
+                })
+                .collect()
+        }
+        None => candidates
+            .iter()
+            .map(|c| scorer.similarity(c.chars()))
+            .collect(),
+    }
 }
 
 /// Compute the Jaro-Winkler similarity between two strings.
@@ -137,13 +196,32 @@ pub fn jaro_winkler_batch(pairs: Vec<Vec<String>>) -> Vec<f64> {
 /// Compute the Jaro-Winkler similarity from one reference string to many candidates.
 ///
 /// Returns an array of similarity scores, one per candidate, in the same order as the input.
+/// If `min_similarity` is provided, candidates with similarity below the threshold
+/// will return `0.0` (enabling early termination for better performance).
 #[napi]
-pub fn jaro_winkler_many(reference: String, candidates: Vec<String>) -> Vec<f64> {
+pub fn jaro_winkler_many(
+    reference: String,
+    candidates: Vec<String>,
+    min_similarity: Option<f64>,
+) -> Vec<f64> {
     let scorer = rapid_jw::BatchComparator::new(reference.chars());
-    candidates
-        .iter()
-        .map(|c| scorer.similarity(c.chars()))
-        .collect()
+    match min_similarity {
+        Some(cutoff) => {
+            let args = rapid_jw::Args::default().score_cutoff(cutoff);
+            candidates
+                .iter()
+                .map(|c| {
+                    scorer
+                        .similarity_with_args(c.chars(), &args)
+                        .unwrap_or(0.0)
+                })
+                .collect()
+        }
+        None => candidates
+            .iter()
+            .map(|c| scorer.similarity(c.chars()))
+            .collect(),
+    }
 }
 
 /// Compute the Sorensen-Dice coefficient between two strings.
@@ -192,13 +270,32 @@ pub fn normalized_levenshtein_batch(pairs: Vec<Vec<String>>) -> Vec<f64> {
 /// Compute the normalized Levenshtein similarity from one reference string to many candidates.
 ///
 /// Returns an array of similarity scores, one per candidate, in the same order as the input.
+/// If `min_similarity` is provided, candidates with similarity below the threshold
+/// will return `0.0` (enabling early termination for better performance).
 #[napi]
-pub fn normalized_levenshtein_many(reference: String, candidates: Vec<String>) -> Vec<f64> {
+pub fn normalized_levenshtein_many(
+    reference: String,
+    candidates: Vec<String>,
+    min_similarity: Option<f64>,
+) -> Vec<f64> {
     let scorer = rapid_lev::BatchComparator::new(reference.chars());
-    candidates
-        .iter()
-        .map(|c| scorer.normalized_similarity(c.chars()))
-        .collect()
+    match min_similarity {
+        Some(cutoff) => {
+            let args = rapid_lev::Args::default().score_cutoff(cutoff);
+            candidates
+                .iter()
+                .map(|c| {
+                    scorer
+                        .normalized_similarity_with_args(c.chars(), &args)
+                        .unwrap_or(0.0)
+                })
+                .collect()
+        }
+        None => candidates
+            .iter()
+            .map(|c| scorer.normalized_similarity(c.chars()))
+            .collect(),
+    }
 }
 
 // --- Internal helpers for token-based algorithms ---
@@ -483,7 +580,7 @@ mod tests {
     #[test]
     fn test_levenshtein_many() {
         let candidates = vec!["sitting".to_string(), "".to_string(), "kitten".to_string()];
-        let result = levenshtein_many("kitten".to_string(), candidates);
+        let result = levenshtein_many("kitten".to_string(), candidates, None);
         assert_eq!(result, vec![3, 6, 0]);
     }
 
@@ -507,7 +604,7 @@ mod tests {
     #[test]
     fn test_jaro_winkler_many() {
         let candidates = vec!["MARHTA".to_string(), "MARTHA".to_string()];
-        let result = jaro_winkler_many("MARTHA".to_string(), candidates);
+        let result = jaro_winkler_many("MARTHA".to_string(), candidates, None);
         assert!(result[0] > 0.96);
         assert_eq!(result[1], 1.0);
     }
@@ -574,6 +671,116 @@ mod tests {
         let result = sorensen_dice_many("night".to_string(), candidates);
         assert!(result[0] > 0.0 && result[0] < 1.0);
         assert_eq!(result[1], 1.0);
+    }
+
+    mod score_cutoff_tests {
+        use super::*;
+
+        #[test]
+        fn test_levenshtein_many_with_cutoff() {
+            let candidates = vec!["sitting".to_string(), "kitten".to_string(), "abcdef".to_string()];
+            // max_distance = 2: "sitting" (dist=3) exceeds, "kitten" (dist=0) passes, "abcdef" (dist=5) exceeds
+            let result = levenshtein_many("kitten".to_string(), candidates, Some(2));
+            assert_eq!(result, vec![3, 0, 3]); // sentinel = max_distance + 1 = 3
+        }
+
+        #[test]
+        fn test_levenshtein_many_without_cutoff() {
+            let candidates = vec!["sitting".to_string(), "kitten".to_string()];
+            let result = levenshtein_many("kitten".to_string(), candidates, None);
+            assert_eq!(result, vec![3, 0]);
+        }
+
+        #[test]
+        fn test_damerau_levenshtein_many_with_cutoff() {
+            let candidates = vec!["sitting".to_string(), "kitten".to_string(), "abcdef".to_string()];
+            let result = damerau_levenshtein_many("kitten".to_string(), candidates, Some(2));
+            // "sitting" has DL distance 3 (exceeds cutoff 2 -> sentinel 3)
+            // "kitten" has DL distance 0 (within cutoff)
+            // "abcdef" has DL distance > 2 (exceeds cutoff -> sentinel 3)
+            assert_eq!(result[1], 0);
+            assert_eq!(result[0], 3); // sentinel
+            assert_eq!(result[2], 3); // sentinel
+        }
+
+        #[test]
+        fn test_damerau_levenshtein_many_without_cutoff() {
+            let candidates = vec!["sitting".to_string(), "kitten".to_string()];
+            let result = damerau_levenshtein_many("kitten".to_string(), candidates, None);
+            assert_eq!(result[1], 0);
+            assert!(result[0] > 0);
+        }
+
+        #[test]
+        fn test_jaro_many_with_cutoff() {
+            let candidates = vec!["MARHTA".to_string(), "XXXXXX".to_string(), "MARTHA".to_string()];
+            // min_similarity = 0.9: "MARHTA" (high sim ~0.94) passes, "XXXXXX" (low sim) -> 0.0
+            let result = jaro_many("MARTHA".to_string(), candidates, Some(0.9));
+            assert!(result[0] > 0.9);
+            assert_eq!(result[1], 0.0);
+            assert_eq!(result[2], 1.0);
+        }
+
+        #[test]
+        fn test_jaro_many_without_cutoff() {
+            let candidates = vec!["MARHTA".to_string(), "XXXXXX".to_string()];
+            let result = jaro_many("MARTHA".to_string(), candidates, None);
+            assert!(result[0] > 0.9);
+            assert!(result[1] < 0.9); // without cutoff, actual (low) score is returned
+        }
+
+        #[test]
+        fn test_jaro_winkler_many_with_cutoff() {
+            let candidates = vec!["MARHTA".to_string(), "XXXXXX".to_string(), "MARTHA".to_string()];
+            let result = jaro_winkler_many("MARTHA".to_string(), candidates, Some(0.9));
+            assert!(result[0] > 0.9);
+            assert_eq!(result[1], 0.0);
+            assert_eq!(result[2], 1.0);
+        }
+
+        #[test]
+        fn test_jaro_winkler_many_without_cutoff() {
+            let candidates = vec!["MARHTA".to_string(), "XXXXXX".to_string()];
+            let result = jaro_winkler_many("MARTHA".to_string(), candidates, None);
+            assert!(result[0] > 0.9);
+            assert!(result[1] >= 0.0);
+        }
+
+        #[test]
+        fn test_normalized_levenshtein_many_with_cutoff() {
+            let candidates = vec!["kitten".to_string(), "abcdef".to_string(), "kittens".to_string()];
+            // min_similarity = 0.8: "kitten" (identical, 1.0) passes, "abcdef" (low sim) -> 0.0
+            let result = normalized_levenshtein_many("kitten".to_string(), candidates, Some(0.8));
+            assert_eq!(result[0], 1.0);
+            assert_eq!(result[1], 0.0);
+            assert!(result[2] > 0.8);
+        }
+
+        #[test]
+        fn test_normalized_levenshtein_many_without_cutoff() {
+            let candidates = vec!["kitten".to_string(), "abcdef".to_string()];
+            let result = normalized_levenshtein_many("kitten".to_string(), candidates, None);
+            assert_eq!(result[0], 1.0);
+            assert!(result[1] >= 0.0);
+        }
+
+        #[test]
+        fn test_levenshtein_many_cutoff_zero() {
+            // max_distance = 0 means only exact matches pass
+            let candidates = vec!["kitten".to_string(), "sitting".to_string()];
+            let result = levenshtein_many("kitten".to_string(), candidates, Some(0));
+            assert_eq!(result[0], 0); // exact match
+            assert_eq!(result[1], 1); // sentinel = 0 + 1 = 1
+        }
+
+        #[test]
+        fn test_similarity_cutoff_at_one() {
+            // min_similarity = 1.0 means only identical strings pass
+            let candidates = vec!["MARTHA".to_string(), "MARHTA".to_string()];
+            let result = jaro_many("MARTHA".to_string(), candidates, Some(1.0));
+            assert_eq!(result[0], 1.0);
+            assert_eq!(result[1], 0.0);
+        }
     }
 
     mod proptest_distance {
