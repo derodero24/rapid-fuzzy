@@ -1,5 +1,6 @@
 // Competitors
 import { distance as fastestLevenshteinDistance } from 'fastest-levenshtein';
+import * as fuzz from 'fuzzball';
 import leven from 'leven';
 import stringSimilarity from 'string-similarity';
 import { bench, describe } from 'vitest';
@@ -13,6 +14,9 @@ import {
   normalizedLevenshtein,
   normalizedLevenshteinMany,
   sorensenDice,
+  tokenSetRatio,
+  tokenSortRatio,
+  weightedRatio,
 } from '../index.js';
 
 // Test data — realistic string pairs of varying length and similarity
@@ -47,6 +51,12 @@ describe('Levenshtein Distance', () => {
       leven(a, b);
     }
   });
+
+  bench('fuzzball', () => {
+    for (const [a, b] of pairs) {
+      fuzz.distance(a, b);
+    }
+  });
 });
 
 describe('Normalized Similarity', () => {
@@ -65,6 +75,50 @@ describe('Normalized Similarity', () => {
   bench('rapid-fuzzy (sorensenDice)', () => {
     for (const [a, b] of pairs) {
       sorensenDice(a, b);
+    }
+  });
+
+  bench('fuzzball (ratio)', () => {
+    for (const [a, b] of pairs) {
+      fuzz.ratio(a, b);
+    }
+  });
+});
+
+describe('Token-Based Ratio', () => {
+  bench('rapid-fuzzy (tokenSetRatio)', () => {
+    for (const [a, b] of pairs) {
+      tokenSetRatio(a, b);
+    }
+  });
+
+  bench('rapid-fuzzy (tokenSortRatio)', () => {
+    for (const [a, b] of pairs) {
+      tokenSortRatio(a, b);
+    }
+  });
+
+  bench('rapid-fuzzy (weightedRatio)', () => {
+    for (const [a, b] of pairs) {
+      weightedRatio(a, b);
+    }
+  });
+
+  bench('fuzzball (token_set_ratio)', () => {
+    for (const [a, b] of pairs) {
+      fuzz.token_set_ratio(a, b);
+    }
+  });
+
+  bench('fuzzball (token_sort_ratio)', () => {
+    for (const [a, b] of pairs) {
+      fuzz.token_sort_ratio(a, b);
+    }
+  });
+
+  bench('fuzzball (WRatio)', () => {
+    for (const [a, b] of pairs) {
+      fuzz.WRatio(a, b);
     }
   });
 });
@@ -124,6 +178,10 @@ describe('Levenshtein Distance — Many (1K candidates)', () => {
     for (const c of manyCandidates) {
       fastestLevenshteinDistance('kitten', c);
     }
+  });
+
+  bench('fuzzball (extract)', () => {
+    fuzz.extract('kitten', manyCandidates, { scorer: fuzz.ratio, limit: manyCandidates.length });
   });
 });
 
