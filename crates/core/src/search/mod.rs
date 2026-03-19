@@ -7,6 +7,7 @@ pub use keyed_index::KeyedFuzzyIndex;
 pub use keys::search_keys;
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 
 use napi::Either;
 use napi_derive::napi;
@@ -269,6 +270,202 @@ pub(crate) fn compute_query_mask(query: &str) -> u64 {
         mask |= compute_char_mask(term);
     }
     mask
+}
+
+/// Encode a character into a u8 bucket for bigram key construction.
+///
+/// ASCII letters are case-folded to 0–25, digits to 26–35.
+/// Non-ASCII characters are hashed into the 36–255 range.
+fn char_bucket(c: char) -> u8 {
+    match c {
+        'a'..='z' => (c as u32 - 'a' as u32) as u8,
+        'A'..='Z' => (c as u32 - 'A' as u32) as u8,
+        '0'..='9' => (26 + c as u32 - '0' as u32) as u8,
+        _ => (36 + (c as u32 % 220)) as u8,
+    }
+}
+
+/// Encode a character pair into a u16 bigram key.
+fn bigram_key(a: char, b: char) -> u16 {
+    ((char_bucket(a) as u16) << 8) | char_bucket(b) as u16
+}
+
+/// Extract bigram keys from a string.
+pub(crate) fn extract_bigrams(s: &str) -> Vec<u16> {
+    let chars: Vec<char> = s.chars().collect();
+    if chars.len() < 2 {
+        return Vec::new();
+    }
+    let mut bigrams = Vec::with_capacity(chars.len() - 1);
+    for pair in chars.windows(2) {
+        bigrams.push(bigram_key(pair[0], pair[1]));
+    }
+    bigrams.sort_unstable();
+    bigrams.dedup();
+    bigrams
+}
+
+/// Extract bigram keys from a query string, respecting nucleo syntax.
+///
+/// Skips inverted terms (`!term`) and strips syntax prefixes/suffixes (`^`, `'`, `$`).
+pub(crate) fn extract_query_bigrams(query: &str) -> Vec<u16> {
+    let mut all_bigrams = Vec::new();
+    for term in query.split_whitespace() {
+        if term.starts_with('!') {
+            continue;
+        }
+        let term = term.trim_start_matches(['^', '\'']);
+        let term = term.trim_end_matches('$');
+        let chars: Vec<char> = term.chars().collect();
+        if chars.len() < 2 {
+            continue;
+        }
+        for pair in chars.windows(2) {
+            all_bigrams.push(bigram_key(pair[0], pair[1]));
+        }
+    }
+    all_bigrams.sort_unstable();
+    all_bigrams.dedup();
+    all_bigrams
+}
+
+/// Intersect two sorted slices of u32, returning a new sorted Vec.
+pub(crate) fn intersect_sorted(a: &[u32], b: &[u32]) -> Vec<u32> {
+    let mut result = Vec::with_capacity(a.len().min(b.len()));
+    let (mut i, mut j) = (0, 0);
+    while i < a.len() && j < b.len() {
+        match a[i].cmp(&b[j]) {
+            std::cmp::Ordering::Less => i += 1,
+            std::cmp::Ordering::Greater => j += 1,
+            std::cmp::Ordering::Equal => {
+                result.push(a[i]);
+                i += 1;
+                j += 1;
+            }
+        }
+    }
+    result
+}
+
+/// Inverted bigram index for pre-filtering candidates in FuzzyIndex.
+///
+/// Maps each bigram (pair of adjacent characters) to a sorted list of item indices
+/// that contain that bigram. At query time, posting lists are intersected to find
+/// candidates that contain all query bigrams.
+pub(crate) struct BigramIndex {
+    /// Inverted index: bigram_key → sorted list of item indices containing that bigram.
+    index: HashMap<u16, Vec<u32>>,
+    /// Total number of items in the index.
+    num_items: usize,
+}
+
+impl BigramIndex {
+    /// Build a bigram index from a slice of items.
+    pub fn new(items: &[String]) -> Self {
+        let mut index: HashMap<u16, Vec<u32>> = HashMap::new();
+        for (i, item) in items.iter().enumerate() {
+            let bigrams = extract_bigrams(item);
+            for bg in bigrams {
+                index.entry(bg).or_default().push(i as u32);
+            }
+        }
+        Self {
+            index,
+            num_items: items.len(),
+        }
+    }
+
+    /// Get candidate indices that contain all query bigrams.
+    ///
+    /// Returns `None` if the query has no bigrams (single-char query)
+    /// or if the intersection is not significantly smaller than the full set.
+    pub fn candidates(&self, query_bigrams: &[u16]) -> Option<Vec<u32>> {
+        if query_bigrams.is_empty() || self.num_items == 0 {
+            return None;
+        }
+
+        // Find posting lists for each query bigram, sorted by length (shortest first).
+        let mut lists: Vec<&Vec<u32>> = Vec::with_capacity(query_bigrams.len());
+        for &bg in query_bigrams {
+            match self.index.get(&bg) {
+                Some(list) => lists.push(list),
+                None => return Some(Vec::new()), // bigram not present → no candidates
+            }
+        }
+        lists.sort_by_key(|l| l.len());
+
+        // Intersect all posting lists starting from the shortest.
+        let mut result = lists[0].clone();
+        for list in &lists[1..] {
+            result = intersect_sorted(&result, list);
+            if result.is_empty() {
+                return Some(Vec::new());
+            }
+        }
+
+        // Skip if the intersection is > 80% of total items (overhead not worth it).
+        if result.len() * 5 > self.num_items * 4 {
+            return None;
+        }
+
+        Some(result)
+    }
+
+    /// Add a single item to the index.
+    pub fn add_item(&mut self, index: u32, item: &str) {
+        let bigrams = extract_bigrams(item);
+        for bg in bigrams {
+            self.index.entry(bg).or_default().push(index);
+        }
+        self.num_items += 1;
+    }
+
+    /// Handle swap_remove semantics: remove item at `removed_index`, and if the
+    /// last item was swapped in, update its index from `last_index` to `removed_index`.
+    pub fn remove_item(
+        &mut self,
+        removed_index: u32,
+        last_index: u32,
+        removed_item: &str,
+        last_item: Option<&str>,
+    ) {
+        // Remove all bigrams of the removed item.
+        let removed_bigrams = extract_bigrams(removed_item);
+        for bg in removed_bigrams {
+            if let Some(list) = self.index.get_mut(&bg) {
+                list.retain(|&x| x != removed_index);
+                if list.is_empty() {
+                    self.index.remove(&bg);
+                }
+            }
+        }
+
+        // If a swap happened (removed_index != last_index), update the swapped item's index.
+        if let Some(last_item_str) = last_item
+            && removed_index != last_index
+        {
+            let last_bigrams = extract_bigrams(last_item_str);
+            for bg in last_bigrams {
+                if let Some(list) = self.index.get_mut(&bg) {
+                    for val in list.iter_mut() {
+                        if *val == last_index {
+                            *val = removed_index;
+                            break;
+                        }
+                    }
+                    list.sort_unstable();
+                }
+            }
+        }
+
+        self.num_items = self.num_items.saturating_sub(1);
+    }
+
+    /// Clear the index.
+    pub fn clear(&mut self) {
+        self.index.clear();
+        self.num_items = 0;
+    }
 }
 
 /// Result of `search_over_precomputed`: the top-k results plus all matching indices.
@@ -1141,6 +1338,155 @@ mod tests {
                 a.score,
                 b.score
             );
+        }
+    }
+
+    mod bigram_tests {
+        use super::*;
+
+        #[test]
+        fn test_bigram_key_ascii_case_folding() {
+            assert_eq!(bigram_key('a', 'b'), bigram_key('A', 'B'));
+            assert_eq!(bigram_key('a', 'b'), bigram_key('A', 'b'));
+            assert_eq!(bigram_key('Z', 'a'), bigram_key('z', 'A'));
+        }
+
+        #[test]
+        fn test_bigram_key_digits() {
+            assert_ne!(bigram_key('a', '0'), bigram_key('a', 'b'));
+            assert_eq!(bigram_key('0', '1'), bigram_key('0', '1'));
+        }
+
+        #[test]
+        fn test_extract_bigrams_basic() {
+            let bg = extract_bigrams("abc");
+            assert_eq!(bg.len(), 2); // "ab", "bc"
+        }
+
+        #[test]
+        fn test_extract_bigrams_case_insensitive() {
+            let lower = extract_bigrams("abc");
+            let upper = extract_bigrams("ABC");
+            assert_eq!(lower, upper);
+        }
+
+        #[test]
+        fn test_extract_bigrams_single_char() {
+            assert!(extract_bigrams("a").is_empty());
+        }
+
+        #[test]
+        fn test_extract_bigrams_empty() {
+            assert!(extract_bigrams("").is_empty());
+        }
+
+        #[test]
+        fn test_extract_bigrams_unicode() {
+            let bg = extract_bigrams("東京都");
+            assert_eq!(bg.len(), 2); // "東京", "京都"
+        }
+
+        #[test]
+        fn test_extract_query_bigrams_skips_inverted() {
+            let bg = extract_query_bigrams("hello !world");
+            let plain = extract_bigrams("hello");
+            assert_eq!(bg, plain);
+        }
+
+        #[test]
+        fn test_extract_query_bigrams_strips_syntax() {
+            let bg = extract_query_bigrams("^hello$");
+            let plain = extract_bigrams("hello");
+            assert_eq!(bg, plain);
+        }
+
+        #[test]
+        fn test_extract_query_bigrams_single_char_terms() {
+            // Single-char terms produce no bigrams
+            let bg = extract_query_bigrams("a b");
+            assert!(bg.is_empty());
+        }
+
+        #[test]
+        fn test_intersect_sorted_basic() {
+            let result = intersect_sorted(&[1, 3, 5, 7], &[2, 3, 5, 8]);
+            assert_eq!(result, vec![3, 5]);
+        }
+
+        #[test]
+        fn test_intersect_sorted_no_overlap() {
+            let result = intersect_sorted(&[1, 3], &[2, 4]);
+            assert!(result.is_empty());
+        }
+
+        #[test]
+        fn test_intersect_sorted_empty() {
+            let result = intersect_sorted(&[], &[1, 2]);
+            assert!(result.is_empty());
+        }
+
+        #[test]
+        fn test_bigram_index_basic() {
+            let items: Vec<String> = vec!["hello".into(), "world".into(), "help".into()];
+            let idx = BigramIndex::new(&items);
+            // "he" appears in "hello" and "help"
+            let bg = extract_query_bigrams("he");
+            let candidates = idx.candidates(&bg);
+            assert!(candidates.is_some());
+            let cands = candidates.unwrap();
+            assert!(cands.contains(&0)); // hello
+            assert!(cands.contains(&2)); // help
+            assert!(!cands.contains(&1)); // world
+        }
+
+        #[test]
+        fn test_bigram_index_no_match() {
+            let items: Vec<String> = vec!["hello".into(), "world".into()];
+            let idx = BigramIndex::new(&items);
+            let bg = extract_query_bigrams("zz");
+            let candidates = idx.candidates(&bg);
+            assert_eq!(candidates, Some(vec![]));
+        }
+
+        #[test]
+        fn test_bigram_index_add_item() {
+            // Add enough items so matching ones are below the 80% skip threshold.
+            let mut idx = BigramIndex::new(&[]);
+            idx.add_item(0, "hello");
+            idx.add_item(1, "help");
+            idx.add_item(2, "world");
+            idx.add_item(3, "rust");
+            idx.add_item(4, "code");
+            // "he" matches only items 0,1 = 2/5 = 40% < 80%
+            let bg = extract_query_bigrams("he");
+            let candidates = idx.candidates(&bg);
+            assert!(candidates.is_some());
+            let cands = candidates.unwrap();
+            assert!(cands.contains(&0));
+            assert!(cands.contains(&1));
+            assert!(!cands.contains(&2));
+        }
+
+        #[test]
+        fn test_bigram_index_remove_and_swap() {
+            let items: Vec<String> = vec!["abc".into(), "def".into(), "abx".into()];
+            let mut idx = BigramIndex::new(&items);
+            // Remove item 0 ("abc"), swapping in item 2 ("abx")
+            idx.remove_item(0, 2, "abc", Some("abx"));
+            // "abx" should now be at index 0
+            let bg = extract_query_bigrams("ab");
+            let candidates = idx.candidates(&bg);
+            assert!(candidates.is_some());
+            let cands = candidates.unwrap();
+            assert!(cands.contains(&0)); // "abx" was swapped to index 0
+            assert!(!cands.contains(&2)); // old index 2 no longer valid
+        }
+
+        #[test]
+        fn test_bigram_index_empty_query() {
+            let items: Vec<String> = vec!["hello".into()];
+            let idx = BigramIndex::new(&items);
+            assert_eq!(idx.candidates(&[]), None);
         }
     }
 
