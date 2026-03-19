@@ -153,7 +153,8 @@ const fuzzysortHugePrepared = hugeItems.map((item) => fuzzysort.prepare(item));
 // uFuzzy
 const uf = new uFuzzy();
 
-// FlexSearch
+// FlexSearch (default strict tokenization — represents inverted-index search category,
+// intentionally not configured for fuzzy/typo-tolerant matching)
 const flexSmall = new FlexSearchIndex();
 for (let i = 0; i < smallItems.length; i++) flexSmall.add(i, smallItems[i]);
 const flexMedium = new FlexSearchIndex();
