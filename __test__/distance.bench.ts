@@ -152,8 +152,8 @@ const equalLengthPairs: [string, string][] = [
   ['saturday', 'sunturdy'],
   ['abcdefgh', 'abcdefgz'],
   ['10101010', '01010101'],
-  ['the quick brown fox jump', 'the fast brown fox leap'],
-  ['abcdefghijklmnopqrstuvwx', 'zyxwvutsrqponmlkjihgfedcb'],
+  ['the quick brown fox jumps', 'the swift brown fox leaps'],
+  ['abcdefghijklmnopqrstuvwxyz', 'zyxwvutsrqponmlkjihgfedcba'],
 ];
 
 describe('Hamming Distance', () => {
