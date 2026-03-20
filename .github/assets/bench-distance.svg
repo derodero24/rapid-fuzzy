@@ -15,18 +15,18 @@
 <text x="20" y="66" class="group-label">Levenshtein</text>
 <text x="172" y="91" class="bar-label" text-anchor="end">fastest-levenshtein</text>
 <rect x="180" y="74" width="460" height="26" rx="4" fill="#94a3b8" opacity="0.6" />
-<text x="632" y="91" class="bar-value" text-anchor="end">758,533 ops/s</text>
+<text x="632" y="91" class="bar-value" text-anchor="end">741,195 ops/s</text>
 <text x="172" y="122" class="bar-label" text-anchor="end">rapid-fuzzy</text>
-<rect x="180" y="105" width="342.39551871836824" height="26" rx="4" fill="#3b82f6" opacity="1" />
-<text x="514.3955187183683" y="122" class="bar-value" text-anchor="end" fill="#ffffff">564,605 ops/s</text>
+<rect x="180" y="105" width="338.44734516557725" height="26" rx="4" fill="#3b82f6" opacity="1" />
+<text x="510.4473451655772" y="122" class="bar-value" text-anchor="end" fill="#ffffff">545,338 ops/s</text>
 <text x="172" y="153" class="bar-label" text-anchor="end">leven</text>
-<rect x="180" y="136" width="129.90113811791974" height="26" rx="4" fill="#94a3b8" opacity="0.6" />
-<text x="317.90113811791974" y="153" class="bar-value" text-anchor="start">214,205 ops/s</text>
+<rect x="180" y="136" width="139.92298922685663" height="26" rx="4" fill="#94a3b8" opacity="0.6" />
+<text x="327.92298922685666" y="153" class="bar-value" text-anchor="start">225,457 ops/s</text>
 <text x="20" y="200" class="group-label">Sorensen-Dice</text>
 <text x="172" y="225" class="bar-label" text-anchor="end">rapid-fuzzy</text>
 <rect x="180" y="208" width="460" height="26" rx="4" fill="#3b82f6" opacity="1" />
-<text x="632" y="225" class="bar-value" text-anchor="end" fill="#ffffff">152,317 ops/s</text>
+<text x="632" y="225" class="bar-value" text-anchor="end" fill="#ffffff">142,180 ops/s</text>
 <text x="172" y="256" class="bar-label" text-anchor="end">string-similarity</text>
-<rect x="180" y="239" width="260.9264888357833" height="26" rx="4" fill="#94a3b8" opacity="0.6" />
-<text x="432.9264888357833" y="256" class="bar-value" text-anchor="end">86,399 ops/s</text>
+<rect x="180" y="239" width="183.53734702489803" height="26" rx="4" fill="#94a3b8" opacity="0.6" />
+<text x="371.53734702489805" y="256" class="bar-value" text-anchor="start">56,729 ops/s</text>
 </svg>

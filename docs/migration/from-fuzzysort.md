@@ -1,6 +1,6 @@
 # Migrating from fuzzysort to rapid-fuzzy
 
-[fuzzysort](https://github.com/farzher/fuzzysort) is a fast fuzzy search library that uses substring matching and a custom scoring algorithm. rapid-fuzzy takes a different approach — it uses the nucleo fuzzy matching engine (same as the Helix editor) and adds 9 distance algorithms, query syntax, and batch APIs for broader use cases.
+[fuzzysort](https://github.com/farzher/fuzzysort) is a fast fuzzy search library that uses substring matching and a custom scoring algorithm. rapid-fuzzy takes a different approach — it uses the nucleo fuzzy matching engine (same as the Helix editor) and adds 10 distance algorithms, query syntax, and batch APIs for broader use cases.
 
 ## Installation
 
@@ -163,19 +163,19 @@ fuzzysort uses a substring-based matching algorithm that is extremely fast for r
 
 | Dataset size | rapid-fuzzy | FuzzyIndex | fuzzysort |
 |---|---:|---:|---:|
-| Small (20 items) | 287,682 ops/s | 404,271 ops/s | **2,655,421 ops/s** |
-| Medium (1K items) | 6,827 ops/s | **79,616 ops/s** | 63,831 ops/s |
-| Large (10K items) | 827 ops/s | **136,294 ops/s** | 27,897 ops/s |
+| Small (20 items) | 279,509 ops/s | 395,932 ops/s | **1,661,273 ops/s** |
+| Medium (1K items) | 6,274 ops/s | **77,271 ops/s** | 58,123 ops/s |
+| Large (10K items) | 777 ops/s | **230,848 ops/s** | 25,315 ops/s |
 
 Measured on Apple M-series with Node.js v22.
 
-fuzzysort is faster on small datasets because it uses optimized substring matching — a fundamentally simpler operation than fuzzy matching with out-of-order support. However, with `FuzzyIndex`, rapid-fuzzy outperforms fuzzysort on medium-and-above datasets (1.2x at 1K, 4.9x at 10K) thanks to Rust-side indexing with incremental caching.
+fuzzysort is faster on small datasets because it uses optimized substring matching — a fundamentally simpler operation than fuzzy matching with out-of-order support. However, with `FuzzyIndex`, rapid-fuzzy outperforms fuzzysort on medium-and-above datasets (1.3x at 1K, 9.1x at 10K) thanks to Rust-side indexing with incremental caching.
 
 ## Why Choose rapid-fuzzy Over fuzzysort?
 
 rapid-fuzzy with `FuzzyIndex` matches or exceeds fuzzysort's speed on real-world dataset sizes, while offering capabilities that fuzzysort does not:
 
-- **9 distance algorithms**: Levenshtein, Damerau-Levenshtein, Jaro, Jaro-Winkler, Sorensen-Dice, and more — useful beyond search
+- **10 distance algorithms**: Levenshtein, Damerau-Levenshtein, Hamming, Jaro, Jaro-Winkler, Sorensen-Dice, and more — useful beyond search
 - **Query syntax**: Exclude (`!term`), prefix (`^term`), suffix (`term$`), exact (`'term`) operators
 - **Diacritics handling**: `cafe` matches `café`, `uber` matches `über` automatically
 - **Batch APIs**: `levenshteinBatch`, `jaroWinklerMany`, etc. for bulk operations
