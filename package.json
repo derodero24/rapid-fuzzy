@@ -139,7 +139,7 @@
     "@napi-rs/wasm-runtime": "^1.1.1",
     "@playwright/test": "^1.58.2",
     "@tybys/wasm-util": "^0.10.1",
-    "@types/node": "^25.5.0",
+    "@types/node": "^24.0.0",
     "@types/string-similarity": "^4.0.2",
     "@vitest/coverage-v8": "^4.1.0",
     "fastest-levenshtein": "^1.0.16",
@@ -153,12 +153,17 @@
     "publint": "^0.3.18",
     "string-similarity": "^4.0.4",
     "typescript": "^5.9.3",
-    "vite": "^8.0.1",
+    "vite": "^8.0.0",
     "vitest": "^4.1.0"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
       "lefthook"
-    ]
+    ],
+    "peerDependencyRules": {
+      "allowedVersions": {
+        "@codspeed/vitest-plugin>vite": "8"
+      }
+    }
   }
 }
