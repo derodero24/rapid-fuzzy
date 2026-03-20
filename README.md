@@ -51,7 +51,7 @@ pnpm add rapid-fuzzy
 ### Runtime-specific notes
 
 - **Node.js** (>=20): Uses native bindings via napi-rs for best performance.
-- **Browser / Deno / Bun**: Falls back to a WASM build automatically. The WASM binary is ~607 KB raw (~200 KB gzipped).
+- **Browser / Deno / Bun**: Falls back to a WASM build automatically. The WASM binary is ~660 KB raw (~230 KB gzipped).
 
 > **Browser WASM requirement**: The WASM build uses `SharedArrayBuffer` for threading, which requires the following HTTP headers on your page:
 > ```
@@ -367,7 +367,7 @@ Measured on Apple M-series with Node.js v22 using [Vitest bench](https://vitest.
 | **Highlight utility** | ✅ | — | — | ✅ | ✅ |
 | **Batch API** | ✅ | — | — | — | — |
 | **Node.js native** | ✅ napi-rs | — | — | — | — |
-| **Browser** | ✅ WASM (~200 KB gzipped) | ✅ | ✅ | ✅ | ✅ |
+| **Browser** | ✅ WASM (~230 KB gzipped) | ✅ | ✅ | ✅ | ✅ |
 | **TypeScript** | ✅ full | ✅ full | ✅ | ✅ | ✅ |
 
 ## Migration Guides
