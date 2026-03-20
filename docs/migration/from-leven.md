@@ -1,6 +1,6 @@
 # Migrating from leven / fastest-levenshtein to rapid-fuzzy
 
-[leven](https://www.npmjs.com/package/leven) and [fastest-levenshtein](https://www.npmjs.com/package/fastest-levenshtein) are single-purpose Levenshtein distance libraries. rapid-fuzzy provides the same Levenshtein distance plus five additional algorithms, batch APIs, and fuzzy search — all from a single package.
+[leven](https://www.npmjs.com/package/leven) and [fastest-levenshtein](https://www.npmjs.com/package/fastest-levenshtein) are single-purpose Levenshtein distance libraries. rapid-fuzzy provides the same Levenshtein distance plus six additional algorithms, batch APIs, and fuzzy search — all from a single package.
 
 ## Installation
 
@@ -62,6 +62,7 @@ import {
   levenshtein,           // Same as leven / fastest-levenshtein
   normalizedLevenshtein, // 0.0-1.0 similarity (length-independent)
   damerauLevenshtein,    // Handles transpositions (ab → ba = 1 edit)
+  hamming,               // Positional differences (equal-length strings)
   jaroWinkler,           // Prefix-weighted, great for names
   sorensenDice,          // Bigram-based text similarity
   jaro,                  // Base Jaro similarity
@@ -108,18 +109,18 @@ For single-pair Levenshtein distance, fastest-levenshtein is still faster due to
 
 | Operation | rapid-fuzzy | fastest-levenshtein | leven |
 |---|---:|---:|---:|
-| Single pair | 564,605 ops/s | **758,533 ops/s** | 214,205 ops/s |
+| Single pair | 545,338 ops/s | **741,195 ops/s** | 225,457 ops/s |
 
-rapid-fuzzy is 2.6x faster than leven and within 1.3x of fastest-levenshtein.
+rapid-fuzzy is 2.4x faster than leven and within 1.4x of fastest-levenshtein.
 
 For closest-match scenarios, rapid-fuzzy pulls ahead — especially with `FuzzyIndex` for repeated searches:
 
 | Closest match | rapid-fuzzy | FuzzyIndex | fastest-levenshtein |
 |---|---:|---:|---:|
-| 1,000 items | 8,194 ops/s | **978,009 ops/s** | 6,869 ops/s |
-| 10,000 items | 892 ops/s | **152,196 ops/s** | 679 ops/s |
+| 1,000 items | 7,690 ops/s | **906,274 ops/s** | 3,536 ops/s |
+| 10,000 items | 611 ops/s | **352,688 ops/s** | 620 ops/s |
 
-`FuzzyIndex` pre-computes internal data structures, making it **142x faster** than fastest-levenshtein for closest-match on 1K items. For repeated searches against the same dataset, always prefer `FuzzyIndex`:
+`FuzzyIndex` pre-computes internal data structures, making it **256x faster** than fastest-levenshtein for closest-match on 1K items. For repeated searches against the same dataset, always prefer `FuzzyIndex`:
 
 ```typescript
 import { FuzzyIndex } from 'rapid-fuzzy';
@@ -132,7 +133,7 @@ const best = index.closest('fast'); // 'faster' — uses pre-built index
 - You need more than just Levenshtein (similarity scores, other algorithms)
 - You process batches of string pairs
 - You need fuzzy search / closest match on medium-to-large datasets
-- You search the same dataset repeatedly (`FuzzyIndex` is 6.8x faster)
+- You search the same dataset repeatedly (`FuzzyIndex` is 256x faster for closest-match)
 - You want a single dependency for all string distance needs
 
 **When to keep fastest-levenshtein**:

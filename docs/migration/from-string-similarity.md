@@ -1,6 +1,6 @@
 # Migrating from string-similarity to rapid-fuzzy
 
-[string-similarity](https://www.npmjs.com/package/string-similarity) is no longer maintained. rapid-fuzzy provides the same Dice coefficient algorithm (`sorensenDice`) plus five additional algorithms, all powered by a high-performance Rust core.
+[string-similarity](https://www.npmjs.com/package/string-similarity) is no longer maintained. rapid-fuzzy provides the same Dice coefficient algorithm (`sorensenDice`) plus six additional algorithms, all powered by a high-performance Rust core.
 
 ## Installation
 

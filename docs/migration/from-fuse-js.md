@@ -146,8 +146,8 @@ rapid-fuzzy is significantly faster than fuse.js for fuzzy search:
 
 | Dataset size | rapid-fuzzy | FuzzyIndex | fuse.js | Speedup |
 |---|---:|---:|---:|---:|
-| 1,000 items | 6,827 ops/s | 79,616 ops/s | 366 ops/s | **19x / 218x** |
-| 10,000 items | 827 ops/s | 136,294 ops/s | 18 ops/s | **46x / 7,572x** |
+| 1,000 items | 6,274 ops/s | 77,271 ops/s | 358 ops/s | **18x / 216x** |
+| 10,000 items | 777 ops/s | 230,848 ops/s | 15 ops/s | **52x / 15,390x** |
 
 The performance advantage grows with dataset size because rapid-fuzzy's Rust-based nucleo engine scales better than fuse.js's pure JavaScript implementation.
 
