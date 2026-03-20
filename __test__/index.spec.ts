@@ -6,6 +6,9 @@ import {
   damerauLevenshteinBatch,
   damerauLevenshteinMany,
   FuzzyIndex,
+  hamming,
+  hammingBatch,
+  hammingMany,
   jaro,
   jaroBatch,
   jaroMany,
@@ -123,6 +126,25 @@ describe('distance', () => {
       const score = normalizedLevenshtein('kitten', 'sitting');
       expect(score).toBeGreaterThan(0);
       expect(score).toBeLessThan(1);
+    });
+  });
+
+  describe('hamming', () => {
+    it('should return 0 for identical strings', () => {
+      expect(hamming('hello', 'hello')).toBe(0);
+    });
+
+    it('should count differing positions', () => {
+      expect(hamming('karolin', 'kathrin')).toBe(3);
+    });
+
+    it('should return null for different-length strings', () => {
+      expect(hamming('hello', 'hi')).toBeNull();
+      expect(hamming('ab', 'abc')).toBeNull();
+    });
+
+    it('should handle empty strings', () => {
+      expect(hamming('', '')).toBe(0);
     });
   });
 });
@@ -245,6 +267,68 @@ describe('batch distance', () => {
       expect(result[0]).toBe(1.0);
       expect(result[1]).toBeGreaterThan(0);
       expect(result[1]).toBeLessThan(1);
+    });
+  });
+
+  describe('hammingBatch', () => {
+    it('should compute distances for multiple pairs', () => {
+      const result = hammingBatch([
+        ['hello', 'hello'],
+        ['hello', 'world'],
+      ]);
+      expect(result).toEqual([0, 4]);
+    });
+
+    it('should return null for different-length pairs', () => {
+      const result = hammingBatch([
+        ['hello', 'hi'],
+        ['abc', 'abc'],
+      ]);
+      expect(result[0]).toBeNull();
+      expect(result[1]).toBe(0);
+    });
+  });
+
+  describe('hammingMany', () => {
+    it('should compute distances from one string to many candidates', () => {
+      const result = hammingMany('hello', ['hello', 'world', 'hi']);
+      expect(result[0]).toBe(0);
+      expect(result[1]).toBe(4);
+      expect(result[2]).toBeNull();
+    });
+  });
+
+  describe('_many threshold parameters', () => {
+    it('levenshteinMany should support maxDistance', () => {
+      const result = levenshteinMany('kitten', ['kitten', 'sitting', 'abcdef'], 2);
+      expect(result[0]).toBe(0); // exact match
+      expect(result[1]).toBe(3); // exceeds threshold → maxDistance + 1
+      expect(result[2]).toBe(3); // exceeds threshold → maxDistance + 1
+    });
+
+    it('damerauLevenshteinMany should support maxDistance', () => {
+      const result = damerauLevenshteinMany('ab', ['ab', 'ba', 'xyz'], 1);
+      expect(result[0]).toBe(0); // exact match
+      expect(result[1]).toBe(1); // within threshold
+      expect(result[2]).toBe(2); // exceeds → maxDistance + 1
+    });
+
+    it('jaroMany should support minSimilarity', () => {
+      const result = jaroMany('hello', ['hello', 'world'], 0.9);
+      expect(result[0]).toBe(1.0); // exact match passes
+      expect(result[1]).toBe(0.0); // below threshold → 0.0
+    });
+
+    it('jaroWinklerMany should support minSimilarity', () => {
+      const result = jaroWinklerMany('hello', ['hello', 'world'], 0.9);
+      expect(result[0]).toBe(1.0);
+      expect(result[1]).toBe(0.0);
+    });
+
+    it('normalizedLevenshteinMany should support minSimilarity', () => {
+      const result = normalizedLevenshteinMany('hello', ['hello', 'world'], 0.9);
+      expect(result[0]).toBe(1.0);
+      expect(result[1]).toBe(0.0);
     });
   });
 });
@@ -1239,6 +1323,41 @@ describe('FuzzyIndex', () => {
       for (let i = 0; i < indexResults.length; i++) {
         expect(indexResults[i]?.matchType).toBe(standaloneResults[i]?.matchType);
       }
+    });
+  });
+
+  describe('searchIndices', () => {
+    it('should return indices and scores without item strings', () => {
+      const index = new FuzzyIndex(items);
+      const results = index.searchIndices('aple');
+      expect(results.length).toBeGreaterThan(0);
+      expect(results[0]).toHaveProperty('index');
+      expect(results[0]).toHaveProperty('score');
+      expect(results[0]).not.toHaveProperty('item');
+    });
+
+    it('should return matching indices consistent with search()', () => {
+      const index = new FuzzyIndex(items);
+      const searchResults = index.search('grape');
+      const indexResults = index.searchIndices('grape');
+      expect(indexResults.length).toBe(searchResults.length);
+      for (let i = 0; i < indexResults.length; i++) {
+        expect(indexResults[i]?.index).toBe(searchResults[i]?.index);
+        expect(indexResults[i]?.score).toBe(searchResults[i]?.score);
+      }
+    });
+
+    it('should respect maxResults', () => {
+      const index = new FuzzyIndex(items);
+      const results = index.searchIndices('a', 2);
+      expect(results.length).toBeLessThanOrEqual(2);
+    });
+
+    it('should include positions when requested', () => {
+      const index = new FuzzyIndex(['apple']);
+      const results = index.searchIndices('apple', { includePositions: true });
+      expect(results.length).toBe(1);
+      expect(results[0]?.positions.length).toBeGreaterThan(0);
     });
   });
 
