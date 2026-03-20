@@ -8,7 +8,8 @@ let wasm: Record<string, any> = {};
 try {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const mod = require('../rapid-fuzzy.wasi.cjs');
-  wasmAvailable = typeof mod.levenshtein === 'function';
+  // Check for a recently-added export to detect stale binaries
+  wasmAvailable = typeof mod.levenshtein === 'function' && typeof mod.hamming === 'function';
   if (wasmAvailable) wasm = mod;
 } catch {
   wasmAvailable = false;
@@ -24,6 +25,9 @@ describe.skipIf(!wasmAvailable)('wasm', () => {
         'damerauLevenshtein',
         'damerauLevenshteinBatch',
         'damerauLevenshteinMany',
+        'hamming',
+        'hammingBatch',
+        'hammingMany',
         'jaro',
         'jaroBatch',
         'jaroMany',
@@ -101,6 +105,14 @@ describe.skipIf(!wasmAvailable)('wasm', () => {
       const score = wasm.sorensenDice('hello', 'world');
       expect(score).toBeGreaterThanOrEqual(0);
       expect(score).toBeLessThanOrEqual(1);
+    });
+
+    it('hamming', () => {
+      expect(wasm.hamming('hello', 'hello')).toBe(0);
+      expect(wasm.hamming('karolin', 'kathrin')).toBe(3);
+      expect(wasm.hamming('hello', 'world')).toBe(4);
+      expect(wasm.hamming('hello', 'hi')).toBeNull();
+      expect(wasm.hamming('', '')).toBe(0);
     });
 
     it('tokenSortRatio', () => {
@@ -189,6 +201,18 @@ describe.skipIf(!wasmAvailable)('wasm', () => {
       expect(result).toEqual([0, 1]);
     });
 
+    it('hammingBatch', () => {
+      const result = wasm.hammingBatch([
+        ['hello', 'hello'],
+        ['hello', 'world'],
+        ['hello', 'hi'],
+      ]);
+      expect(result).toHaveLength(3);
+      expect(result[0]).toBe(0);
+      expect(result[1]).toBe(4);
+      expect(result[2]).toBeNull();
+    });
+
     it('tokenSortRatioBatch', () => {
       const result = wasm.tokenSortRatioBatch([
         ['hello world', 'hello world'],
@@ -261,6 +285,14 @@ describe.skipIf(!wasmAvailable)('wasm', () => {
       const result = wasm.damerauLevenshteinMany('hello', ['hello', 'ehllo']);
       expect(result).toHaveLength(2);
       expect(result[0]).toBe(0);
+    });
+
+    it('hammingMany', () => {
+      const result = wasm.hammingMany('hello', ['hello', 'world', 'hi']);
+      expect(result).toHaveLength(3);
+      expect(result[0]).toBe(0);
+      expect(result[1]).toBe(4);
+      expect(result[2]).toBeNull();
     });
 
     it('tokenSortRatioMany', () => {
@@ -368,6 +400,12 @@ describe.skipIf(!wasmAvailable)('wasm', () => {
     it('damerauLevenshtein results should match native', () => {
       for (const [a, b] of testPairs) {
         expect(wasm.damerauLevenshtein(a, b)).toBe(native.damerauLevenshtein(a, b));
+      }
+    });
+
+    it('hamming results should match native', () => {
+      for (const [a, b] of testPairs) {
+        expect(wasm.hamming(a, b)).toBe(native.hamming(a, b));
       }
     });
 
