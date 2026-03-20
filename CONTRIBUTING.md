@@ -4,7 +4,7 @@ Thank you for your interest in contributing! This guide covers everything you ne
 
 ## Prerequisites
 
-- [Rust](https://rustup.rs/) (stable toolchain)
+- [Rust](https://rustup.rs/) ≥ 1.85 (stable toolchain)
 - [Node.js](https://nodejs.org/) ≥ 20
 - [pnpm](https://pnpm.io/) ≥ 10
 - [Git](https://git-scm.com/)
@@ -25,6 +25,21 @@ pnpm run build
 # Run tests
 pnpm test          # JS/TS tests
 cargo test         # Rust unit tests
+```
+
+### WASM testing (optional)
+
+WASM tests are automatically skipped if the WASM binary is not built. To run the full test suite including WASM:
+
+```bash
+# Install the WASM target
+rustup target add wasm32-wasip1-threads
+
+# Build the WASM binary
+pnpm run build:wasm
+
+# Run all tests including WASM
+pnpm test
 ```
 
 ### GitHub Codespaces / Dev Containers

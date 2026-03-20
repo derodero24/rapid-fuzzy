@@ -12,7 +12,7 @@ Blazing-fast fuzzy search for JavaScript — powered by Rust, works everywhere.
 
 ## Features
 
-- **Fast**: Up to 7,000x faster than fuse.js with FuzzyIndex (Rust + napi-rs)
+- **Fast**: Up to 15,000x faster than fuse.js with FuzzyIndex (Rust + napi-rs)
 - **Universal**: Works in Node.js (native), browsers (WASM), Deno, and Bun
 - **Zero JS dependencies**: Pure Rust core with napi-rs bindings
 - **Type-safe**: Full TypeScript support with auto-generated type definitions
@@ -31,7 +31,7 @@ const results = search('typscript', ['TypeScript', 'JavaScript', 'Python']);
 // → [{ item: 'TypeScript', score: 0.85, index: 0 }, ...]
 ```
 
-For repeated searches, use `FuzzyIndex` for up to 165x faster lookups:
+For repeated searches, use `FuzzyIndex` for up to 297x faster lookups:
 
 ```typescript
 import { FuzzyIndex } from 'rapid-fuzzy';
@@ -51,7 +51,7 @@ pnpm add rapid-fuzzy
 ### Runtime-specific notes
 
 - **Node.js** (>=20): Uses native bindings via napi-rs for best performance.
-- **Browser / Deno / Bun**: Falls back to a WASM build automatically. The WASM binary is ~607 KB raw (~200 KB gzipped).
+- **Browser / Deno / Bun**: Falls back to a WASM build automatically. The WASM binary is ~660 KB raw (~230 KB gzipped).
 
 > **Browser WASM requirement**: The WASM build uses `SharedArrayBuffer` for threading, which requires the following HTTP headers on your page:
 > ```
@@ -86,6 +86,9 @@ const [match] = search('hlo', ['hello world'], { includePositions: true });
 // Case-sensitive matching (default: smart case)
 search('Type', items, { isCaseSensitive: true });
 
+// Return all items when query is empty (useful for filter-as-you-type UIs)
+search('', items, { returnAllOnEmpty: true });
+
 // Find the single best match
 closest('tsc', ['TypeScript', 'JavaScript', 'Python']);
 // → 'TypeScript'
@@ -98,11 +101,12 @@ closest('xyz', items, 0.5);
 ### String Distance
 
 ```typescript
-import { levenshtein, jaroWinkler, sorensenDice } from 'rapid-fuzzy';
+import { levenshtein, jaroWinkler, sorensenDice, hamming } from 'rapid-fuzzy';
 
 levenshtein('kitten', 'sitting');     // 3
 jaroWinkler('MARTHA', 'MARHTA');      // 0.961
 sorensenDice('night', 'nacht');       // 0.25
+hamming('karolin', 'kathrin');        // 3 (null if lengths differ)
 ```
 
 ### Query Syntax
@@ -159,11 +163,15 @@ For applications that search the same dataset repeatedly (autocomplete, file fin
 ```typescript
 import { FuzzyIndex, FuzzyObjectIndex } from 'rapid-fuzzy';
 
-// String search index — up to 165x faster than standalone search()
+// String search index — up to 297x faster than standalone search()
 const index = new FuzzyIndex(['TypeScript', 'JavaScript', 'Python', ...]);
 
 index.search('typscript', { maxResults: 5 });
 index.closest('tsc');
+
+// Index-only results (no string cloning — less GC pressure)
+const hits = index.searchIndices('typscript', { maxResults: 5 });
+// → [{ index: 0, score: 0.85, positions: [] }, ...]
 
 // Mutate the index without rebuilding
 index.add('Rust');
@@ -255,6 +263,10 @@ levenshteinBatch([
 // Compare one string against many candidates
 levenshteinMany('kitten', ['sitting', 'kittens', 'kitchen']);
 // → [3, 1, 2]
+
+// With early-termination threshold (skip candidates that can't match)
+levenshteinMany('kitten', candidates, 3);        // maxDistance → returns 4 for exceeding
+jaroWinklerMany('MARTHA', candidates, 0.8);       // minSimilarity → returns 0.0 for below
 ```
 
 > **Tip**: Prefer batch/many variants over calling single-pair functions in a loop — they are significantly faster for multiple comparisons.
@@ -266,6 +278,7 @@ levenshteinMany('kitten', ['sitting', 'kittens', 'kitchen']);
 | Use case | Recommended | Why |
 |---|---|---|
 | Typo detection / spell check | `levenshtein`, `damerauLevenshtein` | Counts edits; Damerau adds transposition support |
+| Fixed-length comparison | `hamming` | Counts differing positions; only for equal-length strings |
 | Name / address matching | `jaroWinkler`, `tokenSortRatio` | Prefix-weighted or order-independent matching |
 | Document / text similarity | `sorensenDice` | Bigram-based; handles longer text well |
 | Normalized comparison (0–1) | `normalizedLevenshtein` | Length-independent similarity score |
@@ -273,11 +286,11 @@ levenshteinMany('kitten', ['sitting', 'kittens', 'kitchen']);
 | Substring / abbreviation matching | `partialRatio` | Finds best partial match within longer strings |
 | Best-effort similarity | `weightedRatio` | Picks the best score across all methods automatically |
 | Interactive fuzzy search | `search`, `closest` | Nucleo algorithm (same as Helix editor) |
-| Repeated search on same data | `FuzzyIndex`, `FuzzyObjectIndex` | Persistent Rust-side index with incremental cache, up to 165x faster |
+| Repeated search on same data | `FuzzyIndex`, `FuzzyObjectIndex` | Persistent Rust-side index with incremental cache, up to 297x faster |
 
 **Return types:**
 
-- `levenshtein`, `damerauLevenshtein` → integer (edit count)
+- `levenshtein`, `damerauLevenshtein`, `hamming` → integer (edit/difference count; `hamming` returns `null` if lengths differ)
 - `jaro`, `jaroWinkler`, `sorensenDice`, `normalizedLevenshtein` → float between 0.0 (no match) and 1.0 (identical)
 - `tokenSortRatio`, `tokenSetRatio`, `partialRatio`, `weightedRatio` → float between 0.0 and 1.0
 - `search` → array of `{ item, score, index, positions }` sorted by relevance (score: 0.0–1.0)
@@ -295,15 +308,16 @@ Measured on Apple M-series with Node.js v22 using [Vitest bench](https://vitest.
 
 | Function | rapid-fuzzy | fastest-levenshtein | leven | string-similarity |
 |---|---:|---:|---:|---:|
-| Levenshtein | 564,605 ops/s | **758,533 ops/s** | 214,205 ops/s | — |
-| Normalized Levenshtein | **515,352 ops/s** | — | — | — |
-| Sorensen-Dice | **152,317 ops/s** | — | — | 86,399 ops/s |
-| Jaro-Winkler | **523,894 ops/s** | — | — | — |
-| Damerau-Levenshtein | **118,113 ops/s** | — | — | — |
+| Levenshtein | 545,338 ops/s | **741,195 ops/s** | 225,457 ops/s | — |
+| Normalized Levenshtein | **514,446 ops/s** | — | — | — |
+| Sorensen-Dice | **142,180 ops/s** | — | — | 56,729 ops/s |
+| Jaro-Winkler | **505,762 ops/s** | — | — | — |
+| Damerau-Levenshtein | **116,186 ops/s** | — | — | — |
+| Hamming | **883,614 ops/s** | — | — | — |
 
 </details>
 
-> **Note**: For single-pair Levenshtein, fastest-levenshtein is ~1.4x faster due to its optimized pure-JS implementation that avoids FFI overhead. rapid-fuzzy is **2.5x faster** than leven, and provides broader algorithm coverage plus batch / search scenarios.
+> **Note**: For single-pair Levenshtein, fastest-levenshtein is ~1.4x faster due to its optimized pure-JS implementation that avoids FFI overhead. rapid-fuzzy is **2.4x faster** than leven, and provides broader algorithm coverage plus batch / search scenarios.
 
 ### Search Performance
 
@@ -316,9 +330,9 @@ Measured on Apple M-series with Node.js v22 using [Vitest bench](https://vitest.
 
 | Dataset size | rapid-fuzzy | rapid-fuzzy (indexed) | fuse.js | fuzzysort | uFuzzy |
 |---|---:|---:|---:|---:|---:|
-| Small (20 items) | 287,682 ops/s | 404,271 ops/s | 126,591 ops/s | **2,655,421 ops/s** | 927,173 ops/s |
-| Medium (1K items) | 6,827 ops/s | **79,616 ops/s** | 366 ops/s | 63,831 ops/s | 30,099 ops/s |
-| Large (10K items) | 827 ops/s | **136,294 ops/s** | 18 ops/s | 27,897 ops/s | 6,461 ops/s |
+| Small (20 items) | 279,509 ops/s | 395,932 ops/s | 118,443 ops/s | **1,661,273 ops/s** | 422,032 ops/s |
+| Medium (1K items) | 6,274 ops/s | **77,271 ops/s** | 358 ops/s | 58,123 ops/s | 26,052 ops/s |
+| Large (10K items) | 777 ops/s | **230,848 ops/s** | 15 ops/s | 25,315 ops/s | 4,663 ops/s |
 
 </details>
 
@@ -326,22 +340,22 @@ Measured on Apple M-series with Node.js v22 using [Vitest bench](https://vitest.
 
 | Dataset size | rapid-fuzzy | rapid-fuzzy (indexed) | fastest-levenshtein |
 |---|---:|---:|---:|
-| Medium (1K items) | 8,194 ops/s | **978,009 ops/s** | 6,869 ops/s |
-| Large (10K items) | 892 ops/s | **152,196 ops/s** | 679 ops/s |
+| Medium (1K items) | 7,690 ops/s | **906,274 ops/s** | 3,536 ops/s |
+| Large (10K items) | 611 ops/s | **352,688 ops/s** | 620 ops/s |
 
-> In indexed mode (`FuzzyIndex`), rapid-fuzzy is up to **224x faster** than fastest-levenshtein for closest-match lookups.
+> In indexed mode (`FuzzyIndex`), rapid-fuzzy is up to **569x faster** than fastest-levenshtein for closest-match lookups.
 
 ### Key takeaways
 
-- **vs fuse.js**: `FuzzyIndex` is **218x–7,572x faster** depending on dataset size. Even standalone `search()` is 19–46x faster.
-- **Indexed mode**: `FuzzyIndex` keeps data on the Rust side with incremental caching — **165x faster** than standalone `search()` on large datasets, delivering sub-millisecond autocomplete.
-- **vs fuzzysort / uFuzzy**: `FuzzyIndex` outperforms both on 1K+ datasets (up to 4.9x vs fuzzysort, 21x vs uFuzzy).
+- **vs fuse.js**: `FuzzyIndex` is **216x–15,390x faster** depending on dataset size. Even standalone `search()` is 18–52x faster.
+- **Indexed mode**: `FuzzyIndex` keeps data on the Rust side with incremental caching — **297x faster** than standalone `search()` on large datasets, delivering sub-millisecond autocomplete.
+- **vs fuzzysort / uFuzzy**: `FuzzyIndex` outperforms both on 1K+ datasets (up to 9.1x vs fuzzysort, 50x vs uFuzzy).
 
 ## Why rapid-fuzzy?
 
 | | rapid-fuzzy | fuse.js | fastest-levenshtein | fuzzysort | uFuzzy |
 |---|:---:|:---:|:---:|:---:|:---:|
-| **Algorithms** | 9 (Levenshtein, Jaro, Dice, …) | Bitap | Levenshtein | Substring | Regex-based |
+| **Algorithms** | 10 (Levenshtein, Hamming, Jaro, Dice, …) | Bitap | Levenshtein | Substring | Regex-based |
 | **Runtime** | Rust native + WASM | Pure JS | Pure JS | Pure JS | Pure JS |
 | **Object search** | ✅ weighted keys | ✅ | — | ✅ | — |
 | **Persistent index** | ✅ FuzzyIndex / FuzzyObjectIndex | — | — | ✅ prepared targets | — |
@@ -353,7 +367,7 @@ Measured on Apple M-series with Node.js v22 using [Vitest bench](https://vitest.
 | **Highlight utility** | ✅ | — | — | ✅ | ✅ |
 | **Batch API** | ✅ | — | — | — | — |
 | **Node.js native** | ✅ napi-rs | — | — | — | — |
-| **Browser** | ✅ WASM (~200 KB gzipped) | ✅ | ✅ | ✅ | ✅ |
+| **Browser** | ✅ WASM (~230 KB gzipped) | ✅ | ✅ | ✅ | ✅ |
 | **TypeScript** | ✅ full | ✅ full | ✅ | ✅ | ✅ |
 
 ## Migration Guides
@@ -361,9 +375,9 @@ Measured on Apple M-series with Node.js v22 using [Vitest bench](https://vitest.
 Switching from another library? These guides provide API mapping tables, code examples, and performance comparisons:
 
 - [**From string-similarity**](docs/migration/from-string-similarity.md) — Same Dice coefficient algorithm, now maintained and faster
-- [**From fuse.js**](docs/migration/from-fuse-js.md) — Up to 7,000x faster fuzzy search with FuzzyIndex
+- [**From fuse.js**](docs/migration/from-fuse-js.md) — Up to 15,000x faster fuzzy search with FuzzyIndex
 - [**From leven / fastest-levenshtein**](docs/migration/from-leven.md) — Multi-algorithm upgrade with batch APIs
-- [**From fuzzysort**](docs/migration/from-fuzzysort.md) — Richer matching with query syntax and 9 distance algorithms
+- [**From fuzzysort**](docs/migration/from-fuzzysort.md) — Richer matching with query syntax and 10 distance algorithms
 - [**From uFuzzy**](docs/migration/from-ufuzzy.md) — Weighted object search, batch APIs, and persistent indexes
 
 ## License

@@ -5,7 +5,9 @@ use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
 use nucleo_matcher::{Config, Matcher, Utf32String};
 
 use super::keys::KeySearchResult;
-use super::{SearchOptions, compute_max_score, resolve_case_matching};
+use super::{
+    SearchOptions, compute_char_mask, compute_max_score, compute_query_mask, resolve_case_matching,
+};
 
 /// A persistent multi-key fuzzy search index backed by Rust-side data.
 ///
@@ -21,6 +23,7 @@ use super::{SearchOptions, compute_max_score, resolve_case_matching};
 pub struct KeyedFuzzyIndex {
     key_texts: Vec<Vec<String>>,
     utf32_keys: Vec<Vec<Utf32String>>,
+    key_char_masks: Vec<Vec<u64>>,
     weights: Vec<f64>,
     total_weight: f64,
     matcher: RefCell<Matcher>,
@@ -78,9 +81,14 @@ impl KeyedFuzzyIndex {
         }
 
         let utf32_keys: Vec<Vec<Utf32String>> = key_texts.iter().map(|t| to_utf32(t)).collect();
+        let key_char_masks: Vec<Vec<u64>> = key_texts
+            .iter()
+            .map(|texts| texts.iter().map(|s| compute_char_mask(s)).collect())
+            .collect();
         Ok(Self {
             key_texts,
             utf32_keys,
+            key_char_masks,
             weights,
             total_weight,
             matcher: RefCell::new(Matcher::new(Config::DEFAULT)),
@@ -145,33 +153,59 @@ impl KeyedFuzzyIndex {
         let mut matcher = self.matcher.borrow_mut();
         let pattern = Pattern::parse(&query, case_matching, Normalization::Smart);
         let max_score = compute_max_score(&query, &pattern, &mut matcher);
+        let query_mask = compute_query_mask(&query);
 
-        let mut per_key_scores: Vec<Vec<f64>> = Vec::with_capacity(num_keys);
+        // Identify keys with non-zero weight to skip unnecessary scoring.
+        let active_keys: Vec<usize> = (0..num_keys).filter(|&k| self.weights[k] > 0.0).collect();
 
-        for utf32_texts in &self.utf32_keys {
-            let mut scores = Vec::with_capacity(num_items);
-            for utf32_item in utf32_texts {
-                let atoms = utf32_item.slice(..);
-                let score = match pattern.score(atoms, &mut matcher) {
-                    Some(raw) => ((raw as f64) / max_score).min(1.0),
-                    None => 0.0,
-                };
-                scores.push(score);
-            }
-            per_key_scores.push(scores);
-        }
+        // Pre-compute the sum of active weights for early exit upper-bound.
+        let active_total_weight: f64 = active_keys.iter().map(|&k| self.weights[k]).sum();
 
-        // Pass 1: Compute combined scores, collect (index, score) only.
+        // Per-item scoring with early exit and per-key char_mask pre-filtering.
+        // Instead of scoring all keys for all items first, we score per-item
+        // and exit early when the upper bound cannot reach the threshold.
+        let mut per_key_scores: Vec<Vec<f64>> = vec![vec![0.0; num_items]; num_keys];
+
+        let threshold_weighted = threshold * self.total_weight;
+
         let mut scored: Vec<(u32, f64)> = (0..num_items)
             .filter_map(|i| {
                 let mut weighted_sum = 0.0;
                 let mut matched_any = false;
+                let mut remaining_weight = active_total_weight;
 
-                for (k, key_score_vec) in per_key_scores.iter().enumerate() {
-                    let score = key_score_vec[i];
+                for &k in &active_keys {
+                    let w = self.weights[k];
+                    remaining_weight -= w;
+
+                    // Per-key char_mask pre-filter: skip expensive scoring if
+                    // the item for this key cannot contain the query characters.
+                    if query_mask != 0 && (self.key_char_masks[k][i] & query_mask) != query_mask {
+                        // Upper bound check: even if all remaining keys score 1.0,
+                        // can we still reach the threshold?
+                        if threshold > 0.0 && weighted_sum + remaining_weight < threshold_weighted {
+                            return None;
+                        }
+                        continue;
+                    }
+
+                    let atoms = self.utf32_keys[k][i].slice(..);
+                    let score = match pattern.score(atoms, &mut matcher) {
+                        Some(raw) => ((raw as f64) / max_score).min(1.0),
+                        None => 0.0,
+                    };
+                    per_key_scores[k][i] = score;
+
                     if score > 0.0 {
-                        weighted_sum += score * self.weights[k];
+                        weighted_sum += score * w;
                         matched_any = true;
+                    }
+
+                    // Early exit: if even perfect scores on remaining keys
+                    // cannot lift the combined score above the threshold,
+                    // skip the remaining keys for this item.
+                    if threshold > 0.0 && weighted_sum + remaining_weight < threshold_weighted {
+                        return None;
                     }
                 }
 
@@ -258,6 +292,7 @@ impl KeyedFuzzyIndex {
         }
         for (k, value) in key_values.into_iter().enumerate() {
             self.utf32_keys[k].push(Utf32String::from(value.as_str()));
+            self.key_char_masks[k].push(compute_char_mask(&value));
             self.key_texts[k].push(value);
         }
         Ok(())
@@ -273,9 +308,15 @@ impl KeyedFuzzyIndex {
         if idx >= num_items {
             return false;
         }
-        for (texts, utf32) in self.key_texts.iter_mut().zip(self.utf32_keys.iter_mut()) {
+        for ((texts, utf32), masks) in self
+            .key_texts
+            .iter_mut()
+            .zip(self.utf32_keys.iter_mut())
+            .zip(self.key_char_masks.iter_mut())
+        {
             texts.swap_remove(idx);
             utf32.swap_remove(idx);
+            masks.swap_remove(idx);
         }
         true
     }
@@ -285,6 +326,7 @@ impl KeyedFuzzyIndex {
     pub fn destroy(&mut self) {
         self.key_texts = Vec::new();
         self.utf32_keys = Vec::new();
+        self.key_char_masks = Vec::new();
         self.weights = Vec::new();
         self.total_weight = 0.0;
     }
@@ -512,6 +554,71 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn test_zero_weight_key_skipped() {
+        // Key 1 has weight 0, so it should be skipped entirely.
+        // Only key 0 ("name") should affect scoring.
+        let index = KeyedFuzzyIndex::new_impl(
+            vec![
+                vec!["Alice".to_string(), "Bob".to_string()],
+                vec!["zzzzz".to_string(), "zzzzz".to_string()],
+            ],
+            vec![1.0, 0.0],
+        )
+        .unwrap();
+        let results = index.search("Alice".to_string(), None);
+        assert!(!results.is_empty());
+        assert_eq!(results[0].index, 0);
+        // key_scores[1] should be 0.0 since weight=0 key is skipped
+        assert_eq!(results[0].key_scores[1], 0.0);
+    }
+
+    #[test]
+    fn test_early_exit_with_high_threshold() {
+        // With min_score=0.9, items that can't reach the threshold
+        // even with perfect scores on remaining keys should be pruned early.
+        let index = KeyedFuzzyIndex::new_impl(
+            vec![
+                vec!["apple".to_string(), "xyz".to_string()],
+                vec!["banana".to_string(), "xyz".to_string()],
+            ],
+            vec![1.0, 1.0],
+        )
+        .unwrap();
+        let results = index.search(
+            "apple".to_string(),
+            Some(SearchOptions {
+                max_results: None,
+                min_score: Some(0.9),
+                include_positions: None,
+                is_case_sensitive: None,
+                return_all_on_empty: None,
+            }),
+        );
+        // "xyz" should not appear since it can't reach 0.9 on any key
+        for r in &results {
+            assert!(r.score >= 0.9);
+        }
+    }
+
+    #[test]
+    fn test_char_mask_prefilter() {
+        // Items whose key text doesn't contain query characters
+        // should be filtered out by char_mask before expensive scoring.
+        let index = KeyedFuzzyIndex::new_impl(
+            vec![vec![
+                "hello".to_string(),
+                "world".to_string(),
+                "xyz".to_string(),
+            ]],
+            vec![1.0],
+        )
+        .unwrap();
+        let results = index.search("hello".to_string(), None);
+        // "xyz" shares no characters with "hello", should be filtered
+        assert!(results.iter().all(|r| r.index != 2 || r.score == 0.0));
     }
 
     #[test]

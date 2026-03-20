@@ -26,7 +26,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: 0
-      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
       - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
         with:
           node-version-file: .nvmrc
@@ -37,7 +37,7 @@ jobs:
         id: changesets
         uses: changesets/action@ce079ea084e08a340947ed4d6ecedb2433c8f293 # v1
         with:
-          version: pnpm changeset version
+          version: pnpm changeset version && node scripts/sync-cargo-version.js
           title: "chore(release): version packages"
           commit: "chore(release): version packages"
         env:
@@ -131,7 +131,7 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
-      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
       - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
         with:
           node-version-file: .nvmrc
@@ -156,6 +156,12 @@ jobs:
           ${{ matrix.settings.use-cross && '--use-napi-cross' || '' }}
           ${{ matrix.settings.use-zig && '--cross-compile' || '' }}
 
+      - name: Optimize WASM with wasm-opt
+        if: matrix.settings.target == 'wasm32-wasip1-threads'
+        run: |
+          sudo apt-get update && sudo apt-get install -y binaryen
+          pnpm run optimize:wasm
+
       - name: Upload artifact
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
         with:
@@ -176,7 +182,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
       - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
         with:
           node-version-file: .nvmrc

@@ -7,9 +7,15 @@ use nucleo_matcher::pattern::CaseMatching;
 use nucleo_matcher::{Config, Matcher, Utf32String};
 
 use super::{
-    PrecomputedSearch, SearchOptions, SearchResult, compute_char_mask, resolve_case_matching,
-    search_over_precomputed,
+    BigramIndex, IndexSearchResult, PrecomputedSearch, SearchOptions, SearchResult,
+    compute_char_mask, extract_query_bigrams, intersect_sorted, resolve_case_matching,
+    search_over_precomputed, search_over_precomputed_indices,
 };
+
+/// Minimum dataset size for bigram pre-filtering at query time.
+/// Below this threshold, the overhead of bigram intersection exceeds the
+/// benefit of reducing pattern.score() calls.
+const BIGRAM_THRESHOLD: usize = 5_000;
 
 /// A persistent fuzzy search index backed by Rust-side data.
 ///
@@ -24,6 +30,7 @@ pub struct FuzzyIndex {
     items: Vec<String>,
     utf32_items: Vec<Utf32String>,
     char_masks: Vec<u64>,
+    bigram_index: BigramIndex,
     matcher: RefCell<Matcher>,
     /// Incremental search cache: the query from the last search.
     last_query: RefCell<String>,
@@ -41,10 +48,12 @@ impl FuzzyIndex {
             .map(|s| Utf32String::from(s.as_str()))
             .collect();
         let char_masks: Vec<u64> = items.iter().map(|s| compute_char_mask(s)).collect();
+        let bigram_index = BigramIndex::new(&items);
         Self {
             items,
             utf32_items,
             char_masks,
+            bigram_index,
             matcher: RefCell::new(Matcher::new(Config::DEFAULT)),
             last_query: RefCell::new(String::new()),
             last_matching_indices: RefCell::new(Vec::new()),
@@ -116,11 +125,59 @@ impl FuzzyIndex {
         results.into_iter().next().map(|r| r.item)
     }
 
+    /// Search the index, returning only indices and scores (no item strings).
+    ///
+    /// This is more efficient than `search()` when you maintain your own data
+    /// array and only need the index to look up the original item. Avoids
+    /// String cloning overhead for each result.
+    #[napi]
+    pub fn search_indices(
+        &self,
+        query: String,
+        options: Option<Either<u32, SearchOptions>>,
+    ) -> Vec<IndexSearchResult> {
+        let (max_results, min_score, include_positions, case_matching, return_all_on_empty) =
+            match options {
+                Some(Either::A(max)) => (Some(max), None, false, CaseMatching::Smart, false),
+                Some(Either::B(opts)) => (
+                    opts.max_results,
+                    opts.min_score,
+                    opts.include_positions.unwrap_or(false),
+                    resolve_case_matching(opts.is_case_sensitive),
+                    opts.return_all_on_empty.unwrap_or(false),
+                ),
+                None => (None, None, false, CaseMatching::Smart, false),
+            };
+
+        if return_all_on_empty && query.trim().is_empty() {
+            let limit = max_results.unwrap_or(self.items.len() as u32) as usize;
+            return (0..self.items.len())
+                .take(limit)
+                .map(|i| IndexSearchResult {
+                    index: i as u32,
+                    score: 1.0,
+                    positions: Vec::new(),
+                    match_type: None,
+                })
+                .collect();
+        }
+
+        self.search_indices_impl(
+            &query,
+            max_results,
+            min_score,
+            include_positions,
+            case_matching,
+        )
+    }
+
     /// Add a single item to the index.
     #[napi]
     pub fn add(&mut self, item: String) {
+        let index = self.items.len() as u32;
         self.utf32_items.push(Utf32String::from(item.as_str()));
         self.char_masks.push(compute_char_mask(&item));
+        self.bigram_index.add_item(index, &item);
         self.items.push(item);
         self.invalidate_cache();
     }
@@ -128,9 +185,11 @@ impl FuzzyIndex {
     /// Add multiple items to the index at once.
     #[napi]
     pub fn add_many(&mut self, items: Vec<String>) {
-        for item in &items {
+        let base = self.items.len() as u32;
+        for (i, item) in items.iter().enumerate() {
             self.utf32_items.push(Utf32String::from(item.as_str()));
             self.char_masks.push(compute_char_mask(item));
+            self.bigram_index.add_item(base + i as u32, item);
         }
         self.items.extend(items);
         self.invalidate_cache();
@@ -143,6 +202,15 @@ impl FuzzyIndex {
     pub fn remove(&mut self, index: u32) -> bool {
         let idx = index as usize;
         if idx < self.items.len() {
+            let last_index = (self.items.len() - 1) as u32;
+            let removed_item = self.items[idx].clone();
+            let last_item = if idx != last_index as usize {
+                Some(self.items[last_index as usize].clone())
+            } else {
+                None
+            };
+            self.bigram_index
+                .remove_item(index, last_index, &removed_item, last_item.as_deref());
             self.items.swap_remove(idx);
             self.utf32_items.swap_remove(idx);
             self.char_masks.swap_remove(idx);
@@ -159,6 +227,7 @@ impl FuzzyIndex {
         self.items = Vec::new();
         self.utf32_items = Vec::new();
         self.char_masks = Vec::new();
+        self.bigram_index.clear();
         self.invalidate_cache();
     }
 
@@ -206,14 +275,22 @@ impl FuzzyIndex {
             return Err("Invalid data: bad magic bytes".into());
         }
 
-        let version = u32::from_le_bytes(bytes[4..8].try_into().unwrap());
+        let version = u32::from_le_bytes(
+            bytes[4..8]
+                .try_into()
+                .map_err(|_| "Invalid data: truncated header".to_string())?,
+        );
         if version != SERIALIZE_VERSION {
             return Err(format!(
                 "Unsupported format version: expected {SERIALIZE_VERSION}, got {version}"
             ));
         }
 
-        let count = u32::from_le_bytes(bytes[8..12].try_into().unwrap()) as usize;
+        let count = u32::from_le_bytes(
+            bytes[8..12]
+                .try_into()
+                .map_err(|_| "Invalid data: truncated header".to_string())?,
+        ) as usize;
         let mut offset = header_size;
 
         // Reject obviously invalid counts before allocating.
@@ -230,7 +307,11 @@ impl FuzzyIndex {
             if offset + 4 > bytes.len() {
                 return Err("Invalid data: truncated".into());
             }
-            let len = u32::from_le_bytes(bytes[offset..offset + 4].try_into().unwrap()) as usize;
+            let len = u32::from_le_bytes(
+                bytes[offset..offset + 4]
+                    .try_into()
+                    .map_err(|_| "Invalid data: truncated".to_string())?,
+            ) as usize;
             offset += 4;
             if offset + len > bytes.len() {
                 return Err("Invalid data: truncated".into());
@@ -260,7 +341,7 @@ impl FuzzyIndex {
         // Conditions: new query is a prefix extension of the cached query,
         // the cache has a non-empty candidate set, and neither query uses
         // inverted terms (which break monotonicity).
-        let candidates: Option<Vec<u32>> = {
+        let cache_candidates: Option<Vec<u32>> = {
             let last_q = self.last_query.borrow();
             let last_idx = self.last_matching_indices.borrow();
             if !last_q.is_empty()
@@ -276,6 +357,22 @@ impl FuzzyIndex {
             }
         };
 
+        // Get bigram candidates (only for large datasets).
+        let bigram_candidates = if self.items.len() >= BIGRAM_THRESHOLD {
+            let query_bigrams = extract_query_bigrams(query);
+            self.bigram_index.candidates(&query_bigrams)
+        } else {
+            None
+        };
+
+        // Compose candidate lists: intersect cache and bigram when both available.
+        let candidates: Option<Vec<u32>> = match (cache_candidates, bigram_candidates) {
+            (Some(cache), Some(bigram)) => Some(intersect_sorted(&cache, &bigram)),
+            (Some(cache), None) => Some(cache),
+            (None, Some(bigram)) => Some(bigram),
+            (None, None) => None,
+        };
+
         let ctx = PrecomputedSearch {
             items: &self.items,
             utf32_items: &self.utf32_items,
@@ -285,6 +382,68 @@ impl FuzzyIndex {
         };
 
         let outcome = search_over_precomputed(
+            query,
+            &ctx,
+            max_results,
+            min_score,
+            include_positions,
+            case_matching,
+        );
+
+        // Update incremental cache.
+        *self.last_query.borrow_mut() = query.to_owned();
+        *self.last_matching_indices.borrow_mut() = outcome.all_matching_indices;
+
+        outcome.results
+    }
+
+    fn search_indices_impl(
+        &self,
+        query: &str,
+        max_results: Option<u32>,
+        min_score: Option<f64>,
+        include_positions: bool,
+        case_matching: CaseMatching,
+    ) -> Vec<IndexSearchResult> {
+        let cache_candidates: Option<Vec<u32>> = {
+            let last_q = self.last_query.borrow();
+            let last_idx = self.last_matching_indices.borrow();
+            if !last_q.is_empty()
+                && !last_idx.is_empty()
+                && query.len() > last_q.len()
+                && query.starts_with(last_q.as_str())
+                && !query.contains('!')
+                && !last_q.contains('!')
+            {
+                Some(last_idx.clone())
+            } else {
+                None
+            }
+        };
+
+        let bigram_candidates = if self.items.len() >= BIGRAM_THRESHOLD {
+            let query_bigrams = extract_query_bigrams(query);
+            self.bigram_index.candidates(&query_bigrams)
+        } else {
+            None
+        };
+
+        let candidates: Option<Vec<u32>> = match (cache_candidates, bigram_candidates) {
+            (Some(cache), Some(bigram)) => Some(intersect_sorted(&cache, &bigram)),
+            (Some(cache), None) => Some(cache),
+            (None, Some(bigram)) => Some(bigram),
+            (None, None) => None,
+        };
+
+        let ctx = PrecomputedSearch {
+            items: &self.items,
+            utf32_items: &self.utf32_items,
+            char_masks: &self.char_masks,
+            candidate_indices: candidates.as_deref(),
+            matcher: &self.matcher,
+        };
+
+        let outcome = search_over_precomputed_indices(
             query,
             &ctx,
             max_results,
@@ -559,5 +718,76 @@ mod tests {
     fn test_deserialize_bad_version() {
         let data = b"RFZI\xFF\x00\x00\x00\x00\x00\x00\x00";
         assert!(FuzzyIndex::deserialize_impl(data).is_err());
+    }
+
+    #[test]
+    fn test_search_indices_basic() {
+        let index = FuzzyIndex::new(vec![
+            "TypeScript".into(),
+            "JavaScript".into(),
+            "Python".into(),
+        ]);
+        let results =
+            index.search_indices_impl("typscript", None, None, false, CaseMatching::Smart);
+        assert!(!results.is_empty());
+        assert_eq!(results[0].index, 0); // TypeScript
+    }
+
+    #[test]
+    fn test_search_indices_no_item_field() {
+        let index = FuzzyIndex::new(vec!["hello".into(), "world".into()]);
+        let results = index.search_indices_impl("hello", None, None, false, CaseMatching::Smart);
+        assert!(!results.is_empty());
+        // IndexSearchResult has index and score but no item field
+        assert_eq!(results[0].index, 0);
+        assert!((results[0].score - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_search_indices_consistent_with_search() {
+        let items = vec![
+            "apple".into(),
+            "application".into(),
+            "banana".into(),
+            "grape".into(),
+        ];
+        let index = FuzzyIndex::new(items);
+        let full = index.search_impl("apple", None, None, false, CaseMatching::Smart);
+        let indices_only =
+            index.search_indices_impl("apple", None, None, false, CaseMatching::Smart);
+        assert_eq!(full.len(), indices_only.len());
+        for (f, i) in full.iter().zip(indices_only.iter()) {
+            assert_eq!(f.index, i.index);
+            assert!((f.score - i.score).abs() < f64::EPSILON);
+        }
+    }
+
+    #[test]
+    fn test_search_indices_with_positions() {
+        let index = FuzzyIndex::new(vec!["hello".into()]);
+        let results = index.search_indices_impl("hello", None, None, true, CaseMatching::Smart);
+        assert!(!results.is_empty());
+        assert_eq!(results[0].positions, vec![0, 1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn test_search_indices_min_score() {
+        let index = FuzzyIndex::new(vec!["apple".into(), "xyz".into()]);
+        let results =
+            index.search_indices_impl("apple", None, Some(0.5), false, CaseMatching::Smart);
+        for r in &results {
+            assert!(r.score >= 0.5);
+        }
+    }
+
+    #[test]
+    fn test_search_indices_max_results() {
+        let index = FuzzyIndex::new(vec![
+            "apple".into(),
+            "application".into(),
+            "appetizer".into(),
+        ]);
+        let results = index.search_indices_impl("app", Some(2), None, false, CaseMatching::Smart);
+        assert!(results.len() <= 2);
     }
 }

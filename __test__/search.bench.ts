@@ -1,7 +1,9 @@
 import uFuzzy from '@leeoniya/ufuzzy';
 import { closest as fastestLevenshteinClosest } from 'fastest-levenshtein';
+import { Index as FlexSearchIndex } from 'flexsearch';
 import Fuse from 'fuse.js';
 import fuzzysort from 'fuzzysort';
+import MiniSearch from 'minisearch';
 import { bench, describe } from 'vitest';
 
 import { closest, FuzzyIndex, search } from '../index.js';
@@ -108,24 +110,80 @@ const xlargeItems = Array.from({ length: 50_000 }, (_, i) => {
   return `${words[i % words.length]}_${words[(i * 7) % words.length]}_${i}`;
 });
 
-// Pre-initialize Fuse instances (real-world usage pattern)
+// 100K dataset (scaling benchmark)
+const hugeItems = Array.from({ length: 100_000 }, (_, i) => {
+  const words = [
+    'async',
+    'await',
+    'function',
+    'class',
+    'interface',
+    'type',
+    'export',
+    'import',
+    'const',
+    'let',
+    'return',
+    'promise',
+    'observable',
+    'subscriber',
+    'handler',
+    'middleware',
+    'controller',
+    'service',
+    'repository',
+    'factory',
+  ];
+  return `${words[i % words.length]}_${words[(i * 7) % words.length]}_${i}`;
+});
+
+// --- Pre-initialize search instances ---
+
+// Fuse.js
 const fuseSmall = new Fuse(smallItems, { threshold: 0.4 });
 const fuseMedium = new Fuse(mediumItems, { threshold: 0.4 });
 const fuseLarge = new Fuse(largeItems, { threshold: 0.4 });
 
-// Pre-prepare fuzzysort targets
+// fuzzysort (prepared targets)
 const fuzzysortMediumPrepared = mediumItems.map((item) => fuzzysort.prepare(item));
 const fuzzysortLargePrepared = largeItems.map((item) => fuzzysort.prepare(item));
 const fuzzysortXlargePrepared = xlargeItems.map((item) => fuzzysort.prepare(item));
+const fuzzysortHugePrepared = hugeItems.map((item) => fuzzysort.prepare(item));
 
-// Pre-initialize uFuzzy instance
+// uFuzzy
 const uf = new uFuzzy();
 
-// Pre-initialize FuzzyIndex instances (recommended pattern for repeated searches)
+// FlexSearch (default strict tokenization — represents inverted-index search category,
+// intentionally not configured for fuzzy/typo-tolerant matching)
+const flexSmall = new FlexSearchIndex();
+for (let i = 0; i < smallItems.length; i++) flexSmall.add(i, smallItems[i]);
+const flexMedium = new FlexSearchIndex();
+for (let i = 0; i < mediumItems.length; i++) flexMedium.add(i, mediumItems[i]);
+const flexLarge = new FlexSearchIndex();
+for (let i = 0; i < largeItems.length; i++) flexLarge.add(i, largeItems[i]);
+const flexXlarge = new FlexSearchIndex();
+for (let i = 0; i < xlargeItems.length; i++) flexXlarge.add(i, xlargeItems[i]);
+const flexHuge = new FlexSearchIndex();
+for (let i = 0; i < hugeItems.length; i++) flexHuge.add(i, hugeItems[i]);
+
+// MiniSearch
+function createMiniSearch(items: string[]) {
+  const ms = new MiniSearch({ fields: ['text'], storeFields: ['text'] });
+  ms.addAll(items.map((text, id) => ({ id, text })));
+  return ms;
+}
+const miniSmall = createMiniSearch(smallItems);
+const miniMedium = createMiniSearch(mediumItems);
+const miniLarge = createMiniSearch(largeItems);
+const miniXlarge = createMiniSearch(xlargeItems);
+const miniHuge = createMiniSearch(hugeItems);
+
+// rapid-fuzzy FuzzyIndex
 const fuzzyIndexSmall = new FuzzyIndex(smallItems);
 const fuzzyIndexMedium = new FuzzyIndex(mediumItems);
 const fuzzyIndexLarge = new FuzzyIndex(largeItems);
 const fuzzyIndexXlarge = new FuzzyIndex(xlargeItems);
+const fuzzyIndexHuge = new FuzzyIndex(hugeItems);
 const fuzzyIndexClosestMedium = new FuzzyIndex(mediumItems);
 const fuzzyIndexClosestLarge = new FuzzyIndex(largeItems);
 
@@ -149,6 +207,14 @@ describe('Fuzzy Search — Small (20 items)', () => {
   bench('uFuzzy', () => {
     uf.search(smallItems, 'aple');
   });
+
+  bench('FlexSearch', () => {
+    flexSmall.search('aple', { limit: 5 });
+  });
+
+  bench('MiniSearch', () => {
+    miniSmall.search('aple', { fuzzy: 0.2, prefix: true });
+  });
 });
 
 describe('Fuzzy Search — Medium (1K items)', () => {
@@ -170,6 +236,14 @@ describe('Fuzzy Search — Medium (1K items)', () => {
 
   bench('uFuzzy', () => {
     uf.search(mediumItems, 'utils config');
+  });
+
+  bench('FlexSearch', () => {
+    flexMedium.search('utils config', { limit: 10 });
+  });
+
+  bench('MiniSearch', () => {
+    miniMedium.search('utils config', { fuzzy: 0.2, prefix: true });
   });
 });
 
@@ -193,6 +267,14 @@ describe('Fuzzy Search — Large (10K items)', () => {
   bench('uFuzzy', () => {
     uf.search(largeItems, 'handler middleware');
   });
+
+  bench('FlexSearch', () => {
+    flexLarge.search('handler middleware', { limit: 10 });
+  });
+
+  bench('MiniSearch', () => {
+    miniLarge.search('handler middleware', { fuzzy: 0.2, prefix: true });
+  });
 });
 
 describe('Fuzzy Search — Extra Large (50K items)', () => {
@@ -206,6 +288,82 @@ describe('Fuzzy Search — Extra Large (50K items)', () => {
 
   bench('uFuzzy', () => {
     uf.search(xlargeItems, 'handler middleware');
+  });
+
+  bench('FlexSearch', () => {
+    flexXlarge.search('handler middleware', { limit: 10 });
+  });
+
+  bench('MiniSearch', () => {
+    miniXlarge.search('handler middleware', { fuzzy: 0.2, prefix: true });
+  });
+});
+
+describe('Fuzzy Search — Huge (100K items)', () => {
+  bench('rapid-fuzzy (FuzzyIndex)', () => {
+    fuzzyIndexHuge.search('handler middleware', { maxResults: 10 });
+  });
+
+  bench('fuzzysort', () => {
+    fuzzysort.go('handler middleware', fuzzysortHugePrepared, { limit: 10 });
+  });
+
+  bench('uFuzzy', () => {
+    uf.search(hugeItems, 'handler middleware');
+  });
+
+  bench('FlexSearch', () => {
+    flexHuge.search('handler middleware', { limit: 10 });
+  });
+
+  bench('MiniSearch', () => {
+    miniHuge.search('handler middleware', { fuzzy: 0.2, prefix: true });
+  });
+});
+
+describe('Index Construction — Medium (1K items)', () => {
+  bench('rapid-fuzzy (FuzzyIndex)', () => {
+    new FuzzyIndex(mediumItems);
+  });
+
+  bench('fuse.js', () => {
+    new Fuse(mediumItems, { threshold: 0.4 });
+  });
+
+  bench('fuzzysort (prepare)', () => {
+    mediumItems.map((item) => fuzzysort.prepare(item));
+  });
+
+  bench('FlexSearch', () => {
+    const idx = new FlexSearchIndex();
+    for (let i = 0; i < mediumItems.length; i++) idx.add(i, mediumItems[i]);
+  });
+
+  bench('MiniSearch', () => {
+    createMiniSearch(mediumItems);
+  });
+});
+
+describe('Index Construction — Large (10K items)', () => {
+  bench('rapid-fuzzy (FuzzyIndex)', () => {
+    new FuzzyIndex(largeItems);
+  });
+
+  bench('fuse.js', () => {
+    new Fuse(largeItems, { threshold: 0.4 });
+  });
+
+  bench('fuzzysort (prepare)', () => {
+    largeItems.map((item) => fuzzysort.prepare(item));
+  });
+
+  bench('FlexSearch', () => {
+    const idx = new FlexSearchIndex();
+    for (let i = 0; i < largeItems.length; i++) idx.add(i, largeItems[i]);
+  });
+
+  bench('MiniSearch', () => {
+    createMiniSearch(largeItems);
   });
 });
 

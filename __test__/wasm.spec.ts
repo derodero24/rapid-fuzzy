@@ -1,16 +1,23 @@
-import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-const wasmBinaryPath = resolve(__dirname, '../rapid-fuzzy.wasm32-wasi.wasm');
-const wasmExists = existsSync(wasmBinaryPath);
-
-// Skip all WASM tests if the binary is not built
-// Build with: pnpm run build --target wasm32-wasip1-threads
-describe.skipIf(!wasmExists)('wasm', () => {
+// Check if WASM module is available and functional.
+// Handles both missing binary (not built) and stale binary (outdated build).
+let wasmAvailable = false;
+// biome-ignore lint/suspicious/noExplicitAny: WASM module has dynamic exports
+let wasm: Record<string, any> = {};
+try {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const wasm = wasmExists ? require('../rapid-fuzzy.wasi.cjs') : {};
+  const mod = require('../rapid-fuzzy.wasi.cjs');
+  // Check for a recently-added export to detect stale binaries
+  wasmAvailable = typeof mod.levenshtein === 'function' && typeof mod.hamming === 'function';
+  if (wasmAvailable) wasm = mod;
+} catch {
+  wasmAvailable = false;
+}
 
+// Skip all WASM tests if the module is not available or outdated
+// Build with: pnpm run build:wasm
+describe.skipIf(!wasmAvailable)('wasm', () => {
   describe('exports', () => {
     it('should export all expected functions', () => {
       const expectedExports = [
@@ -18,6 +25,9 @@ describe.skipIf(!wasmExists)('wasm', () => {
         'damerauLevenshtein',
         'damerauLevenshteinBatch',
         'damerauLevenshteinMany',
+        'hamming',
+        'hammingBatch',
+        'hammingMany',
         'jaro',
         'jaroBatch',
         'jaroMany',
@@ -95,6 +105,14 @@ describe.skipIf(!wasmExists)('wasm', () => {
       const score = wasm.sorensenDice('hello', 'world');
       expect(score).toBeGreaterThanOrEqual(0);
       expect(score).toBeLessThanOrEqual(1);
+    });
+
+    it('hamming', () => {
+      expect(wasm.hamming('hello', 'hello')).toBe(0);
+      expect(wasm.hamming('karolin', 'kathrin')).toBe(3);
+      expect(wasm.hamming('hello', 'world')).toBe(4);
+      expect(wasm.hamming('hello', 'hi')).toBeNull();
+      expect(wasm.hamming('', '')).toBe(0);
     });
 
     it('tokenSortRatio', () => {
@@ -183,6 +201,18 @@ describe.skipIf(!wasmExists)('wasm', () => {
       expect(result).toEqual([0, 1]);
     });
 
+    it('hammingBatch', () => {
+      const result = wasm.hammingBatch([
+        ['hello', 'hello'],
+        ['hello', 'world'],
+        ['hello', 'hi'],
+      ]);
+      expect(result).toHaveLength(3);
+      expect(result[0]).toBe(0);
+      expect(result[1]).toBe(4);
+      expect(result[2]).toBeNull();
+    });
+
     it('tokenSortRatioBatch', () => {
       const result = wasm.tokenSortRatioBatch([
         ['hello world', 'hello world'],
@@ -255,6 +285,14 @@ describe.skipIf(!wasmExists)('wasm', () => {
       const result = wasm.damerauLevenshteinMany('hello', ['hello', 'ehllo']);
       expect(result).toHaveLength(2);
       expect(result[0]).toBe(0);
+    });
+
+    it('hammingMany', () => {
+      const result = wasm.hammingMany('hello', ['hello', 'world', 'hi']);
+      expect(result).toHaveLength(3);
+      expect(result[0]).toBe(0);
+      expect(result[1]).toBe(4);
+      expect(result[2]).toBeNull();
     });
 
     it('tokenSortRatioMany', () => {
@@ -362,6 +400,12 @@ describe.skipIf(!wasmExists)('wasm', () => {
     it('damerauLevenshtein results should match native', () => {
       for (const [a, b] of testPairs) {
         expect(wasm.damerauLevenshtein(a, b)).toBe(native.damerauLevenshtein(a, b));
+      }
+    });
+
+    it('hamming results should match native', () => {
+      for (const [a, b] of testPairs) {
+        expect(wasm.hamming(a, b)).toBe(native.hamming(a, b));
       }
     });
 

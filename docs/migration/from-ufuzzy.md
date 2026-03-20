@@ -188,19 +188,19 @@ uFuzzy is a highly optimized pure JavaScript library that uses regex-based match
 
 | Dataset size | rapid-fuzzy | FuzzyIndex | uFuzzy |
 |---|---:|---:|---:|
-| Small (20 items) | 287,682 ops/s | 404,271 ops/s | **927,173 ops/s** |
-| Medium (1K items) | 6,827 ops/s | **79,616 ops/s** | 30,099 ops/s |
-| Large (10K items) | 827 ops/s | **136,294 ops/s** | 6,461 ops/s |
+| Small (20 items) | 279,509 ops/s | 395,932 ops/s | **422,032 ops/s** |
+| Medium (1K items) | 6,274 ops/s | **77,271 ops/s** | 26,052 ops/s |
+| Large (10K items) | 777 ops/s | **230,848 ops/s** | 4,663 ops/s |
 
 Measured on Apple M-series with Node.js v22.
 
-uFuzzy is faster on small datasets because it uses optimized regex-based matching in pure JavaScript, avoiding FFI overhead entirely. However, with `FuzzyIndex`, rapid-fuzzy is **2.6x faster** at 1K items and **21x faster** at 10K items thanks to Rust-side indexing with incremental caching.
+uFuzzy is faster on small datasets because it uses optimized regex-based matching in pure JavaScript, avoiding FFI overhead entirely. However, with `FuzzyIndex`, rapid-fuzzy is **3.0x faster** at 1K items and **50x faster** at 10K items thanks to Rust-side indexing with incremental caching.
 
 ## Why Choose rapid-fuzzy Over uFuzzy?
 
 rapid-fuzzy with `FuzzyIndex` outperforms uFuzzy on real-world dataset sizes (1K+), while offering capabilities that uFuzzy does not:
 
-- **9 distance algorithms**: Levenshtein, Damerau-Levenshtein, Jaro, Jaro-Winkler, Sorensen-Dice, and more — useful beyond search
+- **10 distance algorithms**: Levenshtein, Damerau-Levenshtein, Hamming, Jaro, Jaro-Winkler, Sorensen-Dice, and more — useful beyond search
 - **Simpler API**: Returns ready-to-use sorted results instead of three arrays requiring manual assembly
 - **Batch APIs**: `levenshteinBatch`, `jaroWinklerMany`, etc. for bulk distance computations
 - **Weighted object search**: `searchObjects()` and `FuzzyObjectIndex` with per-key weights — no manual key extraction needed

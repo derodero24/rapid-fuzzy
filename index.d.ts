@@ -29,6 +29,14 @@ export declare class FuzzyIndex {
    * If minScore is provided, returns null when the best match scores below the threshold.
    */
   closest(query: string, minScore?: number | undefined | null): string | null
+  /**
+   * Search the index, returning only indices and scores (no item strings).
+   *
+   * This is more efficient than `search()` when you maintain your own data
+   * array and only need the index to look up the original item. Avoids
+   * String cloning overhead for each result.
+   */
+  searchIndices(query: string, options?: number | SearchOptions | undefined | null): Array<IndexSearchResult>
   /** Add a single item to the index. */
   add(item: string): void
   /** Add multiple items to the index at once. */
@@ -137,8 +145,62 @@ export declare function damerauLevenshteinBatch(pairs: Array<Array<string>>): Ar
  * Compute the Damerau-Levenshtein distance from one reference string to many candidates.
  *
  * Returns an array of distances, one per candidate, in the same order as the input.
+ * If `max_distance` is provided, candidates with distance exceeding the threshold
+ * will return `max_distance + 1` (enabling early termination for better performance).
  */
-export declare function damerauLevenshteinMany(reference: string, candidates: Array<string>): Array<number>
+export declare function damerauLevenshteinMany(reference: string, candidates: Array<string>, maxDistance?: number | undefined | null): Array<number>
+
+/**
+ * Compute the Hamming distance between two strings.
+ *
+ * The Hamming distance counts the number of positions at which the corresponding
+ * characters differ. It is only defined for strings of equal length.
+ * Returns `null` if the strings have different lengths.
+ */
+export declare function hamming(a: string, b: string): number | null
+
+/**
+ * Compute the Hamming distance for multiple pairs of strings in a single call.
+ *
+ * Returns an array of distances in the same order as the input pairs.
+ * Each pair must be an array of exactly two strings `[a, b]`.
+ * Returns `null` for pairs with different lengths.
+ */
+export declare function hammingBatch(pairs: Array<Array<string>>): Array<number | undefined | null>
+
+/**
+ * Compute the Hamming distance from one reference string to many candidates.
+ *
+ * Returns an array of distances, one per candidate, in the same order as the input.
+ * Returns `null` for candidates with a different length than the reference.
+ * If `max_distance` is provided, candidates with distance exceeding the threshold
+ * will also return `null` (enabling early termination for better performance).
+ */
+export declare function hammingMany(reference: string, candidates: Array<string>, maxDistance?: number | undefined | null): Array<number | undefined | null>
+
+/**
+ * A lightweight search result containing only index and score (no item string).
+ *
+ * Use this when you maintain your own data array and only need the index
+ * to look up the original item. Avoids String cloning overhead.
+ */
+export interface IndexSearchResult {
+  /** The index of the item in the original input array. */
+  index: number
+  /** The match score normalized to 0.0-1.0 range (1.0 is a perfect match). */
+  score: number
+  /**
+   * Indices of matched characters in the item string.
+   * Empty unless `includePositions` is set to true in SearchOptions.
+   */
+  positions: Array<number>
+  /**
+   * How the query matched this item (Exact, Prefix, Contains, or Fuzzy).
+   * Only present when `includePositions` is set to true in SearchOptions.
+   * Derived from positions at zero additional cost.
+   */
+  matchType?: MatchType
+}
 
 /**
  * Compute the Jaro similarity between two strings.
@@ -158,8 +220,10 @@ export declare function jaroBatch(pairs: Array<Array<string>>): Array<number>
  * Compute the Jaro similarity from one reference string to many candidates.
  *
  * Returns an array of similarity scores, one per candidate, in the same order as the input.
+ * If `min_similarity` is provided, candidates with similarity below the threshold
+ * will return `0.0` (enabling early termination for better performance).
  */
-export declare function jaroMany(reference: string, candidates: Array<string>): Array<number>
+export declare function jaroMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number>
 
 /**
  * Compute the Jaro-Winkler similarity between two strings.
@@ -180,8 +244,10 @@ export declare function jaroWinklerBatch(pairs: Array<Array<string>>): Array<num
  * Compute the Jaro-Winkler similarity from one reference string to many candidates.
  *
  * Returns an array of similarity scores, one per candidate, in the same order as the input.
+ * If `min_similarity` is provided, candidates with similarity below the threshold
+ * will return `0.0` (enabling early termination for better performance).
  */
-export declare function jaroWinklerMany(reference: string, candidates: Array<string>): Array<number>
+export declare function jaroWinklerMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number>
 
 /** A single result from multi-key fuzzy search. */
 export interface KeySearchResult {
@@ -217,8 +283,10 @@ export declare function levenshteinBatch(pairs: Array<Array<string>>): Array<num
  * Compute the Levenshtein distance from one reference string to many candidates.
  *
  * Returns an array of distances, one per candidate, in the same order as the input.
+ * If `max_distance` is provided, candidates with distance exceeding the threshold
+ * will return `max_distance + 1` (enabling early termination for better performance).
  */
-export declare function levenshteinMany(reference: string, candidates: Array<string>): Array<number>
+export declare function levenshteinMany(reference: string, candidates: Array<string>, maxDistance?: number | undefined | null): Array<number>
 
 /**
  * Classification of how a query matched an item.
@@ -254,8 +322,10 @@ export declare function normalizedLevenshteinBatch(pairs: Array<Array<string>>):
  * Compute the normalized Levenshtein similarity from one reference string to many candidates.
  *
  * Returns an array of similarity scores, one per candidate, in the same order as the input.
+ * If `min_similarity` is provided, candidates with similarity below the threshold
+ * will return `0.0` (enabling early termination for better performance).
  */
-export declare function normalizedLevenshteinMany(reference: string, candidates: Array<string>): Array<number>
+export declare function normalizedLevenshteinMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number>
 
 /**
  * Compute the partial ratio between two strings.

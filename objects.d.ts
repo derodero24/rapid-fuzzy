@@ -82,10 +82,7 @@ export declare class FuzzyObjectIndex<T> {
   get size(): number;
 
   /** Search for objects matching the query. */
-  search(
-    query: string,
-    options?: ObjectIndexSearchOptions,
-  ): Array<ObjectSearchResult<T>>;
+  search(query: string, options?: ObjectIndexSearchOptions): Array<ObjectSearchResult<T>>;
 
   /** Find the closest matching object, or null if no match. */
   closest(query: string, minScore?: number): T | null;
