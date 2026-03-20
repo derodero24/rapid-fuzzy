@@ -1,5 +1,22 @@
 # rapid-fuzzy
 
+## 1.1.0
+
+### Minor Changes
+
+- 077c83a: Add Hamming distance functions (`hamming`, `hammingBatch`, `hammingMany`) for comparing equal-length strings.
+- 0ea6ae9: Add optional threshold parameters to `_many` distance functions for early termination. `levenshteinMany` and `damerauLevenshteinMany` accept `maxDistance`, while `jaroMany`, `jaroWinklerMany`, and `normalizedLevenshteinMany` accept `minSimilarity`.
+- bfeb33b: Add `searchIndices()` method to FuzzyIndex that returns only indices and scores without cloning item strings, reducing GC pressure for large datasets.
+
+### Patch Changes
+
+- 29a340b: Add bigram inverted index pre-filtering to FuzzyIndex for improved search performance on large datasets (5K+ items). Reduces the number of candidates passed to the scoring function by filtering items that lack query character adjacency patterns.
+- c10a29e: Fix `tokenSetRatio` returning 1.0 (perfect match) when comparing an empty string against a non-empty string. Now correctly returns 0.0.
+- d1bf5f5: Optimize KeyedFuzzyIndex search with zero-weight key skipping, early exit on partial score upper bound, and per-key character-presence pre-filtering.
+- dc578d4: Reduce redundant string normalization in weighted_ratio by sharing pre-normalized strings across sub-algorithms.
+- 90d0cc2: Replace unwrap() with proper error propagation in FuzzyIndex deserialization
+- 530c0d3: Optimize token-based \_many distance functions by pre-computing reference string normalization and tokenization once instead of per-candidate.
+
 ## 1.0.0
 
 ### Major Changes
