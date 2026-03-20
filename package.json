@@ -127,13 +127,13 @@
     "prepare": "lefthook install"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.4.6",
+    "@biomejs/biome": "^2.4.8",
     "@changesets/cli": "^2.30.0",
     "@codspeed/vitest-plugin": "^5.2.0",
-    "@commitlint/cli": "^20.4.4",
-    "@commitlint/config-conventional": "^20.4.4",
-    "@emnapi/core": "^1.9.0",
-    "@emnapi/runtime": "^1.9.0",
+    "@commitlint/cli": "^20.5.0",
+    "@commitlint/config-conventional": "^20.5.0",
+    "@emnapi/core": "^1.9.1",
+    "@emnapi/runtime": "^1.9.1",
     "@leeoniya/ufuzzy": "^1.0.19",
     "@napi-rs/cli": "^3.5.1",
     "@napi-rs/wasm-runtime": "^1.1.1",
@@ -159,6 +159,11 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "lefthook"
-    ]
+    ],
+    "peerDependencyRules": {
+      "allowedVersions": {
+        "@codspeed/vitest-plugin>vite": "8"
+      }
+    }
   }
 }
