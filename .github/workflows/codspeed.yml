@@ -47,7 +47,7 @@ jobs:
       - name: Run benchmarks
         uses: CodSpeedHQ/action@1c8ae4843586d3ba879736b7f6b7b0c990757fab # v4
         with:
-          mode: walltime
+          mode: simulation
           run: cargo codspeed run -p rapid-fuzzy-bench
 
   js-benchmarks:
