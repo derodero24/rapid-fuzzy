@@ -1,15 +1,6 @@
 import { bench, describe } from 'vitest';
 import { tokenSetRatio, tokenSortRatio, weightedRatio } from '../index.js';
-
-// Test data — realistic string pairs of varying length and similarity
-const pairs: [string, string][] = [
-  ['kitten', 'sitting'],
-  ['saturday', 'sunday'],
-  ['rosettacode', 'raisethysword'],
-  ['pneumonoultramicroscopicsilicovolcanoconiosis', 'ultramicroscopically'],
-  ['the quick brown fox jumps over the lazy dog', 'the fast brown fox leaps over the lazy dog'],
-  ['abcdefghijklmnopqrstuvwxyz', 'zyxwvutsrqponmlkjihgfedcba'],
-];
+import { pairs } from './bench-fixtures.js';
 
 describe('Token-Based Ratio', () => {
   bench('rapid-fuzzy (tokenSetRatio)', () => {
