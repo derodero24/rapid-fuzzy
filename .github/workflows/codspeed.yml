@@ -72,5 +72,5 @@ jobs:
       - name: Run benchmarks
         uses: CodSpeedHQ/action@1c8ae4843586d3ba879736b7f6b7b0c990757fab # v4
         with:
-          mode: simulation
-          run: pnpm run bench
+          mode: walltime
+          run: pnpm run bench:ci

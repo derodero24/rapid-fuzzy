@@ -118,6 +118,7 @@
     "test:deno": "deno test --allow-read --allow-env --allow-net --node-modules-dir=auto e2e/wasm-deno.test.ts",
     "test:watch": "vitest watch",
     "bench": "vitest bench",
+    "bench:ci": "vitest bench --exclude '**/*.compare.bench.ts'",
     "bench:readme": "npx tsx scripts/update-bench-readme.ts",
     "bench:charts": "npx tsx scripts/generate-bench-charts.ts",
     "publint": "publint",
