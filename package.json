@@ -1,6 +1,6 @@
 {
   "name": "rapid-fuzzy",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Rust-powered fuzzy search and string distance for JavaScript/TypeScript. 10-50x faster than fuse.js/leven.",
   "license": "MIT",
   "author": "derodero24",
@@ -46,7 +46,7 @@
     },
     "./highlight": {
       "import": {
-        "types": "./highlight.d.ts",
+        "types": "./highlight.d.mts",
         "default": "./highlight.mjs"
       },
       "require": {
@@ -56,7 +56,7 @@
     },
     "./objects": {
       "import": {
-        "types": "./objects.d.ts",
+        "types": "./objects.d.mts",
         "default": "./objects.mjs"
       },
       "require": {
@@ -76,7 +76,9 @@
     "browser.js",
     "highlight.js",
     "highlight.mjs",
-    "highlight.d.ts"
+    "highlight.d.ts",
+    "highlight.d.mts",
+    "objects.d.mts"
   ],
   "napi": {
     "binaryName": "rapid-fuzzy",
@@ -118,6 +120,7 @@
     "test:deno": "deno test --allow-read --allow-env --allow-net --node-modules-dir=auto e2e/wasm-deno.test.ts",
     "test:watch": "vitest watch",
     "bench": "vitest bench",
+    "bench:ci": "vitest bench __test__/distance.bench.ts __test__/similarity.bench.ts __test__/ratio.bench.ts __test__/batch.bench.ts __test__/search.bench.ts",
     "bench:readme": "npx tsx scripts/update-bench-readme.ts",
     "bench:charts": "npx tsx scripts/generate-bench-charts.ts",
     "publint": "publint",
@@ -152,7 +155,7 @@
     "minisearch": "^7.2.0",
     "publint": "^0.3.18",
     "string-similarity": "^4.0.4",
-    "typescript": "^5.9.3",
+    "typescript": "^6.0.0",
     "vite": "^8.0.0",
     "vitest": "^4.1.0"
   },

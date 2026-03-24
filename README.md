@@ -12,7 +12,7 @@ Blazing-fast fuzzy search for JavaScript — powered by Rust, works everywhere.
 
 ## Features
 
-- **Fast**: Up to 15,000x faster than fuse.js with FuzzyIndex (Rust + napi-rs)
+- **Fast**: Up to 15,000x faster than fuse.js in indexed mode on large datasets (Rust + napi-rs) — [see benchmarks](#benchmarks)
 - **Universal**: Works in Node.js (native), browsers (WASM), Deno, and Bun
 - **Zero JS dependencies**: Pure Rust core with napi-rs bindings
 - **Type-safe**: Full TypeScript support with auto-generated type definitions
@@ -59,6 +59,32 @@ pnpm add rapid-fuzzy
 > Cross-Origin-Embedder-Policy: require-corp
 > ```
 > Without these headers, you will see `SharedArrayBuffer is not defined`. See [MDN: SharedArrayBuffer](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/SharedArrayBuffer#security_requirements) for details.
+
+### Framework Integration (SSR)
+
+Native modules need to be externalized in SSR frameworks:
+
+**Next.js**
+
+```js
+// next.config.js
+const nextConfig = {
+  serverExternalPackages: ['rapid-fuzzy'],
+};
+```
+
+**Vite SSR**
+
+```js
+// vite.config.js
+export default {
+  ssr: {
+    external: ['rapid-fuzzy'],
+  },
+};
+```
+
+On the client side, rapid-fuzzy automatically falls back to WASM — no additional configuration needed beyond the SharedArrayBuffer headers above.
 
 ## API
 
@@ -191,6 +217,34 @@ userIndex.search('john', { maxResults: 10 });
 index.destroy();
 userIndex.destroy();
 ```
+
+#### Incremental Search (Autocomplete)
+
+FuzzyIndex automatically caches matching candidates. When a new query extends the previous one, only cached candidates are re-scored:
+
+```typescript
+const index = new FuzzyIndex(items);
+index.search('app');    // scores all items, caches matches
+index.search('apple');  // only re-scores cached candidates — much faster
+index.search('xyz');    // different query — full scan, new cache
+```
+
+This makes FuzzyIndex ideal for search-as-you-type UIs where each keystroke extends the query.
+
+#### Index Serialization
+
+Save a FuzzyIndex to avoid rebuilding on startup:
+
+```typescript
+const buffer = index.serialize();
+fs.writeFileSync('search-index.bin', buffer);
+
+// Load later (faster than rebuilding from scratch)
+const restored = FuzzyIndex.deserialize(fs.readFileSync('search-index.bin'));
+restored.search('query');
+```
+
+> **Note:** The serialization format is version-specific. Regenerate the index after updating rapid-fuzzy.
 
 ### Match Highlighting
 
