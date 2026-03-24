@@ -4,18 +4,16 @@ on:
   push:
     branches: [develop]
     paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
       - "crates/**"
-      - "__test__/**/*.bench.ts"
-      - "__test__/bench-fixtures.ts"
-      - "vitest.config.mts"
       - ".github/workflows/codspeed.yml"
   pull_request:
     branches: [develop]
     paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
       - "crates/**"
-      - "__test__/**/*.bench.ts"
-      - "__test__/bench-fixtures.ts"
-      - "vitest.config.mts"
       - ".github/workflows/codspeed.yml"
   workflow_dispatch:
 
@@ -51,28 +49,3 @@ jobs:
         with:
           mode: simulation
           run: cargo codspeed run -p rapid-fuzzy-bench
-
-  js-benchmarks:
-    name: JS Benchmarks
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
-      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
-        with:
-          node-version-file: .nvmrc
-          cache: pnpm
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-        with:
-          shared-key: codspeed
-      - run: pnpm install --frozen-lockfile
-
-      - name: Build native module
-        run: pnpm run build
-
-      - name: Run benchmarks
-        uses: CodSpeedHQ/action@1c8ae4843586d3ba879736b7f6b7b0c990757fab # v4
-        with:
-          mode: walltime
-          run: pnpm run bench:ci
