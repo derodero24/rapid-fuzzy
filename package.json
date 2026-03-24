@@ -46,7 +46,7 @@
     },
     "./highlight": {
       "import": {
-        "types": "./highlight.d.ts",
+        "types": "./highlight.d.mts",
         "default": "./highlight.mjs"
       },
       "require": {
@@ -56,7 +56,7 @@
     },
     "./objects": {
       "import": {
-        "types": "./objects.d.ts",
+        "types": "./objects.d.mts",
         "default": "./objects.mjs"
       },
       "require": {
@@ -76,7 +76,9 @@
     "browser.js",
     "highlight.js",
     "highlight.mjs",
-    "highlight.d.ts"
+    "highlight.d.ts",
+    "highlight.d.mts",
+    "objects.d.mts"
   ],
   "napi": {
     "binaryName": "rapid-fuzzy",
