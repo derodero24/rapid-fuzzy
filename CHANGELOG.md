@@ -1,5 +1,11 @@
 # rapid-fuzzy
 
+## 1.1.1
+
+### Patch Changes
+
+- 1895bc6: Fix TypeScript `node16`/`nodenext` ESM resolution for `rapid-fuzzy/highlight` and `rapid-fuzzy/objects` subpath exports by adding proper `.d.mts` type declarations and fixing import specifiers in `index.d.mts`.
+
 ## 1.1.0
 
 ### Minor Changes
