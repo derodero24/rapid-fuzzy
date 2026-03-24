@@ -197,7 +197,7 @@ impl FuzzyIndex {
 
     /// Remove the item at the given index.
     ///
-    /// Returns false if the index is out of bounds.
+    /// Uses swap-remove for O(1) performance. Returns false if out of bounds.
     #[napi]
     pub fn remove(&mut self, index: u32) -> bool {
         let idx = index as usize;
