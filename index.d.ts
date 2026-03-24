@@ -44,7 +44,7 @@ export declare class FuzzyIndex {
   /**
    * Remove the item at the given index.
    *
-   * Returns false if the index is out of bounds.
+   * Uses swap-remove for O(1) performance. Returns false if out of bounds.
    */
   remove(index: number): boolean
   /** Free the internal data. After calling this, the index is empty. */
