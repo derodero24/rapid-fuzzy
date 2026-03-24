@@ -12,7 +12,7 @@ Blazing-fast fuzzy search for JavaScript — powered by Rust, works everywhere.
 
 ## Features
 
-- **Fast**: Up to 15,000x faster than fuse.js with FuzzyIndex (Rust + napi-rs)
+- **Fast**: Up to 15,000x faster than fuse.js in indexed mode on large datasets (Rust + napi-rs) — [see benchmarks](#benchmarks)
 - **Universal**: Works in Node.js (native), browsers (WASM), Deno, and Bun
 - **Zero JS dependencies**: Pure Rust core with napi-rs bindings
 - **Type-safe**: Full TypeScript support with auto-generated type definitions
