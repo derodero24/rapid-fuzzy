@@ -195,6 +195,9 @@ const index = new FuzzyIndex(['TypeScript', 'JavaScript', 'Python', ...]);
 index.search('typscript', { maxResults: 5 });
 index.closest('tsc');
 
+// Tip: FuzzyIndex caches results internally — extending a previous query
+// (e.g. typing "app" → "apple") reuses cached candidates for faster lookups.
+
 // Index-only results (no string cloning — less GC pressure)
 const hits = index.searchIndices('typscript', { maxResults: 5 });
 // → [{ index: 0, score: 0.85, positions: [] }, ...]
@@ -233,15 +236,19 @@ This makes FuzzyIndex ideal for search-as-you-type UIs where each keystroke exte
 
 #### Index Serialization
 
-Save a FuzzyIndex to avoid rebuilding on startup:
+Save and restore a `FuzzyIndex` to avoid rebuilding on startup:
 
 ```typescript
-const buffer = index.serialize();
-fs.writeFileSync('search-index.bin', buffer);
+import { FuzzyIndex } from 'rapid-fuzzy';
 
-// Load later (faster than rebuilding from scratch)
-const restored = FuzzyIndex.deserialize(fs.readFileSync('search-index.bin'));
-restored.search('query');
+const index = new FuzzyIndex(['apple', 'banana', 'cherry']);
+
+// Serialize to Uint8Array
+const data = index.serialize();
+
+// Restore from serialized data
+const restored = FuzzyIndex.deserialize(data);
+restored.search('aple'); // works immediately
 ```
 
 > **Note:** The serialization format is version-specific. Regenerate the index after updating rapid-fuzzy.
@@ -302,6 +309,9 @@ All token-based functions include `Batch` and `Many` variants (e.g., `tokenSortR
 <summary><strong>Batch Operations</strong></summary>
 
 All distance functions have `Batch` and `Many` variants that amortize FFI overhead:
+
+- **`*Batch`** — compute distances for an array of string pairs (many-to-many)
+- **`*Many`** — compare one reference string against many candidates (one-to-many)
 
 ```typescript
 import { levenshteinBatch, levenshteinMany } from 'rapid-fuzzy';
