@@ -3,7 +3,8 @@
  * Extract release notes for a specific version from CHANGELOG.md.
  *
  * Reads the changelog, finds the section for the given version, cleans up
- * commit hash prefixes, and appends an installation snippet.
+ * commit hash prefixes, replaces changeset headings with user-friendly ones,
+ * and appends an installation snippet with a changelog comparison link.
  *
  * Usage:
  *   node scripts/extract-changelog.js [version]
@@ -15,7 +16,8 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const version = process.argv[2] || require(path.join(process.cwd(), 'package.json')).version;
+const pkg = require(path.join(process.cwd(), 'package.json'));
+const version = process.argv[2] || pkg.version;
 const changelog = fs.readFileSync(path.join(process.cwd(), 'CHANGELOG.md'), 'utf8');
 
 // Find section for this version: between "## X.Y.Z" and next "## "
@@ -28,16 +30,36 @@ if (!match) {
   process.exit(1);
 }
 
-// Clean up: remove commit hash prefixes (e.g., "- abc1234: " → "- ")
-const notes = match[1].replace(/^- [a-f0-9]{7}: /gm, '- ').trim();
+const notes = match[1]
+  // Remove commit hash prefixes (e.g., "- abc1234: " → "- ")
+  .replace(/^- [a-f0-9]{7}: /gm, '- ')
+  // Replace changeset headings with user-friendly ones
+  .replace(/^### Major Changes$/gm, '### Breaking Changes')
+  .replace(/^### Minor Changes$/gm, '### Features')
+  .replace(/^### Patch Changes$/gm, '### Fixes & Improvements')
+  .trim();
 
-// Add installation section
-const output = `${notes}
+// Find previous version for changelog comparison link
+const versions = Array.from(changelog.matchAll(/^## (\d+\.\d+\.\d+)$/gm), (m) => m[1]);
+const currentIdx = versions.indexOf(version);
+const prevVersion =
+  currentIdx >= 0 && currentIdx < versions.length - 1 ? versions[currentIdx + 1] : null;
 
-### Installation
+// Build repo URL for changelog comparison link
+const rawUrl = typeof pkg.repository === 'string' ? pkg.repository : pkg.repository?.url || '';
+const repoUrl = rawUrl.replace(/^git\+/, '').replace(/\.git$/, '');
+
+// Build output
+const parts = [notes];
+
+parts.push(`### Installation
 
 \`\`\`bash
 npm install rapid-fuzzy@${version}
-\`\`\``;
+\`\`\``);
 
-process.stdout.write(output);
+if (prevVersion && repoUrl) {
+  parts.push(`**Full Changelog**: ${repoUrl}/compare/v${prevVersion}...v${version}`);
+}
+
+process.stdout.write(`${parts.join('\n\n')}\n`);
