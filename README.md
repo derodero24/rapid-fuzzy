@@ -301,7 +301,7 @@ All token-based functions include `Batch` and `Many` variants (e.g., `tokenSortR
 <details>
 <summary><strong>Batch Operations</strong></summary>
 
-All distance functions have `Batch` and `Many` variants that amortize FFI overhead:
+All distance functions have `Batch` and `Many` variants that amortize FFI overhead. `*Batch` functions compute metrics for multiple pairs at once, while `*Many` functions compare a single reference string against multiple candidates.
 
 ```typescript
 import { levenshteinBatch, levenshteinMany } from 'rapid-fuzzy';
