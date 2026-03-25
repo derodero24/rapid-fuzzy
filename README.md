@@ -243,7 +243,7 @@ import { FuzzyIndex } from 'rapid-fuzzy';
 
 const index = new FuzzyIndex(['apple', 'banana', 'cherry']);
 
-// Serialize to Uint8Array
+// Serialize to Buffer
 const data = index.serialize();
 
 // Restore from serialized data
