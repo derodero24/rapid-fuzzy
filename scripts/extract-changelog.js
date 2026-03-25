@@ -16,7 +16,8 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const version = process.argv[2] || require(path.join(process.cwd(), 'package.json')).version;
+const pkg = require(path.join(process.cwd(), 'package.json'));
+const version = process.argv[2] || pkg.version;
 const changelog = fs.readFileSync(path.join(process.cwd(), 'CHANGELOG.md'), 'utf8');
 
 // Find section for this version: between "## X.Y.Z" and next "## "
@@ -44,8 +45,7 @@ const currentIdx = versions.indexOf(version);
 const prevVersion =
   currentIdx >= 0 && currentIdx < versions.length - 1 ? versions[currentIdx + 1] : null;
 
-// Read repo URL from package.json
-const pkg = require(path.join(process.cwd(), 'package.json'));
+// Build repo URL for changelog comparison link
 const rawUrl = typeof pkg.repository === 'string' ? pkg.repository : pkg.repository?.url || '';
 const repoUrl = rawUrl.replace(/^git\+/, '').replace(/\.git$/, '');
 
