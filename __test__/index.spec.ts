@@ -1436,6 +1436,42 @@ describe('FuzzyIndex', () => {
   });
 });
 
+describe('FuzzyIndex.fromAsync', () => {
+  const items = ['apple', 'banana', 'grape', 'orange', 'pineapple'];
+
+  it('should return a Promise', () => {
+    const result = FuzzyIndex.fromAsync(items);
+    expect(result).toBeInstanceOf(Promise);
+    return result;
+  });
+
+  it('should resolve to a FuzzyIndex with correct size', async () => {
+    const index = await FuzzyIndex.fromAsync(items);
+    expect(index).toBeInstanceOf(FuzzyIndex);
+    expect(index.size).toBe(items.length);
+  });
+
+  it('should produce search results matching the synchronous constructor', async () => {
+    const syncIndex = new FuzzyIndex(items);
+    const asyncIndex = await FuzzyIndex.fromAsync(items);
+
+    const syncResults = syncIndex.search('aple');
+    const asyncResults = asyncIndex.search('aple');
+
+    expect(asyncResults.length).toBe(syncResults.length);
+    for (let i = 0; i < syncResults.length; i++) {
+      expect(asyncResults[i]?.item).toBe(syncResults[i]?.item);
+      expect(asyncResults[i]?.score).toBeCloseTo(syncResults[i]?.score ?? 0);
+    }
+  });
+
+  it('should handle empty items', async () => {
+    const index = await FuzzyIndex.fromAsync([]);
+    expect(index.size).toBe(0);
+    expect(index.search('anything')).toEqual([]);
+  });
+});
+
 describe('FuzzyIndex serialization', () => {
   it('should round-trip serialize and deserialize', () => {
     const items = ['TypeScript', 'JavaScript', 'Python', 'Rust'];
