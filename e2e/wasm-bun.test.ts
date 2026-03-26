@@ -1,10 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 
-// Bun does not support node:wasi (wasi.initialize is undefined),
-// so we use the browser loader which works via @napi-rs/wasm-runtime.
-const wasm = await import('../rapid-fuzzy.wasi-browser.js');
+// Use the wasm-bindgen bundler-target output which Bun supports natively.
+const wasm = await import('../rapid-fuzzy-wasm-bindgen.js');
 
-describe('WASM on Bun (browser loader)', () => {
+describe('WASM on Bun (wasm-bindgen)', () => {
   describe('distance functions', () => {
     test('levenshtein', () => {
       expect(wasm.levenshtein('hello', 'hello')).toBe(0);

@@ -1,8 +1,7 @@
 import { assert, assertEquals, assertNotEquals } from 'jsr:@std/assert';
 
-// Deno does not support the WASI CJS loader (Context is not supported),
-// so we use the browser loader which works via @napi-rs/wasm-runtime.
-const wasm = await import('../rapid-fuzzy.wasi-browser.js');
+// Use the wasm-bindgen bundler-target output which Deno supports natively.
+const wasm = await import('../rapid-fuzzy-wasm-bindgen.js');
 
 Deno.test('distance - levenshtein', () => {
   assertEquals(wasm.levenshtein('hello', 'hello'), 0);

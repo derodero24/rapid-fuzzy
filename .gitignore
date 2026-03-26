@@ -12,6 +12,12 @@ index.js
 index.d.ts
 browser.js
 
+# wasm-bindgen generated files (tracked via git add -f for npm package)
+rapid-fuzzy-wasm-bindgen.js
+rapid-fuzzy-wasm-bindgen_bg.js
+rapid-fuzzy-wasm-bindgen.d.ts
+rapid-fuzzy-wasm-bindgen_bg.wasm.d.ts
+
 # napi-rs generated binaries (build output)
 *.wasm
 *.wasi.cjs
