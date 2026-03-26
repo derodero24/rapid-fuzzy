@@ -39,6 +39,9 @@
     const firstResult = document.createElement('p');
     firstResult.textContent = `search("javas") → ${oneOff.map((r) => r.item).join(', ')}`;
     document.body.appendChild(firstResult);
+
+    // Release Rust-side memory when the page is unloaded
+    window.addEventListener('beforeunload', () => index.destroy());
   </script>
 </body>
 </html>

@@ -117,7 +117,7 @@ import { search, FuzzyIndex } from 'rapid-fuzzy';
 const index = new FuzzyIndex(['hello', 'world', 'foo', 'bar']);
 
 export default {
-  async fetch(request) {
+  fetch(request) {
     const { searchParams } = new URL(request.url);
     const query = searchParams.get('q') ?? '';
     const results = index.search(query);
@@ -129,6 +129,7 @@ export default {
 ```toml
 # wrangler.toml
 name = "rapid-fuzzy-worker"
+main = "worker.js"
 compatibility_date = "2025-01-01"
 ```
 
