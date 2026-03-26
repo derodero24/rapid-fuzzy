@@ -290,3 +290,46 @@ describe('FuzzyObjectIndex', () => {
     expect(results[0].item.user.name).toBe('Alice');
   });
 });
+
+describe('FuzzyObjectIndex.serialize / deserialize', () => {
+  const items = [
+    { name: 'John Smith', email: 'john@example.com' },
+    { name: 'Jane Doe', email: 'jane@example.com' },
+    { name: 'Bob Johnson', email: 'bob@test.com' },
+  ];
+  const options = { keys: [{ name: 'name', weight: 2.0 }, 'email'] };
+
+  it('should round-trip search results', () => {
+    const original = new FuzzyObjectIndex(items, options);
+    const buf = original.serialize();
+    const restored = FuzzyObjectIndex.deserialize(buf);
+
+    const originalResults = original.search('john');
+    const restoredResults = restored.search('john');
+
+    expect(restoredResults.length).toBe(originalResults.length);
+    for (let i = 0; i < originalResults.length; i++) {
+      expect(restoredResults[i].item).toEqual(originalResults[i].item);
+      expect(Math.abs(restoredResults[i].score - originalResults[i].score)).toBeLessThan(0.001);
+    }
+  });
+
+  it('should round-trip size and items', () => {
+    const original = new FuzzyObjectIndex(items, options);
+    const restored = FuzzyObjectIndex.deserialize(original.serialize());
+    expect(restored.size).toBe(items.length);
+    expect(restored.closest('jane')).toEqual(items[1]);
+  });
+
+  it('should serialize an empty index', () => {
+    const original = new FuzzyObjectIndex([], options);
+    const restored = FuzzyObjectIndex.deserialize(original.serialize());
+    expect(restored.size).toBe(0);
+    expect(restored.search('anything')).toEqual([]);
+  });
+
+  it('should return a Buffer', () => {
+    const index = new FuzzyObjectIndex(items, options);
+    expect(Buffer.isBuffer(index.serialize())).toBe(true);
+  });
+});
