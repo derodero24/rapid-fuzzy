@@ -58,11 +58,9 @@ function extractText(content: string): string {
       .replace(/[*_~]{1,3}/g, '')
       // Blockquotes
       .replace(/^\s*>\s*/gm, '')
-      // Script and style blocks (before generic tag removal)
-      .replace(/<script[\s\S]*?<\/script>/gi, '')
-      .replace(/<style[\s\S]*?<\/style>/gi, '')
-      // HTML tags
-      .replace(/<[^>]+>/g, '')
+      // Angle brackets (replaces rather than strips to avoid partial tag remnants)
+      .replace(/</g, ' ')
+      .replace(/>/g, ' ')
       // Collapse whitespace
       .replace(/\s+/g, ' ')
       .trim()
