@@ -98,4 +98,17 @@ export declare class FuzzyObjectIndex<T> {
 
   /** Free all internal data. */
   destroy(): void;
+
+  /**
+   * Serialize the index and its items to a Buffer.
+   *
+   * Items must be JSON-serializable. Pass the result to
+   * `FuzzyObjectIndex.deserialize()` to reconstruct the index.
+   */
+  serialize(): Buffer;
+
+  /**
+   * Reconstruct a `FuzzyObjectIndex` from a Buffer produced by `serialize()`.
+   */
+  static deserialize<T>(buffer: Buffer): FuzzyObjectIndex<T>;
 }
