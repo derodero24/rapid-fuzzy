@@ -616,3 +616,16 @@ export declare function weightedRatioMany(reference: string, candidates: Array<s
 
 // --- JS utilities (appended by scripts/patch-binding.js) ---
 export { highlight, highlightRanges, HighlightRange } from './highlight';
+/** TypedArray variants — identical to the `*Many` counterparts but return a typed array instead of `Array<number>`, reducing GC pressure for large candidate sets. */
+export declare function levenshteinManyU32(reference: string, candidates: Array<string>, maxDistance?: number | undefined | null): Uint32Array;
+export declare function damerauLevenshteinManyU32(reference: string, candidates: Array<string>, maxDistance?: number | undefined | null): Uint32Array;
+export declare function indelManyU32(reference: string, candidates: Array<string>, maxDistance?: number | undefined | null): Uint32Array;
+export declare function jaroManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array;
+export declare function jaroWinklerManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array;
+export declare function sorensenDiceManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array;
+export declare function normalizedLevenshteinManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array;
+export declare function normalizedIndelManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array;
+export declare function tokenSortRatioManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array;
+export declare function tokenSetRatioManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array;
+export declare function partialRatioManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array;
+export declare function weightedRatioManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array;

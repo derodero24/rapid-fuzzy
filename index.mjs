@@ -54,6 +54,18 @@ export const {
   weightedRatioMany,
   highlight,
   highlightRanges,
+  levenshteinManyU32,
+  damerauLevenshteinManyU32,
+  indelManyU32,
+  jaroManyF64,
+  jaroWinklerManyF64,
+  sorensenDiceManyF64,
+  normalizedLevenshteinManyF64,
+  normalizedIndelManyF64,
+  tokenSortRatioManyF64,
+  tokenSetRatioManyF64,
+  partialRatioManyF64,
+  weightedRatioManyF64,
 } = { ...binding, ...require('./highlight.js') };
 
 export const { searchObjects, FuzzyObjectIndex } = require('./objects.js');
