@@ -51,14 +51,8 @@ pnpm add rapid-fuzzy
 ### Runtime-specific notes
 
 - **Node.js** (>=20): Uses native bindings via napi-rs for best performance.
-- **Browser / Deno / Bun**: Falls back to a WASM build automatically. The WASM binary is ~660 KB raw (~230 KB gzipped).
-
-> **Browser WASM requirement**: The WASM build uses `SharedArrayBuffer` for threading, which requires the following HTTP headers on your page:
-> ```
-> Cross-Origin-Opener-Policy: same-origin
-> Cross-Origin-Embedder-Policy: require-corp
-> ```
-> Without these headers, you will see `SharedArrayBuffer is not defined`. See [MDN: SharedArrayBuffer](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/SharedArrayBuffer#security_requirements) for details.
+- **Bun**: Uses native napi-rs bindings. WASM fallback also works — see [Bun section](#bun) below.
+- **Browser / CDN / Cloudflare Workers / Deno**: Falls back to the wasm-bindgen WASM build (~195 KB raw). No `SharedArrayBuffer` or COOP/COEP headers required.
 
 ### Framework Integration (SSR)
 
@@ -84,7 +78,82 @@ export default {
 };
 ```
 
-On the client side, rapid-fuzzy automatically falls back to WASM — no additional configuration needed beyond the SharedArrayBuffer headers above.
+On the client side, rapid-fuzzy automatically falls back to WASM — no additional configuration needed.
+
+### Browser and Edge Runtime Usage
+
+#### CDN (no bundler required)
+
+Import directly from [esm.sh](https://esm.sh) in any `<script type="module">`:
+
+```html
+<script type="module">
+  import { search, FuzzyIndex } from 'https://esm.sh/rapid-fuzzy';
+
+  const results = search('typscript', ['TypeScript', 'JavaScript', 'Python']);
+  console.log(results[0].item); // 'TypeScript'
+
+  const index = new FuzzyIndex(['TypeScript', 'JavaScript', 'Python']);
+  console.log(index.search('typscript')[0].item); // 'TypeScript'
+  index.destroy();
+</script>
+```
+
+See [`examples/cdn-usage/`](examples/cdn-usage/) for a complete HTML example.
+
+#### Cloudflare Workers
+
+Install the package and import it in your Worker script. Wrangler bundles the WASM binary automatically:
+
+```bash
+npm install rapid-fuzzy
+```
+
+```js
+// worker.js
+import { search, FuzzyIndex } from 'rapid-fuzzy';
+
+// Create the index once at module scope (shared across requests)
+const index = new FuzzyIndex(['hello', 'world', 'foo', 'bar']);
+
+export default {
+  async fetch(request) {
+    const { searchParams } = new URL(request.url);
+    const query = searchParams.get('q') ?? '';
+    const results = index.search(query);
+    return Response.json(results);
+  },
+};
+```
+
+```toml
+# wrangler.toml
+name = "rapid-fuzzy-worker"
+compatibility_date = "2025-01-01"
+```
+
+See [`examples/cloudflare-workers/`](examples/cloudflare-workers/) for a complete example.
+
+#### Deno
+
+Use rapid-fuzzy via the `npm:` specifier (Deno 1.28+):
+
+```ts
+import { search } from 'npm:rapid-fuzzy';
+
+const results = search('typscript', ['TypeScript', 'JavaScript', 'Python']);
+console.log(results[0].item); // 'TypeScript'
+```
+
+Or import from a CDN directly:
+
+```ts
+import { search } from 'https://esm.sh/rapid-fuzzy';
+```
+
+#### Bun
+
+Bun uses the native napi-rs bindings when available (fastest). You can also use the wasm-bindgen WASM files directly if needed — see [`e2e/wasm-bun.test.ts`](e2e/wasm-bun.test.ts) for the manual initialization pattern.
 
 ## API
 
