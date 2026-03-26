@@ -68,9 +68,17 @@ patchFile(
 );
 
 // --- browser.js (ESM) ---
-patchFile(
+// Overwrite entirely: use wasm-bindgen output instead of the napi-rs WASI package.
+fs.writeFileSync(
   'browser.js',
-  ["export { highlight, highlightRanges } from './highlight.mjs';"].join('\n'),
+  [
+    "export * from './rapid-fuzzy-wasm-bindgen.js';",
+    '',
+    `${MARKER}`,
+    "export { highlight, highlightRanges } from './highlight.mjs';",
+    '',
+  ].join('\n'),
 );
+console.log('  patched browser.js');
 
 console.log('Done — JS utilities patched into binding files.');

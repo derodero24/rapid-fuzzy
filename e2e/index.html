@@ -11,7 +11,29 @@
     const out = document.getElementById('output');
 
     try {
-      const mod = await import('../rapid-fuzzy.wasi-browser.js');
+      // Vite 8 does not support the TC39 WebAssembly ESM integration proposal,
+      // so we cannot import rapid-fuzzy-wasm-bindgen.js directly (it contains
+      // `import * as wasm from './file.wasm'` which Vite rejects with
+      // "ESM integration proposal for Wasm is not supported currently").
+      //
+      // Instead, import the background bindings (no .wasm imports) and
+      // instantiate the WASM binary manually.
+      //
+      // We cannot use fetch('../rapid-fuzzy-wasm-bindgen_bg.wasm') because
+      // fetch() resolves URLs relative to the page URL (http://localhost:4567/),
+      // not the filesystem — so '../' stays at '/' and Vite never finds the file.
+      // Instead, use import('...?url') which is intercepted by Vite's module
+      // resolver (filesystem-aware) and returns the correct @fs/ URL.
+      const [mod, { default: wasmUrl }] = await Promise.all([
+        import('../rapid-fuzzy-wasm-bindgen_bg.js'),
+        import('../rapid-fuzzy-wasm-bindgen_bg.wasm?url'),
+      ]);
+
+      const bytes = await fetch(wasmUrl).then(r => r.arrayBuffer());
+      const { instance } = await WebAssembly.instantiate(bytes, {
+        './rapid-fuzzy-wasm-bindgen_bg.js': mod,
+      });
+      mod.__wbg_set_wasm(instance.exports);
 
       const results = {};
 
@@ -24,13 +46,13 @@
       results.jaroWinkler = mod.jaroWinkler('hello', 'hello');
       results.sorensenDice = mod.sorensenDice('hello', 'hello');
 
-      // Batch functions
-      results.levenshteinBatch = mod.levenshteinBatch([['hello', 'hello'], ['hello', 'world']]);
-      results.jaroBatch = mod.jaroBatch([['hello', 'hello'], ['abc', 'xyz']]);
+      // Batch functions — convert TypedArray to plain array for JSON serialization
+      results.levenshteinBatch = Array.from(mod.levenshteinBatch([['hello', 'hello'], ['hello', 'world']]));
+      results.jaroBatch = Array.from(mod.jaroBatch([['hello', 'hello'], ['abc', 'xyz']]));
 
-      // Many functions
-      results.levenshteinMany = mod.levenshteinMany('hello', ['hello', 'world', 'help']);
-      results.jaroMany = mod.jaroMany('hello', ['hello', 'world']);
+      // Many functions — convert TypedArray to plain array for JSON serialization
+      results.levenshteinMany = Array.from(mod.levenshteinMany('hello', ['hello', 'world', 'help']));
+      results.jaroMany = Array.from(mod.jaroMany('hello', ['hello', 'world']));
 
       // Token-based functions
       results.tokenSortRatio = mod.tokenSortRatio('New York Mets', 'Mets New York');
@@ -42,9 +64,10 @@
       results.search = mod.search('type', ['TypeScript', 'JavaScript', 'Python', 'TypeSpec']);
       results.searchEmpty = mod.search('', ['hello', 'world']);
 
-      // Closest
-      results.closest = mod.closest('apple', ['application', 'banana', 'apple pie']);
-      results.closestEmpty = mod.closest('hello', []);
+      // Closest — wasm-bindgen maps Rust Option::None to undefined; coerce to null
+      // for JSON serializability and consistent Playwright page.evaluate() behavior.
+      results.closest = mod.closest('apple', ['application', 'banana', 'apple pie']) ?? null;
+      results.closestEmpty = mod.closest('hello', []) ?? null;
 
       // FuzzyIndex
       const index = new mod.FuzzyIndex(['apple', 'banana', 'grape', 'orange']);

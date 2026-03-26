@@ -78,7 +78,12 @@
     "highlight.mjs",
     "highlight.d.ts",
     "highlight.d.mts",
-    "objects.d.mts"
+    "objects.d.mts",
+    "rapid-fuzzy-wasm-bindgen.js",
+    "rapid-fuzzy-wasm-bindgen_bg.js",
+    "rapid-fuzzy-wasm-bindgen_bg.wasm",
+    "rapid-fuzzy-wasm-bindgen.d.ts",
+    "rapid-fuzzy-wasm-bindgen_bg.wasm.d.ts"
   ],
   "napi": {
     "binaryName": "rapid-fuzzy",
@@ -104,6 +109,8 @@
     "build:debug": "napi build --manifest-path crates/core/Cargo.toml --platform --js index.js --dts index.d.ts --output-dir .",
     "build:wasm": "napi build --manifest-path crates/core/Cargo.toml --platform --release --js index.js --dts index.d.ts --output-dir . --target wasm32-wasip1-threads",
     "postbuild:wasm": "node scripts/optimize-wasm.js",
+    "build:wasm-bindgen": "node scripts/build-wasm-bindgen.js",
+    "postbuild:wasm-bindgen": "node scripts/optimize-wasm.js",
     "optimize:wasm": "node scripts/optimize-wasm.js",
     "artifacts": "napi artifacts",
     "prepublishOnly": "napi prepublish -t npm",

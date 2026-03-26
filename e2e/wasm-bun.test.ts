@@ -1,10 +1,25 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-// Bun does not support node:wasi (wasi.initialize is undefined),
-// so we use the browser loader which works via @napi-rs/wasm-runtime.
-const wasm = await import('../rapid-fuzzy.wasi-browser.js');
+// Bun 1.x does not implement the TC39 WebAssembly ESM integration that
+// wasm-bindgen's bundler target relies on (Bun treats .wasm imports as URL
+// strings rather than instantiated module exports). We instantiate the WASM
+// binary manually via the Node.js-compatible WebAssembly API instead.
+import * as wasm from '../rapid-fuzzy-wasm-bindgen_bg.js';
 
-describe('WASM on Bun (browser loader)', () => {
+const wasmPath = join(
+  dirname(fileURLToPath(import.meta.url)),
+  '../rapid-fuzzy-wasm-bindgen_bg.wasm',
+);
+const wasmModule = new WebAssembly.Module(readFileSync(wasmPath));
+const wasmInstance = new WebAssembly.Instance(wasmModule, {
+  './rapid-fuzzy-wasm-bindgen_bg.js': wasm,
+});
+wasm.__wbg_set_wasm(wasmInstance.exports);
+
+describe('WASM on Bun (wasm-bindgen)', () => {
   describe('distance functions', () => {
     test('levenshtein', () => {
       expect(wasm.levenshtein('hello', 'hello')).toBe(0);
@@ -39,7 +54,7 @@ describe('WASM on Bun (browser loader)', () => {
           ['hello', 'hello'],
           ['hello', 'world'],
         ]),
-      ).toEqual([0, 4]);
+      ).toEqual(new Uint32Array([0, 4]));
     });
   });
 
@@ -83,8 +98,8 @@ describe('WASM on Bun (browser loader)', () => {
       expect(result).not.toBeNull();
     });
 
-    test('closest returns null for empty items', () => {
-      expect(wasm.closest('hello', [])).toBeNull();
+    test('closest returns undefined for empty items', () => {
+      expect(wasm.closest('hello', [])).toBeUndefined();
     });
   });
 
