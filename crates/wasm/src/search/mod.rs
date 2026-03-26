@@ -9,7 +9,7 @@ pub use keys::search_keys;
 use nucleo_matcher::pattern::CaseMatching;
 use rapid_fuzzy_core::search as core;
 use serde::{Deserialize, Serialize};
-use tsify_next::Tsify;
+use tsify::Tsify;
 use wasm_bindgen::prelude::*;
 
 // ─── Shared wasm types ──────────────────────────────────────────────────────
