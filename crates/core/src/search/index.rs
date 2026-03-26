@@ -448,7 +448,11 @@ impl FuzzyIndex {
         *self.last_query.borrow_mut() = query.to_owned();
         *self.last_matching_indices.borrow_mut() = outcome.all_matching_indices;
 
-        outcome.results
+        outcome
+            .results
+            .into_iter()
+            .map(SearchResult::from)
+            .collect()
     }
 
     fn search_indices_impl(
@@ -510,7 +514,11 @@ impl FuzzyIndex {
         *self.last_query.borrow_mut() = query.to_owned();
         *self.last_matching_indices.borrow_mut() = outcome.all_matching_indices;
 
-        outcome.results
+        outcome
+            .results
+            .into_iter()
+            .map(IndexSearchResult::from)
+            .collect()
     }
 
     fn invalidate_cache(&self) {

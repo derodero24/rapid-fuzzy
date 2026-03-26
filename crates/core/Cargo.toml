@@ -9,6 +9,7 @@ repository.workspace = true
 crate-type = ["cdylib"]
 
 [dependencies]
+rapid-fuzzy-core = { path = "../core-lib" }
 napi = { workspace = true }
 napi-derive = { workspace = true }
 strsim = { workspace = true }
