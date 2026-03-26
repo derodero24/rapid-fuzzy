@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 
-use napi::Either;
-use napi::bindgen_prelude::Buffer;
+use napi::bindgen_prelude::{AsyncTask, Buffer};
+use napi::{Either, Task};
 use napi_derive::napi;
 use nucleo_matcher::pattern::CaseMatching;
 use nucleo_matcher::{Config, Matcher, Utf32String};
@@ -11,6 +11,51 @@ use super::{
     compute_char_mask, extract_query_bigrams, intersect_sorted, resolve_case_matching,
     search_over_precomputed, search_over_precomputed_indices,
 };
+
+/// Precomputed index data — all fields `Send`, used to transfer work off the event loop.
+pub struct FuzzyIndexData {
+    items: Vec<String>,
+    utf32_items: Vec<Utf32String>,
+    char_masks: Vec<u64>,
+    bigram_index: BigramIndex,
+}
+
+pub struct BuildFuzzyIndexTask {
+    items: Vec<String>,
+}
+
+impl Task for BuildFuzzyIndexTask {
+    type Output = FuzzyIndexData;
+    type JsValue = FuzzyIndex;
+
+    fn compute(&mut self) -> napi::Result<Self::Output> {
+        let utf32_items: Vec<Utf32String> = self
+            .items
+            .iter()
+            .map(|s| Utf32String::from(s.as_str()))
+            .collect();
+        let char_masks: Vec<u64> = self.items.iter().map(|s| compute_char_mask(s)).collect();
+        let bigram_index = BigramIndex::new(&self.items);
+        Ok(FuzzyIndexData {
+            items: std::mem::take(&mut self.items),
+            utf32_items,
+            char_masks,
+            bigram_index,
+        })
+    }
+
+    fn resolve(&mut self, _env: napi::Env, output: Self::Output) -> napi::Result<Self::JsValue> {
+        Ok(FuzzyIndex {
+            items: output.items,
+            utf32_items: output.utf32_items,
+            char_masks: output.char_masks,
+            bigram_index: output.bigram_index,
+            matcher: RefCell::new(Matcher::new(Config::DEFAULT)),
+            last_query: RefCell::new(String::new()),
+            last_matching_indices: RefCell::new(Vec::new()),
+        })
+    }
+}
 
 /// Minimum dataset size for bigram pre-filtering at query time.
 /// Below this threshold, the overhead of bigram intersection exceeds the
@@ -58,6 +103,15 @@ impl FuzzyIndex {
             last_query: RefCell::new(String::new()),
             last_matching_indices: RefCell::new(Vec::new()),
         }
+    }
+
+    /// Construct a FuzzyIndex on the libuv thread pool, returning a Promise.
+    ///
+    /// For large datasets this keeps the JavaScript event loop unblocked during
+    /// index construction. The synchronous constructor is fine for small datasets.
+    #[napi(ts_return_type = "Promise<FuzzyIndex>")]
+    pub fn from_async(items: Vec<String>) -> AsyncTask<BuildFuzzyIndexTask> {
+        AsyncTask::new(BuildFuzzyIndexTask { items })
     }
 
     /// Return the number of items in the index.

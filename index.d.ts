@@ -13,6 +13,13 @@
 export declare class FuzzyIndex {
   /** Create a new FuzzyIndex from an array of strings. */
   constructor(items: Array<string>)
+  /**
+   * Construct a FuzzyIndex on the libuv thread pool, returning a Promise.
+   *
+   * For large datasets this keeps the JavaScript event loop unblocked during
+   * index construction. The synchronous constructor is fine for small datasets.
+   */
+  static fromAsync(items: Array<string>): Promise<FuzzyIndex>
   /** Return the number of items in the index. */
   get size(): number
   /**
