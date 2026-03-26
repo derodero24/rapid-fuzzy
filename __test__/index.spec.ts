@@ -5,39 +5,51 @@ import {
   damerauLevenshtein,
   damerauLevenshteinBatch,
   damerauLevenshteinMany,
+  damerauLevenshteinManyU32,
   FuzzyIndex,
   hamming,
   hammingBatch,
   hammingMany,
+  indelManyU32,
   jaro,
   jaroBatch,
   jaroMany,
+  jaroManyF64,
   jaroWinkler,
   jaroWinklerBatch,
   jaroWinklerMany,
+  jaroWinklerManyF64,
   levenshtein,
   levenshteinBatch,
   levenshteinMany,
+  levenshteinManyU32,
+  normalizedIndelManyF64,
   normalizedLevenshtein,
   normalizedLevenshteinBatch,
   normalizedLevenshteinMany,
+  normalizedLevenshteinManyF64,
   partialRatio,
   partialRatioBatch,
   partialRatioMany,
+  partialRatioManyF64,
   search,
   searchKeys,
   sorensenDice,
   sorensenDiceBatch,
   sorensenDiceMany,
+  sorensenDiceManyF64,
   tokenSetRatio,
   tokenSetRatioBatch,
   tokenSetRatioMany,
+  tokenSetRatioManyF64,
   tokenSortRatio,
   tokenSortRatioBatch,
   tokenSortRatioMany,
+  tokenSortRatioManyF64,
   weightedRatio,
   weightedRatioBatch,
   weightedRatioMany,
+  weightedRatioManyF64,
 } from '../index.js';
 
 describe('distance', () => {
@@ -1647,5 +1659,89 @@ describe('searchKeys', () => {
       expect(keyResults[i]?.index).toBe(stdResults[i]?.index);
       expect(keyResults[i]?.score).toBeCloseTo(stdResults[i]?.score ?? 0);
     }
+  });
+});
+
+describe('TypedArray variants', () => {
+  const cands = ['kitten', 'sitting', 'kittens', 'kitchen'];
+
+  it('levenshteinManyU32 returns Uint32Array matching levenshteinMany', () => {
+    const arr = levenshteinManyU32('kitten', cands);
+    expect(arr).toBeInstanceOf(Uint32Array);
+    expect(Array.from(arr)).toEqual(levenshteinMany('kitten', cands));
+  });
+
+  it('damerauLevenshteinManyU32 returns Uint32Array matching damerauLevenshteinMany', () => {
+    const arr = damerauLevenshteinManyU32('kitten', cands);
+    expect(arr).toBeInstanceOf(Uint32Array);
+    expect(Array.from(arr)).toEqual(damerauLevenshteinMany('kitten', cands));
+  });
+
+  it('indelManyU32 returns Uint32Array matching indelMany', () => {
+    const { indelMany } = require('../index.js') as typeof import('../index.js');
+    const arr = indelManyU32('kitten', cands);
+    expect(arr).toBeInstanceOf(Uint32Array);
+    expect(Array.from(arr)).toEqual(indelMany('kitten', cands));
+  });
+
+  it('jaroManyF64 returns Float64Array matching jaroMany', () => {
+    const arr = jaroManyF64('kitten', cands);
+    expect(arr).toBeInstanceOf(Float64Array);
+    expect(Array.from(arr)).toEqual(jaroMany('kitten', cands));
+  });
+
+  it('jaroWinklerManyF64 returns Float64Array matching jaroWinklerMany', () => {
+    const arr = jaroWinklerManyF64('kitten', cands);
+    expect(arr).toBeInstanceOf(Float64Array);
+    expect(Array.from(arr)).toEqual(jaroWinklerMany('kitten', cands));
+  });
+
+  it('sorensenDiceManyF64 returns Float64Array matching sorensenDiceMany', () => {
+    const arr = sorensenDiceManyF64('kitten', cands);
+    expect(arr).toBeInstanceOf(Float64Array);
+    expect(Array.from(arr)).toEqual(sorensenDiceMany('kitten', cands));
+  });
+
+  it('normalizedLevenshteinManyF64 returns Float64Array matching normalizedLevenshteinMany', () => {
+    const arr = normalizedLevenshteinManyF64('kitten', cands);
+    expect(arr).toBeInstanceOf(Float64Array);
+    expect(Array.from(arr)).toEqual(normalizedLevenshteinMany('kitten', cands));
+  });
+
+  it('normalizedIndelManyF64 returns Float64Array matching normalizedIndelMany', () => {
+    const { normalizedIndelMany } = require('../index.js') as typeof import('../index.js');
+    const arr = normalizedIndelManyF64('kitten', cands);
+    expect(arr).toBeInstanceOf(Float64Array);
+    expect(Array.from(arr)).toEqual(normalizedIndelMany('kitten', cands));
+  });
+
+  it('tokenSortRatioManyF64 returns Float64Array matching tokenSortRatioMany', () => {
+    const arr = tokenSortRatioManyF64('hello world', ['world hello', 'foo bar']);
+    expect(arr).toBeInstanceOf(Float64Array);
+    expect(Array.from(arr)).toEqual(tokenSortRatioMany('hello world', ['world hello', 'foo bar']));
+  });
+
+  it('tokenSetRatioManyF64 returns Float64Array matching tokenSetRatioMany', () => {
+    const arr = tokenSetRatioManyF64('hello world', ['world hello', 'foo bar']);
+    expect(arr).toBeInstanceOf(Float64Array);
+    expect(Array.from(arr)).toEqual(tokenSetRatioMany('hello world', ['world hello', 'foo bar']));
+  });
+
+  it('partialRatioManyF64 returns Float64Array matching partialRatioMany', () => {
+    const arr = partialRatioManyF64('kitten', cands);
+    expect(arr).toBeInstanceOf(Float64Array);
+    expect(Array.from(arr)).toEqual(partialRatioMany('kitten', cands));
+  });
+
+  it('weightedRatioManyF64 returns Float64Array matching weightedRatioMany', () => {
+    const arr = weightedRatioManyF64('kitten', cands);
+    expect(arr).toBeInstanceOf(Float64Array);
+    expect(Array.from(arr)).toEqual(weightedRatioMany('kitten', cands));
+  });
+
+  it('passes threshold through to underlying function', () => {
+    const arr = levenshteinManyU32('kitten', cands, 2);
+    const plain = levenshteinMany('kitten', cands, 2);
+    expect(Array.from(arr)).toEqual(plain);
   });
 });
