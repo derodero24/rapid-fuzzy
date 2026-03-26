@@ -15,13 +15,21 @@
       // so we cannot import rapid-fuzzy-wasm-bindgen.js directly (it contains
       // `import * as wasm from './file.wasm'` which Vite rejects with
       // "ESM integration proposal for Wasm is not supported currently").
+      //
       // Instead, import the background bindings (no .wasm imports) and
-      // instantiate the WASM binary manually via WebAssembly.instantiateStreaming.
-      const mod = await import('../rapid-fuzzy-wasm-bindgen_bg.js');
+      // instantiate the WASM binary manually.
+      //
+      // We cannot use fetch('../rapid-fuzzy-wasm-bindgen_bg.wasm') because
+      // fetch() resolves URLs relative to the page URL (http://localhost:4567/),
+      // not the filesystem — so '../' stays at '/' and Vite never finds the file.
+      // Instead, use import('...?url') which is intercepted by Vite's module
+      // resolver (filesystem-aware) and returns the correct @fs/ URL.
+      const [mod, { default: wasmUrl }] = await Promise.all([
+        import('../rapid-fuzzy-wasm-bindgen_bg.js'),
+        import('../rapid-fuzzy-wasm-bindgen_bg.wasm?url'),
+      ]);
 
-      // Use instantiate with ArrayBuffer instead of instantiateStreaming to avoid
-      // MIME type restrictions (Vite dev server may not serve .wasm as application/wasm).
-      const bytes = await fetch('../rapid-fuzzy-wasm-bindgen_bg.wasm').then(r => r.arrayBuffer());
+      const bytes = await fetch(wasmUrl).then(r => r.arrayBuffer());
       const { instance } = await WebAssembly.instantiate(bytes, {
         './rapid-fuzzy-wasm-bindgen_bg.js': mod,
       });
