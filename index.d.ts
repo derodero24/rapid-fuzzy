@@ -348,8 +348,9 @@ export declare function partialRatioBatch(pairs: Array<Array<string>>): Array<nu
  * Compute the partial ratio from one reference string to many candidates.
  *
  * Returns an array of similarity scores, one per candidate, in the same order as the input.
+ * If `min_similarity` is provided, candidates scoring below the threshold return `0.0`.
  */
-export declare function partialRatioMany(reference: string, candidates: Array<string>): Array<number>
+export declare function partialRatioMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number>
 
 /**
  * Perform fuzzy search over a list of strings.
@@ -436,8 +437,10 @@ export declare function sorensenDiceBatch(pairs: Array<Array<string>>): Array<nu
  * Compute the Sorensen-Dice coefficient from one reference string to many candidates.
  *
  * Returns an array of similarity scores, one per candidate, in the same order as the input.
+ * If `min_similarity` is provided, candidates scoring below the threshold return `0.0`.
+ * Reference bigrams are pre-computed once and reused for all candidates.
  */
-export declare function sorensenDiceMany(reference: string, candidates: Array<string>): Array<number>
+export declare function sorensenDiceMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number>
 
 /**
  * Compute the token set ratio between two strings.
@@ -460,8 +463,9 @@ export declare function tokenSetRatioBatch(pairs: Array<Array<string>>): Array<n
  * Compute the token set ratio from one reference string to many candidates.
  *
  * Returns an array of similarity scores, one per candidate, in the same order as the input.
+ * If `min_similarity` is provided, candidates scoring below the threshold return `0.0`.
  */
-export declare function tokenSetRatioMany(reference: string, candidates: Array<string>): Array<number>
+export declare function tokenSetRatioMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number>
 
 /**
  * Compute the token sort ratio between two strings.
@@ -484,8 +488,9 @@ export declare function tokenSortRatioBatch(pairs: Array<Array<string>>): Array<
  * Compute the token sort ratio from one reference string to many candidates.
  *
  * Returns an array of similarity scores, one per candidate, in the same order as the input.
+ * If `min_similarity` is provided, candidates scoring below the threshold return `0.0`.
  */
-export declare function tokenSortRatioMany(reference: string, candidates: Array<string>): Array<number>
+export declare function tokenSortRatioMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number>
 
 /**
  * Compute the weighted ratio between two strings.
@@ -508,8 +513,9 @@ export declare function weightedRatioBatch(pairs: Array<Array<string>>): Array<n
  * Compute the weighted ratio from one reference string to many candidates.
  *
  * Returns an array of similarity scores, one per candidate, in the same order as the input.
+ * If `min_similarity` is provided, candidates scoring below the threshold return `0.0`.
  */
-export declare function weightedRatioMany(reference: string, candidates: Array<string>): Array<number>
+export declare function weightedRatioMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number>
 
 // --- JS utilities (appended by scripts/patch-binding.js) ---
 export { highlight, highlightRanges, HighlightRange } from './highlight';
