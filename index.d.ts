@@ -95,6 +95,15 @@ export declare class KeyedFuzzyIndex {
    */
   search(query: string, options?: SearchOptions | undefined | null): Array<KeySearchResult>
   /**
+   * Find the index of the closest matching item.
+   *
+   * Returns the index of the best match, or null if no match is found.
+   * If `min_score` is provided, returns null when the best match scores below the threshold.
+   *
+   * Use the returned index to look up the item in your own data array.
+   */
+  closest(query: string, minScore?: number | undefined | null): number | null
+  /**
    * Add a single item to the index.
    *
    * `key_values` must have the same length as the number of keys.
@@ -116,6 +125,16 @@ export declare class KeyedFuzzyIndex {
   remove(index: number): boolean
   /** Free the internal data. After calling this, the index is empty. */
   destroy(): void
+  /**
+   * Serialize the index to a compact binary format.
+   *
+   * The returned Buffer can be written to disk, stored in IndexedDB,
+   * or transferred over the network. Use `KeyedFuzzyIndex.deserialize()` to
+   * reconstruct the index.
+   */
+  serialize(): Buffer
+  /** Reconstruct a KeyedFuzzyIndex from a previously serialized Buffer. */
+  static deserialize(data: Buffer): KeyedFuzzyIndex
 }
 
 /**

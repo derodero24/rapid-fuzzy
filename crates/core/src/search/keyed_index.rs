@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 
+use napi::bindgen_prelude::Buffer;
 use napi_derive::napi;
 use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
 use nucleo_matcher::{Config, Matcher, Utf32String};
@@ -260,6 +261,27 @@ impl KeyedFuzzyIndex {
             .collect()
     }
 
+    /// Find the index of the closest matching item.
+    ///
+    /// Returns the index of the best match, or null if no match is found.
+    /// If `min_score` is provided, returns null when the best match scores below the threshold.
+    ///
+    /// Use the returned index to look up the item in your own data array.
+    #[napi]
+    pub fn closest(&self, query: String, min_score: Option<f64>) -> Option<u32> {
+        let results = self.search(
+            query,
+            Some(SearchOptions {
+                max_results: Some(1),
+                min_score,
+                include_positions: Some(false),
+                is_case_sensitive: None,
+                return_all_on_empty: None,
+            }),
+        );
+        results.into_iter().next().map(|r| r.index)
+    }
+
     /// Add a single item to the index.
     ///
     /// `key_values` must have the same length as the number of keys.
@@ -330,7 +352,140 @@ impl KeyedFuzzyIndex {
         self.weights = Vec::new();
         self.total_weight = 0.0;
     }
+
+    /// Serialize the index to a compact binary format.
+    ///
+    /// The returned Buffer can be written to disk, stored in IndexedDB,
+    /// or transferred over the network. Use `KeyedFuzzyIndex.deserialize()` to
+    /// reconstruct the index.
+    #[napi]
+    pub fn serialize(&self) -> Buffer {
+        self.serialize_impl().into()
+    }
+
+    /// Reconstruct a KeyedFuzzyIndex from a previously serialized Buffer.
+    #[napi(factory)]
+    pub fn deserialize(data: Buffer) -> napi::Result<Self> {
+        Self::deserialize_impl(&data).map_err(napi::Error::from_reason)
+    }
+
+    fn serialize_impl(&self) -> Vec<u8> {
+        // Format:
+        //   [magic 4B] [version u32 LE] [num_keys u32 LE] [num_items u32 LE]
+        //   [weights: num_keys × f64 LE]
+        //   [key_texts column-major: for each key, for each item: [len u32 LE][utf-8 bytes]]
+        let num_keys = self.weights.len();
+        let num_items = self.size() as usize;
+
+        let mut buf = Vec::new();
+        buf.extend_from_slice(SERIALIZE_MAGIC);
+        buf.extend_from_slice(&SERIALIZE_VERSION.to_le_bytes());
+        buf.extend_from_slice(&(num_keys as u32).to_le_bytes());
+        buf.extend_from_slice(&(num_items as u32).to_le_bytes());
+
+        for &w in &self.weights {
+            buf.extend_from_slice(&w.to_le_bytes());
+        }
+
+        for key_col in &self.key_texts {
+            for item in key_col {
+                buf.extend_from_slice(&(item.len() as u32).to_le_bytes());
+                buf.extend_from_slice(item.as_bytes());
+            }
+        }
+
+        buf
+    }
+
+    fn deserialize_impl(bytes: &[u8]) -> Result<Self, String> {
+        let header_size = 4 + 4 + 4 + 4; // magic + version + num_keys + num_items
+
+        if bytes.len() < header_size {
+            return Err("Invalid data: too short".into());
+        }
+
+        if &bytes[0..4] != SERIALIZE_MAGIC {
+            return Err("Invalid data: bad magic bytes".into());
+        }
+
+        let version = u32::from_le_bytes(
+            bytes[4..8]
+                .try_into()
+                .map_err(|_| "Invalid data: truncated header".to_string())?,
+        );
+        if version != SERIALIZE_VERSION {
+            return Err(format!(
+                "Unsupported format version: expected {SERIALIZE_VERSION}, got {version}"
+            ));
+        }
+
+        let num_keys = u32::from_le_bytes(
+            bytes[8..12]
+                .try_into()
+                .map_err(|_| "Invalid data: truncated header".to_string())?,
+        ) as usize;
+
+        let num_items = u32::from_le_bytes(
+            bytes[12..16]
+                .try_into()
+                .map_err(|_| "Invalid data: truncated header".to_string())?,
+        ) as usize;
+
+        let mut offset = header_size;
+
+        // Read weights (num_keys × 8 bytes each)
+        let weights_size = num_keys * 8;
+        if offset + weights_size > bytes.len() {
+            return Err("Invalid data: truncated weights".into());
+        }
+        let mut weights = Vec::with_capacity(num_keys);
+        for _ in 0..num_keys {
+            let w = f64::from_le_bytes(
+                bytes[offset..offset + 8]
+                    .try_into()
+                    .map_err(|_| "Invalid data: truncated weight".to_string())?,
+            );
+            weights.push(w);
+            offset += 8;
+        }
+
+        // Read key_texts column-major
+        let mut key_texts: Vec<Vec<String>> = Vec::with_capacity(num_keys);
+        for _ in 0..num_keys {
+            let mut col = Vec::with_capacity(num_items);
+            for _ in 0..num_items {
+                if offset + 4 > bytes.len() {
+                    return Err("Invalid data: truncated".into());
+                }
+                let len = u32::from_le_bytes(
+                    bytes[offset..offset + 4]
+                        .try_into()
+                        .map_err(|_| "Invalid data: truncated".to_string())?,
+                ) as usize;
+                offset += 4;
+                if offset + len > bytes.len() {
+                    return Err("Invalid data: truncated".into());
+                }
+                let s = std::str::from_utf8(&bytes[offset..offset + len])
+                    .map_err(|e| format!("Invalid UTF-8: {e}"))?;
+                col.push(s.to_owned());
+                offset += len;
+            }
+            key_texts.push(col);
+        }
+
+        if offset != bytes.len() {
+            return Err("Invalid data: trailing bytes".into());
+        }
+
+        Self::new_impl(key_texts, weights)
+    }
 }
+
+/// Magic bytes identifying a serialized KeyedFuzzyIndex.
+const SERIALIZE_MAGIC: &[u8; 4] = b"RFKI";
+/// Current serialization format version.
+const SERIALIZE_VERSION: u32 = 1;
 
 #[cfg(test)]
 mod tests {
@@ -631,5 +786,48 @@ mod tests {
             vec![1.0, 1.0],
         );
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_closest_returns_correct_index() {
+        let index = make_index();
+        let result = index.closest("john".to_string(), None);
+        assert_eq!(result, Some(0)); // John Smith is at index 0
+    }
+
+    #[test]
+    fn test_closest_returns_none_when_min_score_too_high() {
+        let index = make_index();
+        let result = index.closest("john".to_string(), Some(1.1));
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_serialize_deserialize_roundtrip() {
+        let index = make_index();
+        let buf = index.serialize_impl();
+        let restored = KeyedFuzzyIndex::deserialize_impl(&buf).unwrap();
+
+        assert_eq!(restored.size(), index.size());
+
+        let original_results = index.search("john".to_string(), None);
+        let restored_results = restored.search("john".to_string(), None);
+
+        assert_eq!(original_results.len(), restored_results.len());
+        for (orig, rest) in original_results.iter().zip(restored_results.iter()) {
+            assert_eq!(orig.index, rest.index);
+            assert!((orig.score - rest.score).abs() < f64::EPSILON);
+        }
+    }
+
+    #[test]
+    fn test_deserialize_fails_on_bad_magic() {
+        let mut buf = b"XXXX".to_vec();
+        buf.extend_from_slice(&1u32.to_le_bytes()); // version
+        buf.extend_from_slice(&0u32.to_le_bytes()); // num_keys
+        buf.extend_from_slice(&0u32.to_le_bytes()); // num_items
+        let result = KeyedFuzzyIndex::deserialize_impl(&buf);
+        assert!(result.is_err());
+        assert!(result.err().unwrap().contains("bad magic bytes"));
     }
 }
