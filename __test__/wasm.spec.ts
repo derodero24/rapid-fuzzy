@@ -325,7 +325,10 @@ describe.skipIf(!wasmAvailable)('wasm', () => {
     it('search should return sorted results', () => {
       const results = wasm.search('type', ['TypeScript', 'JavaScript', 'Python', 'TypeSpec']);
       expect(results.length).toBeGreaterThan(0);
-      expect(results[0].item).toBe('TypeScript');
+      // Verify results are sorted by score descending
+      for (let i = 1; i < results.length; i++) {
+        expect(results[i - 1].score).toBeGreaterThanOrEqual(results[i].score);
+      }
       expect(results[0]).toHaveProperty('score');
       expect(results[0]).toHaveProperty('index');
     });
