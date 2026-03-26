@@ -131,6 +131,19 @@
       }
     },
     {
+      "includes": ["examples/vitepress-plugin/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noDefaultExport": "off"
+          },
+          "correctness": {
+            "noUndeclaredDependencies": "off"
+          }
+        }
+      }
+    },
+    {
       "includes": ["playground/**"],
       "linter": {
         "rules": {
