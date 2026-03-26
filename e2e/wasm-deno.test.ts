@@ -34,7 +34,7 @@ Deno.test('batch - levenshteinBatch', () => {
       ['hello', 'hello'],
       ['hello', 'world'],
     ]),
-    [0, 4],
+    new Uint32Array([0, 4]),
   );
 });
 
@@ -71,8 +71,8 @@ Deno.test('closest - returns best match', () => {
   assertNotEquals(result, null);
 });
 
-Deno.test('closest - empty items returns null', () => {
-  assertEquals(wasm.closest('hello', []), null);
+Deno.test('closest - empty items returns undefined', () => {
+  assertEquals(wasm.closest('hello', []), undefined);
 });
 
 Deno.test('FuzzyIndex - lifecycle', () => {

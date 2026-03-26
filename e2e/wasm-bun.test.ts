@@ -1,7 +1,23 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-// Use the wasm-bindgen bundler-target output which Bun supports natively.
-const wasm = await import('../rapid-fuzzy-wasm-bindgen.js');
+// Bun 1.x does not implement the TC39 WebAssembly ESM integration that
+// wasm-bindgen's bundler target relies on (Bun treats .wasm imports as URL
+// strings rather than instantiated module exports). We instantiate the WASM
+// binary manually via the Node.js-compatible WebAssembly API instead.
+import * as wasm from '../rapid-fuzzy-wasm-bindgen_bg.js';
+
+const wasmPath = join(
+  dirname(fileURLToPath(import.meta.url)),
+  '../rapid-fuzzy-wasm-bindgen_bg.wasm',
+);
+const wasmModule = new WebAssembly.Module(readFileSync(wasmPath));
+const wasmInstance = new WebAssembly.Instance(wasmModule, {
+  './rapid-fuzzy-wasm-bindgen_bg.js': wasm,
+});
+wasm.__wbg_set_wasm(wasmInstance.exports);
 
 describe('WASM on Bun (wasm-bindgen)', () => {
   describe('distance functions', () => {
@@ -38,7 +54,7 @@ describe('WASM on Bun (wasm-bindgen)', () => {
           ['hello', 'hello'],
           ['hello', 'world'],
         ]),
-      ).toEqual([0, 4]);
+      ).toEqual(new Uint32Array([0, 4]));
     });
   });
 
@@ -82,8 +98,8 @@ describe('WASM on Bun (wasm-bindgen)', () => {
       expect(result).not.toBeNull();
     });
 
-    test('closest returns null for empty items', () => {
-      expect(wasm.closest('hello', [])).toBeNull();
+    test('closest returns undefined for empty items', () => {
+      expect(wasm.closest('hello', [])).toBeUndefined();
     });
   });
 
