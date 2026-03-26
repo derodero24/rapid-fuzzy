@@ -19,10 +19,12 @@
       // instantiate the WASM binary manually via WebAssembly.instantiateStreaming.
       const mod = await import('../rapid-fuzzy-wasm-bindgen_bg.js');
 
-      const { instance } = await WebAssembly.instantiateStreaming(
-        fetch('../rapid-fuzzy-wasm-bindgen_bg.wasm'),
-        { './rapid-fuzzy-wasm-bindgen_bg.js': mod },
-      );
+      // Use instantiate with ArrayBuffer instead of instantiateStreaming to avoid
+      // MIME type restrictions (Vite dev server may not serve .wasm as application/wasm).
+      const bytes = await fetch('../rapid-fuzzy-wasm-bindgen_bg.wasm').then(r => r.arrayBuffer());
+      const { instance } = await WebAssembly.instantiate(bytes, {
+        './rapid-fuzzy-wasm-bindgen_bg.js': mod,
+      });
       mod.__wbg_set_wasm(instance.exports);
 
       const results = {};
