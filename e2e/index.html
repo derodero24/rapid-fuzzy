@@ -11,7 +11,19 @@
     const out = document.getElementById('output');
 
     try {
-      const mod = await import('../rapid-fuzzy-wasm-bindgen.js');
+      // Vite 8 does not support the TC39 WebAssembly ESM integration proposal,
+      // so we cannot import rapid-fuzzy-wasm-bindgen.js directly (it contains
+      // `import * as wasm from './file.wasm'` which Vite rejects with
+      // "ESM integration proposal for Wasm is not supported currently").
+      // Instead, import the background bindings (no .wasm imports) and
+      // instantiate the WASM binary manually via WebAssembly.instantiateStreaming.
+      const mod = await import('../rapid-fuzzy-wasm-bindgen_bg.js');
+
+      const { instance } = await WebAssembly.instantiateStreaming(
+        fetch('../rapid-fuzzy-wasm-bindgen_bg.wasm'),
+        { './rapid-fuzzy-wasm-bindgen_bg.js': mod },
+      );
+      mod.__wbg_set_wasm(instance.exports);
 
       const results = {};
 
@@ -24,13 +36,13 @@
       results.jaroWinkler = mod.jaroWinkler('hello', 'hello');
       results.sorensenDice = mod.sorensenDice('hello', 'hello');
 
-      // Batch functions
-      results.levenshteinBatch = mod.levenshteinBatch([['hello', 'hello'], ['hello', 'world']]);
-      results.jaroBatch = mod.jaroBatch([['hello', 'hello'], ['abc', 'xyz']]);
+      // Batch functions — convert TypedArray to plain array for JSON serialization
+      results.levenshteinBatch = Array.from(mod.levenshteinBatch([['hello', 'hello'], ['hello', 'world']]));
+      results.jaroBatch = Array.from(mod.jaroBatch([['hello', 'hello'], ['abc', 'xyz']]));
 
-      // Many functions
-      results.levenshteinMany = mod.levenshteinMany('hello', ['hello', 'world', 'help']);
-      results.jaroMany = mod.jaroMany('hello', ['hello', 'world']);
+      // Many functions — convert TypedArray to plain array for JSON serialization
+      results.levenshteinMany = Array.from(mod.levenshteinMany('hello', ['hello', 'world', 'help']));
+      results.jaroMany = Array.from(mod.jaroMany('hello', ['hello', 'world']));
 
       // Token-based functions
       results.tokenSortRatio = mod.tokenSortRatio('New York Mets', 'Mets New York');
