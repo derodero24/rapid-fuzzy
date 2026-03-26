@@ -337,6 +337,109 @@ jaroWinklerMany('MARTHA', candidates, 0.8);       // minSimilarity → returns 0
 
 </details>
 
+## Framework Integration
+
+`FuzzyIndex` and `FuzzyObjectIndex` are designed for repeated search on the same data — build the index once, search many times. The examples below show the recommended pattern for each major framework.
+
+### React
+
+```tsx
+import { useEffect, useRef, useState } from 'react';
+import { FuzzyObjectIndex } from 'rapid-fuzzy/objects';
+
+const users = [
+  { name: 'Alice', email: 'alice@example.com' },
+  { name: 'Bob', email: 'bob@example.com' },
+];
+
+function UserSearch() {
+  const indexRef = useRef<FuzzyObjectIndex<typeof users[number]> | null>(null);
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState(users);
+
+  useEffect(() => {
+    indexRef.current = new FuzzyObjectIndex(users, {
+      keys: [{ name: 'name', weight: 2.0 }, 'email'],
+    });
+    return () => indexRef.current?.destroy();
+  }, []); // rebuild only when data changes — pass `users` as dependency if dynamic
+
+  useEffect(() => {
+    if (!indexRef.current) return;
+    if (!query) { setResults(users); return; }
+    setResults(indexRef.current.search(query).map((r) => r.item));
+  }, [query]);
+
+  return (
+    <>
+      <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search…" />
+      <ul>{results.map((u) => <li key={u.email}>{u.name}</li>)}</ul>
+    </>
+  );
+}
+```
+
+### Vue
+
+```vue
+<script setup lang="ts">
+import { ref, watch, onUnmounted } from 'vue';
+import { FuzzyObjectIndex } from 'rapid-fuzzy/objects';
+
+const users = [
+  { name: 'Alice', email: 'alice@example.com' },
+  { name: 'Bob', email: 'bob@example.com' },
+];
+
+const query = ref('');
+const results = ref(users);
+
+const index = new FuzzyObjectIndex(users, {
+  keys: [{ name: 'name', weight: 2.0 }, 'email'],
+});
+
+watch(query, (q) => {
+  results.value = q ? index.search(q).map((r) => r.item) : users;
+});
+
+onUnmounted(() => index.destroy());
+</script>
+
+<template>
+  <input v-model="query" placeholder="Search…" />
+  <ul><li v-for="u in results" :key="u.email">{{ u.name }}</li></ul>
+</template>
+```
+
+### Svelte
+
+```svelte
+<script lang="ts">
+  import { onDestroy } from 'svelte';
+  import { FuzzyObjectIndex } from 'rapid-fuzzy/objects';
+
+  const users = [
+    { name: 'Alice', email: 'alice@example.com' },
+    { name: 'Bob', email: 'bob@example.com' },
+  ];
+
+  let query = '';
+
+  const index = new FuzzyObjectIndex(users, {
+    keys: [{ name: 'name', weight: 2.0 }, 'email'],
+  });
+
+  $: results = query ? index.search(query).map((r) => r.item) : users;
+
+  onDestroy(() => index.destroy());
+</script>
+
+<input bind:value={query} placeholder="Search…" />
+<ul>{#each results as u}<li>{u.name}</li>{/each}</ul>
+```
+
+> **Note**: Always call `index.destroy()` in your cleanup handler (`useEffect` return, `onUnmounted`, `onDestroy`) to free Rust-side memory.
+
 ## Choosing an Algorithm
 
 | Use case | Recommended | Why |
