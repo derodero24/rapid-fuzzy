@@ -136,8 +136,8 @@ class FuzzyObjectIndex {
    * @param {T} item
    */
   add(item) {
-    this.#items.push(item);
     this.#index.add(this.#keys.map((k) => getNestedValue(item, k.name)));
+    this.#items.push(item);
   }
 
   /**
@@ -145,10 +145,10 @@ class FuzzyObjectIndex {
    * @param {T[]} items
    */
   addMany(items) {
+    this.#index.addMany(items.map((item) => this.#keys.map((k) => getNestedValue(item, k.name))));
     for (const item of items) {
       this.#items.push(item);
     }
-    this.#index.addMany(items.map((item) => this.#keys.map((k) => getNestedValue(item, k.name))));
   }
 
   /**
@@ -159,13 +159,14 @@ class FuzzyObjectIndex {
    */
   remove(index) {
     if (index < 0 || index >= this.#items.length) return false;
-    // Swap-remove to match Rust-side behavior
+    if (!this.#index.remove(index)) return false;
+    // Mirror the Rust-side swap-remove on the JS items array
     const lastIdx = this.#items.length - 1;
     if (index !== lastIdx) {
       this.#items[index] = this.#items[lastIdx];
     }
     this.#items.pop();
-    return this.#index.remove(index);
+    return true;
   }
 
   /** Free all internal data. */
