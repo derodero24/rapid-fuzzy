@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 use napi_derive::napi;
 use rapidfuzz::distance::damerau_levenshtein as rapid_damerau;
 use rapidfuzz::distance::hamming as rapid_hamming;
+use rapidfuzz::distance::indel as rapid_indel;
 use rapidfuzz::distance::jaro as rapid_jaro;
 use rapidfuzz::distance::jaro_winkler as rapid_jw;
 use rapidfuzz::distance::levenshtein as rapid_lev;
@@ -197,6 +198,57 @@ pub fn hamming_many(
     }
 }
 
+/// Compute the normalized Hamming similarity between two strings.
+///
+/// Returns `null` if the strings have different lengths.
+/// Returns a value between 0.0 (no matching characters) and 1.0 (identical).
+#[napi]
+pub fn normalized_hamming(a: String, b: String) -> Option<f64> {
+    rapid_hamming::normalized_similarity(a.chars(), b.chars()).ok()
+}
+
+/// Compute the normalized Hamming similarity for multiple pairs of strings in a single call.
+///
+/// Returns an array of scores in the same order as the input pairs.
+/// Returns `null` for pairs with different lengths.
+#[napi]
+pub fn normalized_hamming_batch(pairs: Vec<Vec<String>>) -> Vec<Option<f64>> {
+    pairs
+        .iter()
+        .map(|pair| {
+            if pair.len() >= 2 {
+                rapid_hamming::normalized_similarity(pair[0].chars(), pair[1].chars()).ok()
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+/// Compute the normalized Hamming similarity from one reference string to many candidates.
+///
+/// Returns an array of scores, one per candidate, in the same order as the input.
+/// Returns `null` for candidates with a different length than the reference.
+/// If `min_similarity` is provided, candidates with similarity below the threshold
+/// will also return `null` (enabling early termination for better performance).
+#[napi]
+pub fn normalized_hamming_many(
+    reference: String,
+    candidates: Vec<String>,
+    min_similarity: Option<f64>,
+) -> Vec<Option<f64>> {
+    candidates
+        .iter()
+        .map(|c| {
+            let score = rapid_hamming::normalized_similarity(reference.chars(), c.chars()).ok()?;
+            match min_similarity {
+                Some(cutoff) if score < cutoff => None,
+                _ => Some(score),
+            }
+        })
+        .collect()
+}
+
 /// Compute the Jaro similarity between two strings.
 ///
 /// Returns a value between 0.0 (completely different) and 1.0 (identical).
@@ -342,6 +394,111 @@ pub fn normalized_levenshtein_many(
     match min_similarity {
         Some(cutoff) => {
             let args = rapid_lev::Args::default().score_cutoff(cutoff);
+            candidates
+                .iter()
+                .map(|c| {
+                    scorer
+                        .normalized_similarity_with_args(c.chars(), &args)
+                        .unwrap_or(0.0)
+                })
+                .collect()
+        }
+        None => candidates
+            .iter()
+            .map(|c| scorer.normalized_similarity(c.chars()))
+            .collect(),
+    }
+}
+
+/// Compute the Indel distance between two strings.
+///
+/// The Indel distance counts the minimum number of insertions and deletions
+/// (no substitutions) required to transform one string into the other.
+/// It equals `len(a) + len(b) - 2 * LCS_length(a, b)`.
+///
+/// Useful when substitutions are semantically two operations (one deletion +
+/// one insertion), such as in DNA sequence alignment.
+#[napi]
+pub fn indel(a: String, b: String) -> u32 {
+    rapid_indel::distance(a.chars(), b.chars()) as u32
+}
+
+/// Compute the Indel distance for multiple pairs of strings in a single call.
+///
+/// Returns an array of distances in the same order as the input pairs.
+/// Each pair must be an array of exactly two strings `[a, b]`.
+#[napi]
+pub fn indel_batch(pairs: Vec<Vec<String>>) -> Vec<u32> {
+    batch_apply(&pairs, |a, b| {
+        rapid_indel::distance(a.chars(), b.chars()) as u32
+    })
+}
+
+/// Compute the Indel distance from one reference string to many candidates.
+///
+/// Returns an array of distances, one per candidate, in the same order as the input.
+/// If `max_distance` is provided, candidates with distance exceeding the threshold
+/// will return `max_distance + 1` (enabling early termination for better performance).
+#[napi]
+pub fn indel_many(
+    reference: String,
+    candidates: Vec<String>,
+    max_distance: Option<u32>,
+) -> Vec<u32> {
+    let scorer = rapid_indel::BatchComparator::new(reference.chars());
+    match max_distance {
+        Some(cutoff) => {
+            let args = rapid_indel::Args::default().score_cutoff(cutoff as usize);
+            let sentinel = cutoff + 1;
+            candidates
+                .iter()
+                .map(|c| {
+                    scorer
+                        .distance_with_args(c.chars(), &args)
+                        .map_or(sentinel, |d| d as u32)
+                })
+                .collect()
+        }
+        None => candidates
+            .iter()
+            .map(|c| scorer.distance(c.chars()) as u32)
+            .collect(),
+    }
+}
+
+/// Compute the normalized Indel similarity between two strings.
+///
+/// Returns a value between 0.0 (completely different) and 1.0 (identical).
+#[napi]
+pub fn normalized_indel(a: String, b: String) -> f64 {
+    rapid_indel::normalized_similarity(a.chars(), b.chars())
+}
+
+/// Compute the normalized Indel similarity for multiple pairs of strings in a single call.
+///
+/// Returns an array of similarity scores in the same order as the input pairs.
+#[napi]
+pub fn normalized_indel_batch(pairs: Vec<Vec<String>>) -> Vec<f64> {
+    batch_apply(&pairs, |a, b| {
+        rapid_indel::normalized_similarity(a.chars(), b.chars())
+    })
+}
+
+/// Compute the normalized Indel similarity from one reference string to many candidates.
+///
+/// Returns an array of similarity scores, one per candidate, in the same order as the input.
+/// If `min_similarity` is provided, candidates with similarity below the threshold
+/// will return `0.0` (enabling early termination for better performance).
+#[napi]
+pub fn normalized_indel_many(
+    reference: String,
+    candidates: Vec<String>,
+    min_similarity: Option<f64>,
+) -> Vec<f64> {
+    let scorer = rapid_indel::BatchComparator::new(reference.chars());
+    match min_similarity {
+        Some(cutoff) => {
+            let args = rapid_indel::Args::default().score_cutoff(cutoff);
             candidates
                 .iter()
                 .map(|c| {
@@ -1016,6 +1173,42 @@ mod tests {
         let result = sorensen_dice_many("night".to_string(), candidates);
         assert!(result[0] > 0.0 && result[0] < 1.0);
         assert_eq!(result[1], 1.0);
+    }
+
+    #[test]
+    fn test_normalized_hamming() {
+        // Equal-length strings return Some
+        assert_eq!(normalized_hamming("abc".into(), "abc".into()), Some(1.0));
+        assert_eq!(normalized_hamming("".into(), "".into()), Some(1.0));
+        let score = normalized_hamming("karolin".into(), "kathrin".into());
+        assert!(score.is_some());
+        let s = score.unwrap();
+        assert!(s >= 0.0 && s <= 1.0);
+        // Different lengths return None
+        assert_eq!(normalized_hamming("abc".into(), "ab".into()), None);
+        assert_eq!(normalized_hamming("".into(), "a".into()), None);
+    }
+
+    #[test]
+    fn test_indel() {
+        // Identical strings have distance 0
+        assert_eq!(indel("abc".into(), "abc".into()), 0);
+        assert_eq!(indel("".into(), "".into()), 0);
+        // Indel("abc", "ac") = len("abc") + len("ac") - 2 * LCS_len = 3 + 2 - 2*2 = 1
+        assert_eq!(indel("abc".into(), "ac".into()), 1);
+    }
+
+    #[test]
+    fn test_normalized_indel() {
+        // Identical strings have similarity 1.0
+        assert_eq!(normalized_indel("abc".into(), "abc".into()), 1.0);
+        assert_eq!(normalized_indel("".into(), "".into()), 1.0);
+        // Similarity is in [0, 1]
+        let score = normalized_indel("abc".into(), "xyz".into());
+        assert!(score >= 0.0 && score <= 1.0);
+        // Partially similar strings
+        let score2 = normalized_indel("kitten".into(), "sitting".into());
+        assert!(score2 > 0.0 && score2 < 1.0);
     }
 
     mod score_cutoff_tests {

@@ -179,6 +179,35 @@ export declare function hammingBatch(pairs: Array<Array<string>>): Array<number 
 export declare function hammingMany(reference: string, candidates: Array<string>, maxDistance?: number | undefined | null): Array<number | undefined | null>
 
 /**
+ * Compute the Indel distance between two strings.
+ *
+ * The Indel distance counts the minimum number of insertions and deletions
+ * (no substitutions) required to transform one string into the other.
+ * It equals `len(a) + len(b) - 2 * LCS_length(a, b)`.
+ *
+ * Useful when substitutions are semantically two operations (one deletion +
+ * one insertion), such as in DNA sequence alignment.
+ */
+export declare function indel(a: string, b: string): number
+
+/**
+ * Compute the Indel distance for multiple pairs of strings in a single call.
+ *
+ * Returns an array of distances in the same order as the input pairs.
+ * Each pair must be an array of exactly two strings `[a, b]`.
+ */
+export declare function indelBatch(pairs: Array<Array<string>>): Array<number>
+
+/**
+ * Compute the Indel distance from one reference string to many candidates.
+ *
+ * Returns an array of distances, one per candidate, in the same order as the input.
+ * If `max_distance` is provided, candidates with distance exceeding the threshold
+ * will return `max_distance + 1` (enabling early termination for better performance).
+ */
+export declare function indelMany(reference: string, candidates: Array<string>, maxDistance?: number | undefined | null): Array<number>
+
+/**
  * A lightweight search result containing only index and score (no item string).
  *
  * Use this when you maintain your own data array and only need the index
@@ -303,6 +332,55 @@ export declare const enum MatchType {
   Contains = 'Contains',
   Fuzzy = 'Fuzzy'
 }
+
+/**
+ * Compute the normalized Hamming similarity between two strings.
+ *
+ * Returns `null` if the strings have different lengths.
+ * Returns a value between 0.0 (no matching characters) and 1.0 (identical).
+ */
+export declare function normalizedHamming(a: string, b: string): number | null
+
+/**
+ * Compute the normalized Hamming similarity for multiple pairs of strings in a single call.
+ *
+ * Returns an array of scores in the same order as the input pairs.
+ * Returns `null` for pairs with different lengths.
+ */
+export declare function normalizedHammingBatch(pairs: Array<Array<string>>): Array<number | undefined | null>
+
+/**
+ * Compute the normalized Hamming similarity from one reference string to many candidates.
+ *
+ * Returns an array of scores, one per candidate, in the same order as the input.
+ * Returns `null` for candidates with a different length than the reference.
+ * If `min_similarity` is provided, candidates with similarity below the threshold
+ * will also return `null` (enabling early termination for better performance).
+ */
+export declare function normalizedHammingMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number | undefined | null>
+
+/**
+ * Compute the normalized Indel similarity between two strings.
+ *
+ * Returns a value between 0.0 (completely different) and 1.0 (identical).
+ */
+export declare function normalizedIndel(a: string, b: string): number
+
+/**
+ * Compute the normalized Indel similarity for multiple pairs of strings in a single call.
+ *
+ * Returns an array of similarity scores in the same order as the input pairs.
+ */
+export declare function normalizedIndelBatch(pairs: Array<Array<string>>): Array<number>
+
+/**
+ * Compute the normalized Indel similarity from one reference string to many candidates.
+ *
+ * Returns an array of similarity scores, one per candidate, in the same order as the input.
+ * If `min_similarity` is provided, candidates with similarity below the threshold
+ * will return `0.0` (enabling early termination for better performance).
+ */
+export declare function normalizedIndelMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number>
 
 /**
  * Compute the normalized Levenshtein similarity between two strings.
