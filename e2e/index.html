@@ -64,9 +64,10 @@
       results.search = mod.search('type', ['TypeScript', 'JavaScript', 'Python', 'TypeSpec']);
       results.searchEmpty = mod.search('', ['hello', 'world']);
 
-      // Closest
-      results.closest = mod.closest('apple', ['application', 'banana', 'apple pie']);
-      results.closestEmpty = mod.closest('hello', []);
+      // Closest — wasm-bindgen maps Rust Option::None to undefined; coerce to null
+      // for JSON serializability and consistent Playwright page.evaluate() behavior.
+      results.closest = mod.closest('apple', ['application', 'banana', 'apple pie']) ?? null;
+      results.closestEmpty = mod.closest('hello', []) ?? null;
 
       // FuzzyIndex
       const index = new mod.FuzzyIndex(['apple', 'banana', 'grape', 'orange']);
