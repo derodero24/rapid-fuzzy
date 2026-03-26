@@ -113,8 +113,9 @@ export function rapidFuzzySearch(docsDir: string): Plugin {
 
       for (const file of files) {
         const content = readFileSync(file, 'utf-8');
-        meta.push({ url: mdFileToUrl(file, docsDir), title: extractTitle(content) });
-        titles.push(extractTitle(content));
+        const title = extractTitle(content);
+        meta.push({ url: mdFileToUrl(file, docsDir), title });
+        titles.push(title);
         texts.push(extractText(content));
       }
 
