@@ -197,12 +197,25 @@ closest('xyz', items, 0.5);
 ### String Distance
 
 ```typescript
-import { levenshtein, jaroWinkler, sorensenDice, hamming } from 'rapid-fuzzy';
+import {
+  levenshtein,
+  jaro,
+  jaroWinkler,
+  sorensenDice,
+  hamming,
+  normalizedHamming,
+  indel,
+  normalizedIndel,
+} from 'rapid-fuzzy';
 
 levenshtein('kitten', 'sitting');     // 3
-jaroWinkler('MARTHA', 'MARHTA');      // 0.961
+jaro('martha', 'marhta');             // 0.944 (similarity between 0–1)
+jaroWinkler('MARTHA', 'MARHTA');      // 0.961 (jaro + prefix bonus)
 sorensenDice('night', 'nacht');       // 0.25
 hamming('karolin', 'kathrin');        // 3 (null if lengths differ)
+normalizedHamming('karolin', 'kathrin'); // 0.571 (similarity 0–1, null if lengths differ)
+indel('abc', 'ac');                   // 1 (insertions + deletions only, no substitutions)
+normalizedIndel('kitten', 'sitting'); // 0.615 (similarity 0–1)
 ```
 
 ### Query Syntax
@@ -407,6 +420,30 @@ jaroWinklerMany('MARTHA', candidates, 0.8);       // minSimilarity → returns 0
 
 </details>
 
+<details>
+<summary><strong>TypedArray Variants</strong></summary>
+
+All `*Many` functions have TypedArray counterparts that return `Uint32Array` or `Float64Array` instead of `Array<number>`. These avoid boxing overhead and GC pressure when processing large candidate sets.
+
+- **`*ManyU32`** — returns `Uint32Array` (for integer distances: `levenshteinManyU32`, `damerauLevenshteinManyU32`, `indelManyU32`)
+- **`*ManyF64`** — returns `Float64Array` (for similarity scores: `jaroManyF64`, `jaroWinklerManyF64`, `normalizedLevenshteinManyF64`, `normalizedIndelManyF64`, `sorensenDiceManyF64`, `tokenSortRatioManyF64`, `tokenSetRatioManyF64`, `partialRatioManyF64`, `weightedRatioManyF64`)
+
+```typescript
+import { levenshteinManyU32, jaroWinklerManyF64 } from 'rapid-fuzzy';
+
+const candidates = ['sitting', 'kittens', 'kitchen'];
+
+// Returns Uint32Array instead of Array<number>
+levenshteinManyU32('kitten', candidates);       // Uint32Array [3, 1, 2]
+
+// Returns Float64Array instead of Array<number>
+jaroWinklerManyF64('kitten', candidates);       // Float64Array [0.746, 0.976, 0.933]
+```
+
+> **When to use**: Prefer TypedArray variants when comparing against thousands of candidates. The returned typed arrays can also be passed directly to WebGL, WASM, or worker threads without copying.
+
+</details>
+
 ## Framework Integration
 
 `FuzzyIndex` and `FuzzyObjectIndex` are designed for repeated search on the same data — build the index once, search many times. The examples below show the recommended pattern for each major framework.
@@ -515,8 +552,10 @@ onUnmounted(() => index.destroy());
 | Use case | Recommended | Why |
 |---|---|---|
 | Typo detection / spell check | `levenshtein`, `damerauLevenshtein` | Counts edits; Damerau adds transposition support |
-| Fixed-length comparison | `hamming` | Counts differing positions; only for equal-length strings |
+| Insertion/deletion only edits | `indel`, `normalizedIndel` | No substitutions — useful for diff-like or DNA alignment scenarios |
+| Fixed-length comparison | `hamming`, `normalizedHamming` | Counts differing positions; only for equal-length strings |
 | Name / address matching | `jaroWinkler`, `tokenSortRatio` | Prefix-weighted or order-independent matching |
+| Character-level similarity | `jaro` | Good baseline similarity without prefix weighting |
 | Document / text similarity | `sorensenDice` | Bigram-based; handles longer text well |
 | Normalized comparison (0–1) | `normalizedLevenshtein` | Length-independent similarity score |
 | Reordered words / messy data | `tokenSortRatio`, `tokenSetRatio` | Handles word order differences and extra tokens |
@@ -527,8 +566,9 @@ onUnmounted(() => index.destroy());
 
 **Return types:**
 
-- `levenshtein`, `damerauLevenshtein`, `hamming` → integer (edit/difference count; `hamming` returns `null` if lengths differ)
-- `jaro`, `jaroWinkler`, `sorensenDice`, `normalizedLevenshtein` → float between 0.0 (no match) and 1.0 (identical)
+- `levenshtein`, `damerauLevenshtein`, `hamming`, `indel` → integer (edit/difference count; `hamming` returns `null` if lengths differ)
+- `jaro`, `jaroWinkler`, `sorensenDice`, `normalizedLevenshtein`, `normalizedIndel` → float between 0.0 (no match) and 1.0 (identical)
+- `normalizedHamming` → float between 0.0 and 1.0 (`null` if lengths differ)
 - `tokenSortRatio`, `tokenSetRatio`, `partialRatio`, `weightedRatio` → float between 0.0 and 1.0
 - `search` → array of `{ item, score, index, positions }` sorted by relevance (score: 0.0–1.0)
 
