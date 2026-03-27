@@ -37,7 +37,7 @@ jobs:
           shared-key: codspeed
 
       - name: Install cargo-codspeed
-        uses: taiki-e/install-action@7627fb428e65e78e2ec9a24ae5c5bd5f8553f182
+        uses: taiki-e/install-action@4bb73acd2ddc568523ecd3ef0d0e84736a9145bd
         with:
           tool: cargo-codspeed
 
