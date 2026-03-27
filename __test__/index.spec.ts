@@ -10,6 +10,9 @@ import {
   hamming,
   hammingBatch,
   hammingMany,
+  indel,
+  indelBatch,
+  indelMany,
   indelManyU32,
   jaro,
   jaroBatch,
@@ -23,6 +26,12 @@ import {
   levenshteinBatch,
   levenshteinMany,
   levenshteinManyU32,
+  normalizedHamming,
+  normalizedHammingBatch,
+  normalizedHammingMany,
+  normalizedIndel,
+  normalizedIndelBatch,
+  normalizedIndelMany,
   normalizedIndelManyF64,
   normalizedLevenshtein,
   normalizedLevenshteinBatch,
@@ -157,6 +166,86 @@ describe('distance', () => {
 
     it('should handle empty strings', () => {
       expect(hamming('', '')).toBe(0);
+    });
+  });
+
+  describe('indel', () => {
+    it('should return 0 for identical strings', () => {
+      expect(indel('hello', 'hello')).toBe(0);
+    });
+
+    it('should compute insertion/deletion distance', () => {
+      // indel = len(a) + len(b) - 2 * LCS(a, b)
+      // LCS("kitten", "sitting") = "ittn" (length 4)
+      // indel = 6 + 7 - 2*4 = 5
+      expect(indel('kitten', 'sitting')).toBe(5);
+    });
+
+    it('should differ from levenshtein (no substitutions)', () => {
+      // "ab" -> "ba": levenshtein = 2 (sub+sub), indel = 2 (del+ins)
+      // but for "abc" -> "xyz": levenshtein = 3 (3 subs), indel = 6 (3 del + 3 ins)
+      expect(indel('abc', 'xyz')).toBe(6);
+      expect(levenshtein('abc', 'xyz')).toBe(3);
+    });
+
+    it('should handle empty strings', () => {
+      expect(indel('', 'abc')).toBe(3);
+      expect(indel('abc', '')).toBe(3);
+      expect(indel('', '')).toBe(0);
+    });
+
+    it('should handle single characters', () => {
+      expect(indel('a', 'a')).toBe(0);
+      expect(indel('a', 'b')).toBe(2);
+    });
+  });
+
+  describe('normalizedIndel', () => {
+    it('should return 1.0 for identical strings', () => {
+      expect(normalizedIndel('hello', 'hello')).toBe(1.0);
+    });
+
+    it('should return 0.0 for completely different strings of same length', () => {
+      expect(normalizedIndel('abc', 'xyz')).toBe(0.0);
+    });
+
+    it('should return value between 0 and 1', () => {
+      const score = normalizedIndel('kitten', 'sitting');
+      expect(score).toBeGreaterThan(0);
+      expect(score).toBeLessThan(1);
+      // normalizedIndel = 1 - indel / (len(a) + len(b)) = 1 - 5/13
+      expect(score).toBeCloseTo(8 / 13);
+    });
+
+    it('should return 1.0 for both empty strings', () => {
+      expect(normalizedIndel('', '')).toBe(1.0);
+    });
+  });
+
+  describe('normalizedHamming', () => {
+    it('should return 1.0 for identical strings', () => {
+      expect(normalizedHamming('hello', 'hello')).toBe(1.0);
+    });
+
+    it('should return 0.0 for completely different strings of same length', () => {
+      expect(normalizedHamming('abc', 'xyz')).toBe(0.0);
+    });
+
+    it('should return null for different-length strings', () => {
+      expect(normalizedHamming('hello', 'hi')).toBeNull();
+      expect(normalizedHamming('ab', 'abc')).toBeNull();
+    });
+
+    it('should return value between 0 and 1', () => {
+      // "karolin" vs "kathrin": 3 positions differ out of 7
+      // normalizedHamming = 1 - 3/7 = 4/7
+      const score = normalizedHamming('karolin', 'kathrin');
+      expect(score).not.toBeNull();
+      expect(score as number).toBeCloseTo(4 / 7);
+    });
+
+    it('should return 1.0 for both empty strings', () => {
+      expect(normalizedHamming('', '')).toBe(1.0);
     });
   });
 });
@@ -310,6 +399,140 @@ describe('batch distance', () => {
     });
   });
 
+  describe('indelBatch', () => {
+    it('should compute distances for multiple pairs', () => {
+      const result = indelBatch([
+        ['kitten', 'sitting'],
+        ['hello', 'hello'],
+        ['', 'abc'],
+      ]);
+      expect(result).toEqual([5, 0, 3]);
+    });
+
+    it('should return empty array for empty input', () => {
+      expect(indelBatch([])).toEqual([]);
+    });
+
+    it('should be consistent with individual indel calls', () => {
+      const pairs: [string, string][] = [
+        ['kitten', 'sitting'],
+        ['abc', 'xyz'],
+        ['', ''],
+      ];
+      const batchResult = indelBatch(pairs);
+      for (let i = 0; i < pairs.length; i++) {
+        const [a, b] = pairs[i] as [string, string];
+        expect(batchResult[i]).toBe(indel(a, b));
+      }
+    });
+  });
+
+  describe('indelMany', () => {
+    it('should compute distances from one string to many candidates', () => {
+      const result = indelMany('kitten', ['sitting', '', 'kitten']);
+      expect(result).toEqual([5, 6, 0]);
+    });
+
+    it('should return empty array for empty candidates', () => {
+      expect(indelMany('hello', [])).toEqual([]);
+    });
+
+    it('should be consistent with individual indel calls', () => {
+      const ref = 'kitten';
+      const cands = ['sitting', 'kitchen', 'kittens'];
+      const manyResult = indelMany(ref, cands);
+      for (let i = 0; i < cands.length; i++) {
+        expect(manyResult[i]).toBe(indel(ref, cands[i] as string));
+      }
+    });
+  });
+
+  describe('normalizedIndelBatch', () => {
+    it('should compute scores for multiple pairs', () => {
+      const result = normalizedIndelBatch([
+        ['hello', 'hello'],
+        ['abc', 'xyz'],
+      ]);
+      expect(result[0]).toBe(1.0);
+      expect(result[1]).toBe(0.0);
+    });
+
+    it('should return empty array for empty input', () => {
+      expect(normalizedIndelBatch([])).toEqual([]);
+    });
+
+    it('should be consistent with individual normalizedIndel calls', () => {
+      const pairs: [string, string][] = [
+        ['kitten', 'sitting'],
+        ['hello', 'world'],
+      ];
+      const batchResult = normalizedIndelBatch(pairs);
+      for (let i = 0; i < pairs.length; i++) {
+        const [a, b] = pairs[i] as [string, string];
+        expect(batchResult[i]).toBeCloseTo(normalizedIndel(a, b));
+      }
+    });
+  });
+
+  describe('normalizedIndelMany', () => {
+    it('should compute scores from one string to many candidates', () => {
+      const result = normalizedIndelMany('hello', ['hello', 'world']);
+      expect(result[0]).toBe(1.0);
+      expect(result[1]).toBeGreaterThan(0);
+      expect(result[1]).toBeLessThan(1);
+    });
+
+    it('should return empty array for empty candidates', () => {
+      expect(normalizedIndelMany('hello', [])).toEqual([]);
+    });
+
+    it('should be consistent with individual normalizedIndel calls', () => {
+      const ref = 'kitten';
+      const cands = ['sitting', 'kitchen', 'kittens'];
+      const manyResult = normalizedIndelMany(ref, cands);
+      for (let i = 0; i < cands.length; i++) {
+        expect(manyResult[i]).toBeCloseTo(normalizedIndel(ref, cands[i] as string));
+      }
+    });
+  });
+
+  describe('normalizedHammingBatch', () => {
+    it('should compute scores for multiple pairs', () => {
+      const result = normalizedHammingBatch([
+        ['hello', 'hello'],
+        ['hello', 'world'],
+      ]);
+      expect(result[0]).toBe(1.0);
+      expect(result[1]).toBeCloseTo(1 / 5);
+    });
+
+    it('should return null for different-length pairs', () => {
+      const result = normalizedHammingBatch([
+        ['hello', 'hi'],
+        ['abc', 'abc'],
+      ]);
+      expect(result[0]).toBeNull();
+      expect(result[1]).toBe(1.0);
+    });
+
+    it('should return empty array for empty input', () => {
+      expect(normalizedHammingBatch([])).toEqual([]);
+    });
+  });
+
+  describe('normalizedHammingMany', () => {
+    it('should compute scores from one string to many candidates', () => {
+      const result = normalizedHammingMany('hello', ['hello', 'world', 'hi']);
+      expect(result[0]).toBe(1.0);
+      expect(result[1]).toBeCloseTo(1 / 5);
+      expect(result[2]).toBeNull();
+    });
+
+    it('should return empty array for empty candidates', () => {
+      expect(normalizedHammingMany('hello', [])).toEqual([]);
+    });
+  });
+
   describe('_many threshold parameters', () => {
     it('levenshteinMany should support maxDistance', () => {
       const result = levenshteinMany('kitten', ['kitten', 'sitting', 'abcdef'], 2);
@@ -341,6 +564,25 @@ describe('batch distance', () => {
       const result = normalizedLevenshteinMany('hello', ['hello', 'world'], 0.9);
       expect(result[0]).toBe(1.0);
       expect(result[1]).toBe(0.0);
+    });
+
+    it('indelMany should support maxDistance', () => {
+      const result = indelMany('kitten', ['kitten', 'sitting', 'abcdef'], 2);
+      expect(result[0]).toBe(0); // exact match
+      expect(result[1]).toBe(3); // exceeds threshold → maxDistance + 1
+      expect(result[2]).toBe(3); // exceeds threshold → maxDistance + 1
+    });
+
+    it('normalizedIndelMany should support minSimilarity', () => {
+      const result = normalizedIndelMany('hello', ['hello', 'world'], 0.9);
+      expect(result[0]).toBe(1.0); // exact match passes
+      expect(result[1]).toBe(0.0); // below threshold → 0.0
+    });
+
+    it('normalizedHammingMany should support minSimilarity', () => {
+      const result = normalizedHammingMany('hello', ['hello', 'world'], 0.9);
+      expect(result[0]).toBe(1.0); // exact match passes
+      expect(result[1]).toBeNull(); // below threshold → null
     });
   });
 });
@@ -1714,7 +1956,6 @@ describe('TypedArray variants', () => {
   });
 
   it('indelManyU32 returns Uint32Array matching indelMany', () => {
-    const { indelMany } = require('../index.js') as typeof import('../index.js');
     const arr = indelManyU32('kitten', cands);
     expect(arr).toBeInstanceOf(Uint32Array);
     expect(Array.from(arr)).toEqual(indelMany('kitten', cands));
@@ -1745,7 +1986,6 @@ describe('TypedArray variants', () => {
   });
 
   it('normalizedIndelManyF64 returns Float64Array matching normalizedIndelMany', () => {
-    const { normalizedIndelMany } = require('../index.js') as typeof import('../index.js');
     const arr = normalizedIndelManyF64('kitten', cands);
     expect(arr).toBeInstanceOf(Float64Array);
     expect(Array.from(arr)).toEqual(normalizedIndelMany('kitten', cands));
