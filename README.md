@@ -51,14 +51,8 @@ pnpm add rapid-fuzzy
 ### Runtime-specific notes
 
 - **Node.js** (>=20): Uses native bindings via napi-rs for best performance.
-- **Browser / Deno / Bun**: Falls back to a WASM build automatically. The WASM binary is ~660 KB raw (~230 KB gzipped).
-
-> **Browser WASM requirement**: The WASM build uses `SharedArrayBuffer` for threading, which requires the following HTTP headers on your page:
-> ```
-> Cross-Origin-Opener-Policy: same-origin
-> Cross-Origin-Embedder-Policy: require-corp
-> ```
-> Without these headers, you will see `SharedArrayBuffer is not defined`. See [MDN: SharedArrayBuffer](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/SharedArrayBuffer#security_requirements) for details.
+- **Bun**: Uses native napi-rs bindings. WASM fallback also works — see [Bun section](#bun) below.
+- **Browser / CDN / Cloudflare Workers / Deno**: Falls back to the wasm-bindgen WASM build (~195 KB raw). No `SharedArrayBuffer` or COOP/COEP headers required.
 
 ### Framework Integration (SSR)
 
@@ -84,7 +78,83 @@ export default {
 };
 ```
 
-On the client side, rapid-fuzzy automatically falls back to WASM — no additional configuration needed beyond the SharedArrayBuffer headers above.
+On the client side, rapid-fuzzy automatically falls back to WASM — no additional configuration needed.
+
+### Browser and Edge Runtime Usage
+
+#### CDN (no bundler required)
+
+Import directly from [esm.sh](https://esm.sh) in any `<script type="module">`:
+
+```html
+<script type="module">
+  import { search, FuzzyIndex } from 'https://esm.sh/rapid-fuzzy';
+
+  const results = search('typscript', ['TypeScript', 'JavaScript', 'Python']);
+  console.log(results[0].item); // 'TypeScript'
+
+  const index = new FuzzyIndex(['TypeScript', 'JavaScript', 'Python']);
+  console.log(index.search('typscript')[0].item); // 'TypeScript'
+  index.destroy();
+</script>
+```
+
+See [`examples/cdn-usage/`](examples/cdn-usage/) for a complete HTML example.
+
+#### Cloudflare Workers
+
+Install the package and import it in your Worker script. Wrangler bundles the WASM binary automatically:
+
+```bash
+npm install rapid-fuzzy
+```
+
+```js
+// worker.js
+import { search, FuzzyIndex } from 'rapid-fuzzy';
+
+// Create the index once at module scope (shared across requests)
+const index = new FuzzyIndex(['hello', 'world', 'foo', 'bar']);
+
+export default {
+  fetch(request) {
+    const { searchParams } = new URL(request.url);
+    const query = searchParams.get('q') ?? '';
+    const results = index.search(query);
+    return Response.json(results);
+  },
+};
+```
+
+```toml
+# wrangler.toml
+name = "rapid-fuzzy-worker"
+main = "worker.js"
+compatibility_date = "2025-01-01"
+```
+
+See [`examples/cloudflare-workers/`](examples/cloudflare-workers/) for a complete example.
+
+#### Deno
+
+Use rapid-fuzzy via the `npm:` specifier (Deno 1.28+):
+
+```ts
+import { search } from 'npm:rapid-fuzzy';
+
+const results = search('typscript', ['TypeScript', 'JavaScript', 'Python']);
+console.log(results[0].item); // 'TypeScript'
+```
+
+Or import from a CDN directly:
+
+```ts
+import { search } from 'https://esm.sh/rapid-fuzzy';
+```
+
+#### Bun
+
+Bun uses the native napi-rs bindings when available (fastest). You can also use the wasm-bindgen WASM files directly if needed — see [`e2e/wasm-bun.test.ts`](e2e/wasm-bun.test.ts) for the manual initialization pattern.
 
 ## API
 
@@ -127,12 +197,25 @@ closest('xyz', items, 0.5);
 ### String Distance
 
 ```typescript
-import { levenshtein, jaroWinkler, sorensenDice, hamming } from 'rapid-fuzzy';
+import {
+  levenshtein,
+  jaro,
+  jaroWinkler,
+  sorensenDice,
+  hamming,
+  normalizedHamming,
+  indel,
+  normalizedIndel,
+} from 'rapid-fuzzy';
 
 levenshtein('kitten', 'sitting');     // 3
-jaroWinkler('MARTHA', 'MARHTA');      // 0.961
+jaro('martha', 'marhta');             // 0.944 (similarity between 0–1)
+jaroWinkler('MARTHA', 'MARHTA');      // 0.961 (jaro + prefix bonus)
 sorensenDice('night', 'nacht');       // 0.25
 hamming('karolin', 'kathrin');        // 3 (null if lengths differ)
+normalizedHamming('karolin', 'kathrin'); // 0.571 (similarity 0–1, null if lengths differ)
+indel('abc', 'ac');                   // 1 (insertions + deletions only, no substitutions)
+normalizedIndel('kitten', 'sitting'); // 0.615 (similarity 0–1)
 ```
 
 ### Query Syntax
@@ -195,6 +278,9 @@ const index = new FuzzyIndex(['TypeScript', 'JavaScript', 'Python', ...]);
 index.search('typscript', { maxResults: 5 });
 index.closest('tsc');
 
+// Tip: FuzzyIndex caches results internally — extending a previous query
+// (e.g. typing "app" → "apple") reuses cached candidates for faster lookups.
+
 // Index-only results (no string cloning — less GC pressure)
 const hits = index.searchIndices('typscript', { maxResults: 5 });
 // → [{ index: 0, score: 0.85, positions: [] }, ...]
@@ -233,15 +319,19 @@ This makes FuzzyIndex ideal for search-as-you-type UIs where each keystroke exte
 
 #### Index Serialization
 
-Save a FuzzyIndex to avoid rebuilding on startup:
+Save and restore a `FuzzyIndex` to avoid rebuilding on startup:
 
 ```typescript
-const buffer = index.serialize();
-fs.writeFileSync('search-index.bin', buffer);
+import { FuzzyIndex } from 'rapid-fuzzy';
 
-// Load later (faster than rebuilding from scratch)
-const restored = FuzzyIndex.deserialize(fs.readFileSync('search-index.bin'));
-restored.search('query');
+const index = new FuzzyIndex(['apple', 'banana', 'cherry']);
+
+// Serialize to Buffer
+const data = index.serialize();
+
+// Restore from serialized data
+const restored = FuzzyIndex.deserialize(data);
+restored.search('aple'); // works immediately
 ```
 
 > **Note:** The serialization format is version-specific. Regenerate the index after updating rapid-fuzzy.
@@ -301,7 +391,10 @@ All token-based functions include `Batch` and `Many` variants (e.g., `tokenSortR
 <details>
 <summary><strong>Batch Operations</strong></summary>
 
-All distance functions have `Batch` and `Many` variants that amortize FFI overhead:
+All distance functions have `Batch` and `Many` variants that amortize FFI overhead. `*Batch` functions compute metrics for multiple pairs at once, while `*Many` functions compare a single reference string against multiple candidates.
+
+- **`*Batch`** — compute distances for an array of string pairs (many-to-many)
+- **`*Many`** — compare one reference string against many candidates (one-to-many)
 
 ```typescript
 import { levenshteinBatch, levenshteinMany } from 'rapid-fuzzy';
@@ -327,13 +420,142 @@ jaroWinklerMany('MARTHA', candidates, 0.8);       // minSimilarity → returns 0
 
 </details>
 
+<details>
+<summary><strong>TypedArray Variants</strong></summary>
+
+All `*Many` functions have TypedArray counterparts that return `Uint32Array` or `Float64Array` instead of `Array<number>`. These avoid boxing overhead and GC pressure when processing large candidate sets.
+
+- **`*ManyU32`** — returns `Uint32Array` (for integer distances: `levenshteinManyU32`, `damerauLevenshteinManyU32`, `indelManyU32`)
+- **`*ManyF64`** — returns `Float64Array` (for similarity scores: `jaroManyF64`, `jaroWinklerManyF64`, `normalizedLevenshteinManyF64`, `normalizedIndelManyF64`, `sorensenDiceManyF64`, `tokenSortRatioManyF64`, `tokenSetRatioManyF64`, `partialRatioManyF64`, `weightedRatioManyF64`)
+
+```typescript
+import { levenshteinManyU32, jaroWinklerManyF64 } from 'rapid-fuzzy';
+
+const candidates = ['sitting', 'kittens', 'kitchen'];
+
+// Returns Uint32Array instead of Array<number>
+levenshteinManyU32('kitten', candidates);       // Uint32Array [3, 1, 2]
+
+// Returns Float64Array instead of Array<number>
+jaroWinklerManyF64('kitten', candidates);       // Float64Array [0.746, 0.976, 0.933]
+```
+
+> **When to use**: Prefer TypedArray variants when comparing against thousands of candidates. The returned typed arrays can also be passed directly to WebGL, WASM, or worker threads without copying.
+
+</details>
+
+## Framework Integration
+
+`FuzzyIndex` and `FuzzyObjectIndex` are designed for repeated search on the same data — build the index once, search many times. The examples below show the recommended pattern for each major framework.
+
+### React
+
+```tsx
+import { useEffect, useRef, useState } from 'react';
+import { FuzzyObjectIndex } from 'rapid-fuzzy/objects';
+
+const users = [
+  { name: 'Alice', email: 'alice@example.com' },
+  { name: 'Bob', email: 'bob@example.com' },
+];
+
+function UserSearch() {
+  const indexRef = useRef<FuzzyObjectIndex<typeof users[number]> | null>(null);
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState(users);
+
+  useEffect(() => {
+    indexRef.current = new FuzzyObjectIndex(users, {
+      keys: [{ name: 'name', weight: 2.0 }, 'email'],
+    });
+    return () => indexRef.current?.destroy();
+  }, []); // rebuild only when data changes — pass `users` as dependency if dynamic
+
+  useEffect(() => {
+    if (!indexRef.current) return;
+    if (!query) { setResults(users); return; }
+    setResults(indexRef.current.search(query).map((r) => r.item));
+  }, [query]);
+
+  return (
+    <>
+      <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search…" />
+      <ul>{results.map((u) => <li key={u.email}>{u.name}</li>)}</ul>
+    </>
+  );
+}
+```
+
+### Vue
+
+```vue
+<script setup lang="ts">
+import { ref, watch, onUnmounted } from 'vue';
+import { FuzzyObjectIndex } from 'rapid-fuzzy/objects';
+
+const users = [
+  { name: 'Alice', email: 'alice@example.com' },
+  { name: 'Bob', email: 'bob@example.com' },
+];
+
+const query = ref('');
+const results = ref(users);
+
+const index = new FuzzyObjectIndex(users, {
+  keys: [{ name: 'name', weight: 2.0 }, 'email'],
+});
+
+watch(query, (q) => {
+  results.value = q ? index.search(q).map((r) => r.item) : users;
+});
+
+onUnmounted(() => index.destroy());
+</script>
+
+<template>
+  <input v-model="query" placeholder="Search…" />
+  <ul><li v-for="u in results" :key="u.email">{{ u.name }}</li></ul>
+</template>
+```
+
+### Svelte
+
+```svelte
+<script lang="ts">
+  import { onDestroy } from 'svelte';
+  import { FuzzyObjectIndex } from 'rapid-fuzzy/objects';
+
+  const users = [
+    { name: 'Alice', email: 'alice@example.com' },
+    { name: 'Bob', email: 'bob@example.com' },
+  ];
+
+  let query = '';
+
+  const index = new FuzzyObjectIndex(users, {
+    keys: [{ name: 'name', weight: 2.0 }, 'email'],
+  });
+
+  $: results = query ? index.search(query).map((r) => r.item) : users;
+
+  onDestroy(() => index.destroy());
+</script>
+
+<input bind:value={query} placeholder="Search…" />
+<ul>{#each results as u}<li>{u.name}</li>{/each}</ul>
+```
+
+> **Note**: Always call `index.destroy()` in your cleanup handler (`useEffect` return, `onUnmounted`, `onDestroy`) to free Rust-side memory.
+
 ## Choosing an Algorithm
 
 | Use case | Recommended | Why |
 |---|---|---|
 | Typo detection / spell check | `levenshtein`, `damerauLevenshtein` | Counts edits; Damerau adds transposition support |
-| Fixed-length comparison | `hamming` | Counts differing positions; only for equal-length strings |
+| Insertion/deletion only edits | `indel`, `normalizedIndel` | No substitutions — useful for diff-like or DNA alignment scenarios |
+| Fixed-length comparison | `hamming`, `normalizedHamming` | Counts differing positions; only for equal-length strings |
 | Name / address matching | `jaroWinkler`, `tokenSortRatio` | Prefix-weighted or order-independent matching |
+| Character-level similarity | `jaro` | Good baseline similarity without prefix weighting |
 | Document / text similarity | `sorensenDice` | Bigram-based; handles longer text well |
 | Normalized comparison (0–1) | `normalizedLevenshtein` | Length-independent similarity score |
 | Reordered words / messy data | `tokenSortRatio`, `tokenSetRatio` | Handles word order differences and extra tokens |
@@ -344,8 +566,9 @@ jaroWinklerMany('MARTHA', candidates, 0.8);       // minSimilarity → returns 0
 
 **Return types:**
 
-- `levenshtein`, `damerauLevenshtein`, `hamming` → integer (edit/difference count; `hamming` returns `null` if lengths differ)
-- `jaro`, `jaroWinkler`, `sorensenDice`, `normalizedLevenshtein` → float between 0.0 (no match) and 1.0 (identical)
+- `levenshtein`, `damerauLevenshtein`, `hamming`, `indel` → integer (edit/difference count; `hamming` returns `null` if lengths differ)
+- `jaro`, `jaroWinkler`, `sorensenDice`, `normalizedLevenshtein`, `normalizedIndel` → float between 0.0 (no match) and 1.0 (identical)
+- `normalizedHamming` → float between 0.0 and 1.0 (`null` if lengths differ)
 - `tokenSortRatio`, `tokenSetRatio`, `partialRatio`, `weightedRatio` → float between 0.0 and 1.0
 - `search` → array of `{ item, score, index, positions }` sorted by relevance (score: 0.0–1.0)
 

@@ -1,6 +1,6 @@
 {
   "name": "rapid-fuzzy",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "Rust-powered fuzzy search and string distance for JavaScript/TypeScript. 10-50x faster than fuse.js/leven.",
   "license": "MIT",
   "author": "derodero24",
@@ -78,7 +78,12 @@
     "highlight.mjs",
     "highlight.d.ts",
     "highlight.d.mts",
-    "objects.d.mts"
+    "objects.d.mts",
+    "rapid-fuzzy-wasm-bindgen.js",
+    "rapid-fuzzy-wasm-bindgen_bg.js",
+    "rapid-fuzzy-wasm-bindgen_bg.wasm",
+    "rapid-fuzzy-wasm-bindgen.d.ts",
+    "rapid-fuzzy-wasm-bindgen_bg.wasm.d.ts"
   ],
   "napi": {
     "binaryName": "rapid-fuzzy",
@@ -97,17 +102,20 @@
   "engines": {
     "node": ">=20.0.0"
   },
-  "packageManager": "pnpm@10.32.1",
+  "packageManager": "pnpm@10.33.0",
   "scripts": {
     "build": "napi build --manifest-path crates/core/Cargo.toml --platform --release --js index.js --dts index.d.ts --output-dir .",
     "postbuild": "node scripts/patch-binding.js",
     "build:debug": "napi build --manifest-path crates/core/Cargo.toml --platform --js index.js --dts index.d.ts --output-dir .",
     "build:wasm": "napi build --manifest-path crates/core/Cargo.toml --platform --release --js index.js --dts index.d.ts --output-dir . --target wasm32-wasip1-threads",
     "postbuild:wasm": "node scripts/optimize-wasm.js",
+    "build:wasm-bindgen": "node scripts/build-wasm-bindgen.js",
+    "postbuild:wasm-bindgen": "node scripts/optimize-wasm.js",
     "optimize:wasm": "node scripts/optimize-wasm.js",
     "artifacts": "napi artifacts",
     "prepublishOnly": "napi prepublish -t npm",
     "version": "napi version",
+    "changeset:version": "pnpm changeset version && node scripts/sync-cargo-version.js && napi version && pnpm run build",
     "check": "biome ci",
     "format": "biome format --write",
     "lint": "biome check",

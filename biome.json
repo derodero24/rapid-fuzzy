@@ -1,5 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.4.8/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.4.9/schema.json",
   "vcs": {
     "enabled": true,
     "clientKind": "git",
@@ -126,6 +126,19 @@
         "rules": {
           "performance": {
             "noReExportAll": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["examples/vitepress-plugin/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noDefaultExport": "off"
+          },
+          "correctness": {
+            "noUndeclaredDependencies": "off"
           }
         }
       }

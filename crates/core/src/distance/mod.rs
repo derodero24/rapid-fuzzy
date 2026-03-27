@@ -1,8 +1,10 @@
 use std::collections::BTreeSet;
+use std::collections::HashMap;
 
 use napi_derive::napi;
 use rapidfuzz::distance::damerau_levenshtein as rapid_damerau;
 use rapidfuzz::distance::hamming as rapid_hamming;
+use rapidfuzz::distance::indel as rapid_indel;
 use rapidfuzz::distance::jaro as rapid_jaro;
 use rapidfuzz::distance::jaro_winkler as rapid_jw;
 use rapidfuzz::distance::levenshtein as rapid_lev;
@@ -19,11 +21,6 @@ fn batch_apply<T: Default, F: Fn(&str, &str) -> T>(pairs: &[Vec<String>], f: F) 
             }
         })
         .collect()
-}
-
-/// Apply a distance/similarity function from one reference string to many candidates.
-fn many_apply<T, F: Fn(&str, &str) -> T>(reference: &str, candidates: &[String], f: F) -> Vec<T> {
-    candidates.iter().map(|c| f(reference, c)).collect()
 }
 
 /// Compute the Levenshtein distance between two strings.
@@ -197,6 +194,57 @@ pub fn hamming_many(
     }
 }
 
+/// Compute the normalized Hamming similarity between two strings.
+///
+/// Returns `null` if the strings have different lengths.
+/// Returns a value between 0.0 (no matching characters) and 1.0 (identical).
+#[napi]
+pub fn normalized_hamming(a: String, b: String) -> Option<f64> {
+    rapid_hamming::normalized_similarity(a.chars(), b.chars()).ok()
+}
+
+/// Compute the normalized Hamming similarity for multiple pairs of strings in a single call.
+///
+/// Returns an array of scores in the same order as the input pairs.
+/// Returns `null` for pairs with different lengths.
+#[napi]
+pub fn normalized_hamming_batch(pairs: Vec<Vec<String>>) -> Vec<Option<f64>> {
+    pairs
+        .iter()
+        .map(|pair| {
+            if pair.len() >= 2 {
+                rapid_hamming::normalized_similarity(pair[0].chars(), pair[1].chars()).ok()
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+/// Compute the normalized Hamming similarity from one reference string to many candidates.
+///
+/// Returns an array of scores, one per candidate, in the same order as the input.
+/// Returns `null` for candidates with a different length than the reference.
+/// If `min_similarity` is provided, candidates with similarity below the threshold
+/// will also return `null` (enabling early termination for better performance).
+#[napi]
+pub fn normalized_hamming_many(
+    reference: String,
+    candidates: Vec<String>,
+    min_similarity: Option<f64>,
+) -> Vec<Option<f64>> {
+    candidates
+        .iter()
+        .map(|c| {
+            let score = rapid_hamming::normalized_similarity(reference.chars(), c.chars()).ok()?;
+            match min_similarity {
+                Some(cutoff) if score < cutoff => None,
+                _ => Some(score),
+            }
+        })
+        .collect()
+}
+
 /// Compute the Jaro similarity between two strings.
 ///
 /// Returns a value between 0.0 (completely different) and 1.0 (identical).
@@ -304,9 +352,54 @@ pub fn sorensen_dice_batch(pairs: Vec<Vec<String>>) -> Vec<f64> {
 /// Compute the Sorensen-Dice coefficient from one reference string to many candidates.
 ///
 /// Returns an array of similarity scores, one per candidate, in the same order as the input.
+/// If `min_similarity` is provided, candidates scoring below the threshold return `0.0`.
+/// Reference bigrams are pre-computed once and reused for all candidates.
 #[napi]
-pub fn sorensen_dice_many(reference: String, candidates: Vec<String>) -> Vec<f64> {
-    many_apply(&reference, &candidates, strsim::sorensen_dice)
+pub fn sorensen_dice_many(
+    reference: String,
+    candidates: Vec<String>,
+    min_similarity: Option<f64>,
+) -> Vec<f64> {
+    let ref_chars: Vec<char> = reference.chars().collect();
+    let ref_len = ref_chars.len();
+    let ref_count = ref_len.saturating_sub(1);
+
+    let mut ref_bigrams: HashMap<(char, char), usize> = HashMap::new();
+    for i in 0..ref_count {
+        *ref_bigrams
+            .entry((ref_chars[i], ref_chars[i + 1]))
+            .or_insert(0) += 1;
+    }
+
+    candidates
+        .iter()
+        .map(|c| {
+            let c_chars: Vec<char> = c.chars().collect();
+            let c_len = c_chars.len();
+            let c_count = c_len.saturating_sub(1);
+
+            let score = if ref_len + c_len == 0 {
+                1.0
+            } else if ref_count + c_count == 0 {
+                if ref_len == c_len { 1.0 } else { 0.0 }
+            } else {
+                let mut c_bigrams: HashMap<(char, char), usize> = HashMap::new();
+                for i in 0..c_count {
+                    *c_bigrams.entry((c_chars[i], c_chars[i + 1])).or_insert(0) += 1;
+                }
+                let mut intersection = 0_usize;
+                for (bigram, count) in &ref_bigrams {
+                    intersection += count.min(c_bigrams.get(bigram).unwrap_or(&0));
+                }
+                (2 * intersection) as f64 / (ref_count + c_count) as f64
+            };
+
+            match min_similarity {
+                Some(cutoff) if score < cutoff => 0.0,
+                _ => score,
+            }
+        })
+        .collect()
 }
 
 /// Compute the normalized Levenshtein similarity between two strings.
@@ -342,6 +435,111 @@ pub fn normalized_levenshtein_many(
     match min_similarity {
         Some(cutoff) => {
             let args = rapid_lev::Args::default().score_cutoff(cutoff);
+            candidates
+                .iter()
+                .map(|c| {
+                    scorer
+                        .normalized_similarity_with_args(c.chars(), &args)
+                        .unwrap_or(0.0)
+                })
+                .collect()
+        }
+        None => candidates
+            .iter()
+            .map(|c| scorer.normalized_similarity(c.chars()))
+            .collect(),
+    }
+}
+
+/// Compute the Indel distance between two strings.
+///
+/// The Indel distance counts the minimum number of insertions and deletions
+/// (no substitutions) required to transform one string into the other.
+/// It equals `len(a) + len(b) - 2 * LCS_length(a, b)`.
+///
+/// Useful when substitutions are semantically two operations (one deletion +
+/// one insertion), such as in DNA sequence alignment.
+#[napi]
+pub fn indel(a: String, b: String) -> u32 {
+    rapid_indel::distance(a.chars(), b.chars()) as u32
+}
+
+/// Compute the Indel distance for multiple pairs of strings in a single call.
+///
+/// Returns an array of distances in the same order as the input pairs.
+/// Each pair must be an array of exactly two strings `[a, b]`.
+#[napi]
+pub fn indel_batch(pairs: Vec<Vec<String>>) -> Vec<u32> {
+    batch_apply(&pairs, |a, b| {
+        rapid_indel::distance(a.chars(), b.chars()) as u32
+    })
+}
+
+/// Compute the Indel distance from one reference string to many candidates.
+///
+/// Returns an array of distances, one per candidate, in the same order as the input.
+/// If `max_distance` is provided, candidates with distance exceeding the threshold
+/// will return `max_distance + 1` (enabling early termination for better performance).
+#[napi]
+pub fn indel_many(
+    reference: String,
+    candidates: Vec<String>,
+    max_distance: Option<u32>,
+) -> Vec<u32> {
+    let scorer = rapid_indel::BatchComparator::new(reference.chars());
+    match max_distance {
+        Some(cutoff) => {
+            let args = rapid_indel::Args::default().score_cutoff(cutoff as usize);
+            let sentinel = cutoff + 1;
+            candidates
+                .iter()
+                .map(|c| {
+                    scorer
+                        .distance_with_args(c.chars(), &args)
+                        .map_or(sentinel, |d| d as u32)
+                })
+                .collect()
+        }
+        None => candidates
+            .iter()
+            .map(|c| scorer.distance(c.chars()) as u32)
+            .collect(),
+    }
+}
+
+/// Compute the normalized Indel similarity between two strings.
+///
+/// Returns a value between 0.0 (completely different) and 1.0 (identical).
+#[napi]
+pub fn normalized_indel(a: String, b: String) -> f64 {
+    rapid_indel::normalized_similarity(a.chars(), b.chars())
+}
+
+/// Compute the normalized Indel similarity for multiple pairs of strings in a single call.
+///
+/// Returns an array of similarity scores in the same order as the input pairs.
+#[napi]
+pub fn normalized_indel_batch(pairs: Vec<Vec<String>>) -> Vec<f64> {
+    batch_apply(&pairs, |a, b| {
+        rapid_indel::normalized_similarity(a.chars(), b.chars())
+    })
+}
+
+/// Compute the normalized Indel similarity from one reference string to many candidates.
+///
+/// Returns an array of similarity scores, one per candidate, in the same order as the input.
+/// If `min_similarity` is provided, candidates with similarity below the threshold
+/// will return `0.0` (enabling early termination for better performance).
+#[napi]
+pub fn normalized_indel_many(
+    reference: String,
+    candidates: Vec<String>,
+    min_similarity: Option<f64>,
+) -> Vec<f64> {
+    let scorer = rapid_indel::BatchComparator::new(reference.chars());
+    match min_similarity {
+        Some(cutoff) => {
+            let args = rapid_indel::Args::default().score_cutoff(cutoff);
             candidates
                 .iter()
                 .map(|c| {
@@ -540,17 +738,26 @@ pub fn token_sort_ratio_batch(pairs: Vec<Vec<String>>) -> Vec<f64> {
 /// Compute the token sort ratio from one reference string to many candidates.
 ///
 /// Returns an array of similarity scores, one per candidate, in the same order as the input.
+/// If `min_similarity` is provided, candidates scoring below the threshold return `0.0`.
 #[napi]
-pub fn token_sort_ratio_many(reference: String, candidates: Vec<String>) -> Vec<f64> {
+pub fn token_sort_ratio_many(
+    reference: String,
+    candidates: Vec<String>,
+    min_similarity: Option<f64>,
+) -> Vec<f64> {
     let sorted_ref = sorted_tokens(&reference).join(" ");
     candidates
         .iter()
         .map(|c| {
             let sorted_c = sorted_tokens(c).join(" ");
-            if sorted_ref.is_empty() && sorted_c.is_empty() {
+            let score = if sorted_ref.is_empty() && sorted_c.is_empty() {
                 1.0
             } else {
                 rapid_lev::normalized_similarity(sorted_ref.chars(), sorted_c.chars())
+            };
+            match min_similarity {
+                Some(cutoff) if score < cutoff => 0.0,
+                _ => score,
             }
         })
         .collect()
@@ -580,8 +787,13 @@ pub fn token_set_ratio_batch(pairs: Vec<Vec<String>>) -> Vec<f64> {
 /// Compute the token set ratio from one reference string to many candidates.
 ///
 /// Returns an array of similarity scores, one per candidate, in the same order as the input.
+/// If `min_similarity` is provided, candidates scoring below the threshold return `0.0`.
 #[napi]
-pub fn token_set_ratio_many(reference: String, candidates: Vec<String>) -> Vec<f64> {
+pub fn token_set_ratio_many(
+    reference: String,
+    candidates: Vec<String>,
+    min_similarity: Option<f64>,
+) -> Vec<f64> {
     let norm_ref = normalize_str(&reference);
     let tokens_ref: BTreeSet<&str> = norm_ref.split_whitespace().collect();
 
@@ -591,10 +803,14 @@ pub fn token_set_ratio_many(reference: String, candidates: Vec<String>) -> Vec<f
             let norm_c = normalize_str(c);
 
             if norm_ref.is_empty() || norm_c.is_empty() {
-                return if norm_ref.is_empty() && norm_c.is_empty() {
+                let score = if norm_ref.is_empty() && norm_c.is_empty() {
                     1.0
                 } else {
                     0.0
+                };
+                return match min_similarity {
+                    Some(cutoff) if score < cutoff => 0.0,
+                    _ => score,
                 };
             }
 
@@ -637,7 +853,11 @@ pub fn token_set_ratio_many(reference: String, candidates: Vec<String>) -> Vec<f
                 rapid_lev::normalized_similarity(sect_str.chars(), combined_c.chars())
             };
 
-            f64::max(score_ab, f64::max(score_a, score_b))
+            let score = f64::max(score_ab, f64::max(score_a, score_b));
+            match min_similarity {
+                Some(cutoff) if score < cutoff => 0.0,
+                _ => score,
+            }
         })
         .collect()
 }
@@ -666,8 +886,13 @@ pub fn partial_ratio_batch(pairs: Vec<Vec<String>>) -> Vec<f64> {
 /// Compute the partial ratio from one reference string to many candidates.
 ///
 /// Returns an array of similarity scores, one per candidate, in the same order as the input.
+/// If `min_similarity` is provided, candidates scoring below the threshold return `0.0`.
 #[napi]
-pub fn partial_ratio_many(reference: String, candidates: Vec<String>) -> Vec<f64> {
+pub fn partial_ratio_many(
+    reference: String,
+    candidates: Vec<String>,
+    min_similarity: Option<f64>,
+) -> Vec<f64> {
     let norm_ref = normalize_str(&reference);
 
     candidates
@@ -692,7 +917,11 @@ pub fn partial_ratio_many(reference: String, candidates: Vec<String>) -> Vec<f64
             let long_len = longer.chars().count();
 
             if short_len == long_len {
-                return rapid_lev::normalized_similarity(shorter.chars(), longer.chars());
+                let score = rapid_lev::normalized_similarity(shorter.chars(), longer.chars());
+                return match min_similarity {
+                    Some(cutoff) if score < cutoff => 0.0,
+                    _ => score,
+                };
             }
 
             let long_chars: Vec<char> = longer.chars().collect();
@@ -701,7 +930,9 @@ pub fn partial_ratio_many(reference: String, candidates: Vec<String>) -> Vec<f64
 
             for start in 0..=(long_len - short_len) {
                 let window = long_chars[start..start + short_len].iter().copied();
-                let args = rapid_lev::Args::default().score_cutoff(best);
+                // Use max(best, threshold) as cutoff so windows below threshold are pruned early.
+                let cutoff = min_similarity.map_or(best, |t| best.max(t));
+                let args = rapid_lev::Args::default().score_cutoff(cutoff);
                 if let Some(score) = scorer.normalized_similarity_with_args(window, &args) {
                     best = score;
                     if best == 1.0 {
@@ -710,7 +941,10 @@ pub fn partial_ratio_many(reference: String, candidates: Vec<String>) -> Vec<f64
                 }
             }
 
-            best
+            match min_similarity {
+                Some(cutoff) if best < cutoff => 0.0,
+                _ => best,
+            }
         })
         .collect()
 }
@@ -739,8 +973,13 @@ pub fn weighted_ratio_batch(pairs: Vec<Vec<String>>) -> Vec<f64> {
 /// Compute the weighted ratio from one reference string to many candidates.
 ///
 /// Returns an array of similarity scores, one per candidate, in the same order as the input.
+/// If `min_similarity` is provided, candidates scoring below the threshold return `0.0`.
 #[napi]
-pub fn weighted_ratio_many(reference: String, candidates: Vec<String>) -> Vec<f64> {
+pub fn weighted_ratio_many(
+    reference: String,
+    candidates: Vec<String>,
+    min_similarity: Option<f64>,
+) -> Vec<f64> {
     let norm_ref = normalize_str(&reference);
     let sorted_ref = sorted_tokens(&reference).join(" ");
     let tokens_ref: BTreeSet<String> = norm_ref.split_whitespace().map(String::from).collect();
@@ -863,9 +1102,13 @@ pub fn weighted_ratio_many(reference: String, candidates: Vec<String>) -> Vec<f6
                 }
             };
 
-            [raw, sort, set, partial]
+            let score = [raw, sort, set, partial]
                 .into_iter()
-                .fold(0.0_f64, f64::max)
+                .fold(0.0_f64, f64::max);
+            match min_similarity {
+                Some(cutoff) if score < cutoff => 0.0,
+                _ => score,
+            }
         })
         .collect()
 }
@@ -1013,9 +1256,45 @@ mod tests {
     #[test]
     fn test_sorensen_dice_many() {
         let candidates = vec!["nacht".to_string(), "night".to_string()];
-        let result = sorensen_dice_many("night".to_string(), candidates);
+        let result = sorensen_dice_many("night".to_string(), candidates, None);
         assert!(result[0] > 0.0 && result[0] < 1.0);
         assert_eq!(result[1], 1.0);
+    }
+
+    #[test]
+    fn test_normalized_hamming() {
+        // Equal-length strings return Some
+        assert_eq!(normalized_hamming("abc".into(), "abc".into()), Some(1.0));
+        assert_eq!(normalized_hamming("".into(), "".into()), Some(1.0));
+        let score = normalized_hamming("karolin".into(), "kathrin".into());
+        assert!(score.is_some());
+        let s = score.unwrap();
+        assert!(s >= 0.0 && s <= 1.0);
+        // Different lengths return None
+        assert_eq!(normalized_hamming("abc".into(), "ab".into()), None);
+        assert_eq!(normalized_hamming("".into(), "a".into()), None);
+    }
+
+    #[test]
+    fn test_indel() {
+        // Identical strings have distance 0
+        assert_eq!(indel("abc".into(), "abc".into()), 0);
+        assert_eq!(indel("".into(), "".into()), 0);
+        // Indel("abc", "ac") = len("abc") + len("ac") - 2 * LCS_len = 3 + 2 - 2*2 = 1
+        assert_eq!(indel("abc".into(), "ac".into()), 1);
+    }
+
+    #[test]
+    fn test_normalized_indel() {
+        // Identical strings have similarity 1.0
+        assert_eq!(normalized_indel("abc".into(), "abc".into()), 1.0);
+        assert_eq!(normalized_indel("".into(), "".into()), 1.0);
+        // Similarity is in [0, 1]
+        let score = normalized_indel("abc".into(), "xyz".into());
+        assert!(score >= 0.0 && score <= 1.0);
+        // Partially similar strings
+        let score2 = normalized_indel("kitten".into(), "sitting".into());
+        assert!(score2 > 0.0 && score2 < 1.0);
     }
 
     mod score_cutoff_tests {
@@ -1453,7 +1732,7 @@ mod tests {
                 "Mets New York".to_string(),
                 "completely different".to_string(),
             ];
-            let result = token_sort_ratio_many("New York Mets".to_string(), candidates);
+            let result = token_sort_ratio_many("New York Mets".to_string(), candidates, None);
             assert_eq!(result[0], 1.0);
             assert!(result[1] < 0.5);
         }
@@ -1516,7 +1795,7 @@ mod tests {
                 "Yankees vs Mariners".to_string(),
                 "completely different".to_string(),
             ];
-            let result = token_set_ratio_many("Mariners vs Yankees".to_string(), candidates);
+            let result = token_set_ratio_many("Mariners vs Yankees".to_string(), candidates, None);
             assert_eq!(result[0], 1.0);
             assert!(result[1] < 0.5);
         }
@@ -1573,7 +1852,7 @@ mod tests {
         #[test]
         fn test_many() {
             let candidates = vec!["hello world".to_string(), "xyz".to_string()];
-            let result = partial_ratio_many("hello".to_string(), candidates);
+            let result = partial_ratio_many("hello".to_string(), candidates, None);
             assert_eq!(result[0], 1.0);
             assert!(result[1] < 0.5);
         }
@@ -1628,7 +1907,7 @@ mod tests {
         #[test]
         fn test_many() {
             let candidates = vec!["hello".to_string(), "xyz".to_string()];
-            let result = weighted_ratio_many("hello".to_string(), candidates);
+            let result = weighted_ratio_many("hello".to_string(), candidates, None);
             assert_eq!(result[0], 1.0);
             assert!(result[1] < 0.5);
         }
@@ -1728,7 +2007,7 @@ mod tests {
         fn token_sort_ratio_many_matches_impl() {
             let reference = "New York Mets".to_string();
             let candidates = test_candidates();
-            let many_results = token_sort_ratio_many(reference.clone(), candidates.clone());
+            let many_results = token_sort_ratio_many(reference.clone(), candidates.clone(), None);
             let individual: Vec<f64> = candidates
                 .iter()
                 .map(|c| token_sort_ratio_impl(&reference, c))
@@ -1749,7 +2028,7 @@ mod tests {
         fn token_set_ratio_many_matches_impl() {
             let reference = "Mariners vs Yankees".to_string();
             let candidates = test_candidates();
-            let many_results = token_set_ratio_many(reference.clone(), candidates.clone());
+            let many_results = token_set_ratio_many(reference.clone(), candidates.clone(), None);
             let individual: Vec<f64> = candidates
                 .iter()
                 .map(|c| token_set_ratio_impl(&reference, c))
@@ -1770,7 +2049,7 @@ mod tests {
         fn partial_ratio_many_matches_impl() {
             let reference = "hello".to_string();
             let candidates = test_candidates();
-            let many_results = partial_ratio_many(reference.clone(), candidates.clone());
+            let many_results = partial_ratio_many(reference.clone(), candidates.clone(), None);
             let individual: Vec<f64> = candidates
                 .iter()
                 .map(|c| partial_ratio_impl(&reference, c))
@@ -1791,7 +2070,7 @@ mod tests {
         fn weighted_ratio_many_matches_impl() {
             let reference = "New York Mets".to_string();
             let candidates = test_candidates();
-            let many_results = weighted_ratio_many(reference.clone(), candidates.clone());
+            let many_results = weighted_ratio_many(reference.clone(), candidates.clone(), None);
             let individual: Vec<f64> = candidates
                 .iter()
                 .map(|c| weighted_ratio_impl(&reference, c))
@@ -1813,28 +2092,28 @@ mod tests {
             let reference = "".to_string();
             let candidates = vec!["hello".to_string(), "".to_string(), "world".to_string()];
 
-            let tsr = token_sort_ratio_many(reference.clone(), candidates.clone());
+            let tsr = token_sort_ratio_many(reference.clone(), candidates.clone(), None);
             let tsr_expected: Vec<f64> = candidates
                 .iter()
                 .map(|c| token_sort_ratio_impl(&reference, c))
                 .collect();
             assert_eq!(tsr, tsr_expected);
 
-            let tsetr = token_set_ratio_many(reference.clone(), candidates.clone());
+            let tsetr = token_set_ratio_many(reference.clone(), candidates.clone(), None);
             let tsetr_expected: Vec<f64> = candidates
                 .iter()
                 .map(|c| token_set_ratio_impl(&reference, c))
                 .collect();
             assert_eq!(tsetr, tsetr_expected);
 
-            let pr = partial_ratio_many(reference.clone(), candidates.clone());
+            let pr = partial_ratio_many(reference.clone(), candidates.clone(), None);
             let pr_expected: Vec<f64> = candidates
                 .iter()
                 .map(|c| partial_ratio_impl(&reference, c))
                 .collect();
             assert_eq!(pr, pr_expected);
 
-            let wr = weighted_ratio_many(reference.clone(), candidates.clone());
+            let wr = weighted_ratio_many(reference.clone(), candidates.clone(), None);
             let wr_expected: Vec<f64> = candidates
                 .iter()
                 .map(|c| weighted_ratio_impl(&reference, c))
@@ -1847,10 +2126,74 @@ mod tests {
             let reference = "hello world".to_string();
             let candidates: Vec<String> = vec![];
 
-            assert!(token_sort_ratio_many(reference.clone(), candidates.clone()).is_empty());
-            assert!(token_set_ratio_many(reference.clone(), candidates.clone()).is_empty());
-            assert!(partial_ratio_many(reference.clone(), candidates.clone()).is_empty());
-            assert!(weighted_ratio_many(reference, candidates).is_empty());
+            assert!(token_sort_ratio_many(reference.clone(), candidates.clone(), None).is_empty());
+            assert!(token_set_ratio_many(reference.clone(), candidates.clone(), None).is_empty());
+            assert!(partial_ratio_many(reference.clone(), candidates.clone(), None).is_empty());
+            assert!(weighted_ratio_many(reference, candidates, None).is_empty());
+        }
+    }
+
+    mod threshold_many_tests {
+        use super::*;
+
+        #[test]
+        fn sorensen_dice_many_threshold_filters_low_scores() {
+            let candidates = vec!["night".to_string(), "nacht".to_string(), "xyz".to_string()];
+            let result = sorensen_dice_many("night".to_string(), candidates, Some(0.9));
+            assert_eq!(result[0], 1.0);
+            assert_eq!(result[1], 0.0); // below threshold
+            assert_eq!(result[2], 0.0); // below threshold
+        }
+
+        #[test]
+        fn sorensen_dice_many_bigram_matches_strsim() {
+            let candidates = vec![
+                "night".to_string(),
+                "nacht".to_string(),
+                "abc".to_string(),
+                "".to_string(),
+            ];
+            let with_threshold = sorensen_dice_many("night".to_string(), candidates.clone(), None);
+            let expected: Vec<f64> = candidates
+                .iter()
+                .map(|c| strsim::sorensen_dice("night", c))
+                .collect();
+            for (a, b) in with_threshold.iter().zip(expected.iter()) {
+                assert!((a - b).abs() < 1e-10, "expected {b}, got {a}");
+            }
+        }
+
+        #[test]
+        fn token_sort_ratio_many_threshold_filters() {
+            let candidates = vec!["New York Mets".to_string(), "xyz abc".to_string()];
+            let result = token_sort_ratio_many("New York Mets".to_string(), candidates, Some(0.9));
+            assert_eq!(result[0], 1.0);
+            assert_eq!(result[1], 0.0);
+        }
+
+        #[test]
+        fn token_set_ratio_many_threshold_filters() {
+            let candidates = vec!["Mariners vs Yankees".to_string(), "xyz".to_string()];
+            let result =
+                token_set_ratio_many("Mariners vs Yankees".to_string(), candidates, Some(0.9));
+            assert_eq!(result[0], 1.0);
+            assert_eq!(result[1], 0.0);
+        }
+
+        #[test]
+        fn partial_ratio_many_threshold_filters() {
+            let candidates = vec!["hello world".to_string(), "xyz".to_string()];
+            let result = partial_ratio_many("hello".to_string(), candidates, Some(0.9));
+            assert_eq!(result[0], 1.0);
+            assert_eq!(result[1], 0.0);
+        }
+
+        #[test]
+        fn weighted_ratio_many_threshold_filters() {
+            let candidates = vec!["hello".to_string(), "xyz".to_string()];
+            let result = weighted_ratio_many("hello".to_string(), candidates, Some(0.9));
+            assert_eq!(result[0], 1.0);
+            assert_eq!(result[1], 0.0);
         }
     }
 

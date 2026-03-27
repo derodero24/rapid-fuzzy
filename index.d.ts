@@ -13,6 +13,13 @@
 export declare class FuzzyIndex {
   /** Create a new FuzzyIndex from an array of strings. */
   constructor(items: Array<string>)
+  /**
+   * Construct a FuzzyIndex on the libuv thread pool, returning a Promise.
+   *
+   * For large datasets this keeps the JavaScript event loop unblocked during
+   * index construction. The synchronous constructor is fine for small datasets.
+   */
+  static fromAsync(items: Array<string>): Promise<FuzzyIndex>
   /** Return the number of items in the index. */
   get size(): number
   /**
@@ -95,6 +102,15 @@ export declare class KeyedFuzzyIndex {
    */
   search(query: string, options?: SearchOptions | undefined | null): Array<KeySearchResult>
   /**
+   * Find the index of the closest matching item.
+   *
+   * Returns the index of the best match, or null if no match is found.
+   * If `min_score` is provided, returns null when the best match scores below the threshold.
+   *
+   * Use the returned index to look up the item in your own data array.
+   */
+  closest(query: string, minScore?: number | undefined | null): number | null
+  /**
    * Add a single item to the index.
    *
    * `key_values` must have the same length as the number of keys.
@@ -116,6 +132,16 @@ export declare class KeyedFuzzyIndex {
   remove(index: number): boolean
   /** Free the internal data. After calling this, the index is empty. */
   destroy(): void
+  /**
+   * Serialize the index to a compact binary format.
+   *
+   * The returned Buffer can be written to disk, stored in IndexedDB,
+   * or transferred over the network. Use `KeyedFuzzyIndex.deserialize()` to
+   * reconstruct the index.
+   */
+  serialize(): Buffer
+  /** Reconstruct a KeyedFuzzyIndex from a previously serialized Buffer. */
+  static deserialize(data: Buffer): KeyedFuzzyIndex
 }
 
 /**
@@ -177,6 +203,35 @@ export declare function hammingBatch(pairs: Array<Array<string>>): Array<number 
  * will also return `null` (enabling early termination for better performance).
  */
 export declare function hammingMany(reference: string, candidates: Array<string>, maxDistance?: number | undefined | null): Array<number | undefined | null>
+
+/**
+ * Compute the Indel distance between two strings.
+ *
+ * The Indel distance counts the minimum number of insertions and deletions
+ * (no substitutions) required to transform one string into the other.
+ * It equals `len(a) + len(b) - 2 * LCS_length(a, b)`.
+ *
+ * Useful when substitutions are semantically two operations (one deletion +
+ * one insertion), such as in DNA sequence alignment.
+ */
+export declare function indel(a: string, b: string): number
+
+/**
+ * Compute the Indel distance for multiple pairs of strings in a single call.
+ *
+ * Returns an array of distances in the same order as the input pairs.
+ * Each pair must be an array of exactly two strings `[a, b]`.
+ */
+export declare function indelBatch(pairs: Array<Array<string>>): Array<number>
+
+/**
+ * Compute the Indel distance from one reference string to many candidates.
+ *
+ * Returns an array of distances, one per candidate, in the same order as the input.
+ * If `max_distance` is provided, candidates with distance exceeding the threshold
+ * will return `max_distance + 1` (enabling early termination for better performance).
+ */
+export declare function indelMany(reference: string, candidates: Array<string>, maxDistance?: number | undefined | null): Array<number>
 
 /**
  * A lightweight search result containing only index and score (no item string).
@@ -305,6 +360,55 @@ export declare const enum MatchType {
 }
 
 /**
+ * Compute the normalized Hamming similarity between two strings.
+ *
+ * Returns `null` if the strings have different lengths.
+ * Returns a value between 0.0 (no matching characters) and 1.0 (identical).
+ */
+export declare function normalizedHamming(a: string, b: string): number | null
+
+/**
+ * Compute the normalized Hamming similarity for multiple pairs of strings in a single call.
+ *
+ * Returns an array of scores in the same order as the input pairs.
+ * Returns `null` for pairs with different lengths.
+ */
+export declare function normalizedHammingBatch(pairs: Array<Array<string>>): Array<number | undefined | null>
+
+/**
+ * Compute the normalized Hamming similarity from one reference string to many candidates.
+ *
+ * Returns an array of scores, one per candidate, in the same order as the input.
+ * Returns `null` for candidates with a different length than the reference.
+ * If `min_similarity` is provided, candidates with similarity below the threshold
+ * will also return `null` (enabling early termination for better performance).
+ */
+export declare function normalizedHammingMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number | undefined | null>
+
+/**
+ * Compute the normalized Indel similarity between two strings.
+ *
+ * Returns a value between 0.0 (completely different) and 1.0 (identical).
+ */
+export declare function normalizedIndel(a: string, b: string): number
+
+/**
+ * Compute the normalized Indel similarity for multiple pairs of strings in a single call.
+ *
+ * Returns an array of similarity scores in the same order as the input pairs.
+ */
+export declare function normalizedIndelBatch(pairs: Array<Array<string>>): Array<number>
+
+/**
+ * Compute the normalized Indel similarity from one reference string to many candidates.
+ *
+ * Returns an array of similarity scores, one per candidate, in the same order as the input.
+ * If `min_similarity` is provided, candidates with similarity below the threshold
+ * will return `0.0` (enabling early termination for better performance).
+ */
+export declare function normalizedIndelMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number>
+
+/**
  * Compute the normalized Levenshtein similarity between two strings.
  *
  * Returns a value between 0.0 (completely different) and 1.0 (identical).
@@ -348,8 +452,9 @@ export declare function partialRatioBatch(pairs: Array<Array<string>>): Array<nu
  * Compute the partial ratio from one reference string to many candidates.
  *
  * Returns an array of similarity scores, one per candidate, in the same order as the input.
+ * If `min_similarity` is provided, candidates scoring below the threshold return `0.0`.
  */
-export declare function partialRatioMany(reference: string, candidates: Array<string>): Array<number>
+export declare function partialRatioMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number>
 
 /**
  * Perform fuzzy search over a list of strings.
@@ -436,8 +541,10 @@ export declare function sorensenDiceBatch(pairs: Array<Array<string>>): Array<nu
  * Compute the Sorensen-Dice coefficient from one reference string to many candidates.
  *
  * Returns an array of similarity scores, one per candidate, in the same order as the input.
+ * If `min_similarity` is provided, candidates scoring below the threshold return `0.0`.
+ * Reference bigrams are pre-computed once and reused for all candidates.
  */
-export declare function sorensenDiceMany(reference: string, candidates: Array<string>): Array<number>
+export declare function sorensenDiceMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number>
 
 /**
  * Compute the token set ratio between two strings.
@@ -460,8 +567,9 @@ export declare function tokenSetRatioBatch(pairs: Array<Array<string>>): Array<n
  * Compute the token set ratio from one reference string to many candidates.
  *
  * Returns an array of similarity scores, one per candidate, in the same order as the input.
+ * If `min_similarity` is provided, candidates scoring below the threshold return `0.0`.
  */
-export declare function tokenSetRatioMany(reference: string, candidates: Array<string>): Array<number>
+export declare function tokenSetRatioMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number>
 
 /**
  * Compute the token sort ratio between two strings.
@@ -484,8 +592,9 @@ export declare function tokenSortRatioBatch(pairs: Array<Array<string>>): Array<
  * Compute the token sort ratio from one reference string to many candidates.
  *
  * Returns an array of similarity scores, one per candidate, in the same order as the input.
+ * If `min_similarity` is provided, candidates scoring below the threshold return `0.0`.
  */
-export declare function tokenSortRatioMany(reference: string, candidates: Array<string>): Array<number>
+export declare function tokenSortRatioMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number>
 
 /**
  * Compute the weighted ratio between two strings.
@@ -508,8 +617,22 @@ export declare function weightedRatioBatch(pairs: Array<Array<string>>): Array<n
  * Compute the weighted ratio from one reference string to many candidates.
  *
  * Returns an array of similarity scores, one per candidate, in the same order as the input.
+ * If `min_similarity` is provided, candidates scoring below the threshold return `0.0`.
  */
-export declare function weightedRatioMany(reference: string, candidates: Array<string>): Array<number>
+export declare function weightedRatioMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number>
 
 // --- JS utilities (appended by scripts/patch-binding.js) ---
 export { highlight, highlightRanges, HighlightRange } from './highlight';
+/** TypedArray variants — identical to the `*Many` counterparts but return a typed array instead of `Array<number>`, reducing GC pressure for large candidate sets. */
+export declare function levenshteinManyU32(reference: string, candidates: Array<string>, maxDistance?: number | undefined | null): Uint32Array;
+export declare function damerauLevenshteinManyU32(reference: string, candidates: Array<string>, maxDistance?: number | undefined | null): Uint32Array;
+export declare function indelManyU32(reference: string, candidates: Array<string>, maxDistance?: number | undefined | null): Uint32Array;
+export declare function jaroManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array;
+export declare function jaroWinklerManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array;
+export declare function sorensenDiceManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array;
+export declare function normalizedLevenshteinManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array;
+export declare function normalizedIndelManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array;
+export declare function tokenSortRatioManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array;
+export declare function tokenSetRatioManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array;
+export declare function partialRatioManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array;
+export declare function weightedRatioManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array;

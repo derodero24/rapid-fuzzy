@@ -1,0 +1,14 @@
+{
+  "name": "vitepress-plugin-rapid-fuzzy-example",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "rapid-fuzzy": "*"
+  },
+  "peerDependencies": {
+    "vite": ">=5",
+    "vitepress": ">=1",
+    "vue": ">=3"
+  }
+}

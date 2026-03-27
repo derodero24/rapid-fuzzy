@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>rapid-fuzzy CDN example</title>
+</head>
+<body>
+  <h1>rapid-fuzzy CDN example</h1>
+  <label>
+    Search: <input id="query" type="search" placeholder="e.g. typscript" />
+  </label>
+  <ul id="results"></ul>
+
+  <script type="module">
+    // Import directly from esm.sh — no npm install or bundler required.
+    // esm.sh resolves the `browser` export condition and serves the WASM build.
+    import { FuzzyIndex, search } from 'https://esm.sh/rapid-fuzzy';
+
+    const items = ['TypeScript', 'JavaScript', 'Python', 'Rust', 'Go', 'TypeSpec'];
+    const index = new FuzzyIndex(items);
+
+    const input = document.getElementById('query');
+    const list = document.getElementById('results');
+
+    function render(query) {
+      const matches = query ? index.search(query) : [];
+      list.innerHTML = matches.map((r) => `<li>${r.item} (${r.score.toFixed(2)})</li>`).join('');
+    }
+
+    input.addEventListener('input', (e) => render(e.currentTarget.value));
+
+    // Initial render with a sample query to demonstrate the library
+    input.value = 'typscript';
+    render('typscript');
+
+    // Also demonstrate standalone search (no index needed for one-off queries)
+    const oneOff = search('javas', items);
+    const firstResult = document.createElement('p');
+    firstResult.textContent = `search("javas") → ${oneOff.map((r) => r.item).join(', ')}`;
+    document.body.appendChild(firstResult);
+
+    // Release Rust-side memory when the page is unloaded
+    window.addEventListener('beforeunload', () => index.destroy());
+  </script>
+</body>
+</html>

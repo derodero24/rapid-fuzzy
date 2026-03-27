@@ -74,12 +74,15 @@ class FuzzyObjectIndex {
   /** @type {Array<{ name: string; weight: number }>} */
   #keys;
 
+  static #SENTINEL = Symbol('FuzzyObjectIndex.internal');
+
   /**
    * @param {T[]} items - Array of objects to index.
    * @param {object} options - Index configuration.
    * @param {Array<string | { name: string; weight?: number }>} options.keys - Keys to search.
    */
-  constructor(items, options) {
+  constructor(items, options, _sentinel) {
+    if (_sentinel === FuzzyObjectIndex.#SENTINEL) return;
     if (!options?.keys?.length) {
       throw new TypeError('options.keys must be a non-empty array');
     }
@@ -133,8 +136,8 @@ class FuzzyObjectIndex {
    * @param {T} item
    */
   add(item) {
-    this.#items.push(item);
     this.#index.add(this.#keys.map((k) => getNestedValue(item, k.name)));
+    this.#items.push(item);
   }
 
   /**
@@ -142,10 +145,10 @@ class FuzzyObjectIndex {
    * @param {T[]} items
    */
   addMany(items) {
+    this.#index.addMany(items.map((item) => this.#keys.map((k) => getNestedValue(item, k.name))));
     for (const item of items) {
       this.#items.push(item);
     }
-    this.#index.addMany(items.map((item) => this.#keys.map((k) => getNestedValue(item, k.name))));
   }
 
   /**
@@ -156,19 +159,66 @@ class FuzzyObjectIndex {
    */
   remove(index) {
     if (index < 0 || index >= this.#items.length) return false;
-    // Swap-remove to match Rust-side behavior
+    if (!this.#index.remove(index)) return false;
+    // Mirror the Rust-side swap-remove on the JS items array
     const lastIdx = this.#items.length - 1;
     if (index !== lastIdx) {
       this.#items[index] = this.#items[lastIdx];
     }
     this.#items.pop();
-    return this.#index.remove(index);
+    return true;
   }
 
   /** Free all internal data. */
   destroy() {
     this.#items = [];
     this.#index.destroy();
+  }
+
+  /**
+   * Serialize the index and its items to a Buffer for storage or transfer.
+   *
+   * Items must be JSON-serializable. The returned Buffer can be passed to
+   * `FuzzyObjectIndex.deserialize()` to reconstruct the index without
+   * re-processing the original data.
+   *
+   * @returns {Buffer}
+   */
+  serialize() {
+    const metaStr = JSON.stringify({ items: this.#items, keys: this.#keys });
+    const metaBuf = Buffer.from(metaStr, 'utf8');
+    const indexBuf = this.#index.serialize();
+    const header = Buffer.allocUnsafe(4);
+    header.writeUInt32LE(metaBuf.length, 0);
+    return Buffer.concat([header, metaBuf, indexBuf]);
+  }
+
+  /**
+   * @param {Array<T>} items
+   * @param {Array<{ name: string; weight: number }>} keys
+   * @param {KeyedFuzzyIndex} index
+   * @returns {FuzzyObjectIndex<T>}
+   */
+  static #fromState(items, keys, index) {
+    const instance = new FuzzyObjectIndex(undefined, undefined, FuzzyObjectIndex.#SENTINEL);
+    instance.#items = items;
+    instance.#keys = keys;
+    instance.#index = index;
+    return instance;
+  }
+
+  /**
+   * Reconstruct a `FuzzyObjectIndex` from a Buffer produced by `serialize()`.
+   *
+   * @template T
+   * @param {Buffer} buffer - A Buffer previously returned by `serialize()`.
+   * @returns {FuzzyObjectIndex<T>}
+   */
+  static deserialize(buffer) {
+    const metaLen = buffer.readUInt32LE(0);
+    const { items, keys } = JSON.parse(buffer.subarray(4, 4 + metaLen).toString('utf8'));
+    const index = KeyedFuzzyIndex.deserialize(buffer.subarray(4 + metaLen));
+    return FuzzyObjectIndex.#fromState(items, keys, index);
   }
 }
 

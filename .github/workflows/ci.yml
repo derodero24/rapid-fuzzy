@@ -242,7 +242,7 @@ jobs:
         with:
           components: llvm-tools-preview
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-      - uses: taiki-e/install-action@7bc99eee1f1b8902a125006cf790a1f4c8461e63
+      - uses: taiki-e/install-action@4bb73acd2ddc568523ecd3ef0d0e84736a9145bd
         with:
           tool: cargo-llvm-cov
       - name: Rust coverage
@@ -265,15 +265,42 @@ jobs:
 
       # Upload to Codecov
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@1af58845a975a7985b0beb0cbe6fbbb71a41dbad # v5
+        uses: codecov/codecov-action@75cd11691c0faa626561e295848008c8a7dddffe # v5
         with:
           files: rust-lcov.info,coverage/lcov.info
           flags: rust,javascript
           fail_ci_if_error: false
 
+  build-wasm-bindgen:
+    name: Build - wasm-bindgen
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          shared-key: build-wasm-bindgen
+      - run: pnpm install --frozen-lockfile
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      - name: Build wasm-bindgen
+        run: pnpm run build:wasm-bindgen
+      - name: Upload wasm-bindgen artifact
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+        with:
+          name: bindings-wasm-bindgen
+          path: rapid-fuzzy-wasm-bindgen_bg.wasm
+
   test-browser:
     name: Browser WASM Test
-    needs: [build]
+    needs: [build-wasm-bindgen]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -286,7 +313,7 @@ jobs:
       - name: Download WASM artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: bindings-wasm32
+          name: bindings-wasm-bindgen
           path: .
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
@@ -295,7 +322,7 @@ jobs:
 
   test-bun:
     name: Bun WASM Test
-    needs: [build]
+    needs: [build-wasm-bindgen]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -309,14 +336,14 @@ jobs:
       - name: Download WASM artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: bindings-wasm32
+          name: bindings-wasm-bindgen
           path: .
       - name: Run Bun WASM tests
         run: pnpm run test:bun
 
   test-deno:
     name: Deno WASM Test
-    needs: [build]
+    needs: [build-wasm-bindgen]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -332,7 +359,7 @@ jobs:
       - name: Download WASM artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: bindings-wasm32
+          name: bindings-wasm-bindgen
           path: .
       - name: Run Deno WASM tests
         run: pnpm run test:deno
