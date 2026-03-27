@@ -1,5 +1,29 @@
 # rapid-fuzzy
 
+## 1.2.0
+
+### Minor Changes
+
+- 560bf4d: Add `indel`, `indelBatch`, `indelMany`, `normalizedIndel`, `normalizedIndelBatch`, `normalizedIndelMany` (insertion-deletion distance) and `normalizedHamming`, `normalizedHammingBatch`, `normalizedHammingMany` (normalized Hamming similarity) functions.
+- d6a5a57: Add `FuzzyIndex.fromAsync(items)` static factory that constructs the index on the libuv thread pool, returning `Promise<FuzzyIndex>`. For large datasets this keeps the JavaScript event loop unblocked during index construction — useful in Next.js API routes, Nuxt server handlers, and other environments where blocking is a concern.
+- 1ec91c9: Add `closest()`, `serialize()`, and `deserialize()` to `KeyedFuzzyIndex`, bringing it to API parity with `FuzzyIndex`.
+- 0af7da3: Add optional `minSimilarity` threshold parameter to `sorensenDiceMany`, `tokenSortRatioMany`, `tokenSetRatioMany`, `partialRatioMany`, and `weightedRatioMany`. Candidates scoring below the threshold return `0.0`.
+
+  Also optimizes `sorensenDiceMany` by pre-computing reference bigrams once and reusing them across all candidates, matching the pattern of other `*Many` functions.
+
+- 6487992: Add `serialize()` and `static deserialize()` to `FuzzyObjectIndex`, enabling SSR/SSG pre-building patterns where the index is constructed at build time and shipped as a binary blob for fast client-side initialization.
+- a4d79e6: Add `*ManyU32` and `*ManyF64` typed-array variants for all `*Many` distance functions. These return `Uint32Array` or `Float64Array` instead of `Array<number>`, reducing GC pressure for large candidate sets (1000+ items).
+
+  **New `Uint32Array` variants:** `levenshteinManyU32`, `damerauLevenshteinManyU32`, `indelManyU32`
+
+  **New `Float64Array` variants:** `jaroManyF64`, `jaroWinklerManyF64`, `sorensenDiceManyF64`, `normalizedLevenshteinManyF64`, `normalizedIndelManyF64`, `tokenSortRatioManyF64`, `tokenSetRatioManyF64`, `partialRatioManyF64`, `weightedRatioManyF64`
+
+  All variants accept the same parameters as their `*Many` counterparts.
+
+### Patch Changes
+
+- 7ae4ff2: Fix mutation ordering in `objects.js` where the JS items array was mutated before Rust operations completed, which could cause state divergence if the Rust call threw an error.
+
 ## 1.1.1
 
 ### Patch Changes
