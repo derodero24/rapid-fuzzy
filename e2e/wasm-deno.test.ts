@@ -28,6 +28,26 @@ Deno.test('distance - sorensenDice', () => {
   assertEquals(wasm.sorensenDice('hello', 'hello'), 1.0);
 });
 
+Deno.test('distance - hamming', () => {
+  assertEquals(wasm.hamming('hello', 'hello'), 0);
+  assertEquals(wasm.hamming('karolin', 'kathrin'), 3);
+  assertEquals(wasm.hamming('hello', 'hi'), null);
+});
+
+Deno.test('distance - indel', () => {
+  assertEquals(wasm.indel('hello', 'hello'), 0);
+  assertEquals(wasm.indel('abc', 'ac'), 1);
+});
+
+Deno.test('distance - normalizedIndel', () => {
+  assertEquals(wasm.normalizedIndel('hello', 'hello'), 1.0);
+});
+
+Deno.test('distance - normalizedHamming', () => {
+  assertEquals(wasm.normalizedHamming('hello', 'hello'), 1.0);
+  assertEquals(wasm.normalizedHamming('hello', 'hi'), null);
+});
+
 Deno.test('batch - levenshteinBatch', () => {
   assertEquals(
     wasm.levenshteinBatch([
@@ -38,10 +58,33 @@ Deno.test('batch - levenshteinBatch', () => {
   );
 });
 
+Deno.test('batch - indelBatch', () => {
+  const result = wasm.indelBatch([
+    ['hello', 'hello'],
+    ['abc', 'ac'],
+  ]);
+  assertEquals(Array.from(result), [0, 1]);
+});
+
 Deno.test('many - levenshteinMany', () => {
   const result = wasm.levenshteinMany('hello', ['hello', 'world', 'help']);
   assertEquals(result.length, 3);
   assertEquals(result[0], 0);
+});
+
+Deno.test('many - indelMany', () => {
+  const result = wasm.indelMany('abc', ['abc', 'ac', '']);
+  assertEquals(result.length, 3);
+  assertEquals(result[0], 0);
+  assertEquals(result[1], 1);
+});
+
+Deno.test('many - normalizedHammingMany', () => {
+  const result = wasm.normalizedHammingMany('hello', ['hello', 'world', 'hi']);
+  assertEquals(result.length, 3);
+  assertEquals(result[0], 1.0);
+  // wasm-bindgen serializes None as undefined inside arrays (not null)
+  assertEquals(result[2], undefined);
 });
 
 Deno.test('token - tokenSortRatio', () => {

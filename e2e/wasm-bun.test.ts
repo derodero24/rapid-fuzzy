@@ -45,6 +45,26 @@ describe('WASM on Bun (wasm-bindgen)', () => {
     test('sorensenDice', () => {
       expect(wasm.sorensenDice('hello', 'hello')).toBe(1.0);
     });
+
+    test('hamming', () => {
+      expect(wasm.hamming('hello', 'hello')).toBe(0);
+      expect(wasm.hamming('karolin', 'kathrin')).toBe(3);
+      expect(wasm.hamming('hello', 'hi')).toBeNull();
+    });
+
+    test('indel', () => {
+      expect(wasm.indel('hello', 'hello')).toBe(0);
+      expect(wasm.indel('abc', 'ac')).toBe(1);
+    });
+
+    test('normalizedIndel', () => {
+      expect(wasm.normalizedIndel('hello', 'hello')).toBe(1.0);
+    });
+
+    test('normalizedHamming', () => {
+      expect(wasm.normalizedHamming('hello', 'hello')).toBe(1.0);
+      expect(wasm.normalizedHamming('hello', 'hi')).toBeNull();
+    });
   });
 
   describe('batch functions', () => {
@@ -56,6 +76,23 @@ describe('WASM on Bun (wasm-bindgen)', () => {
         ]),
       ).toEqual(new Uint32Array([0, 4]));
     });
+
+    test('indelBatch', () => {
+      const result = wasm.indelBatch([
+        ['hello', 'hello'],
+        ['abc', 'ac'],
+      ]);
+      expect(Array.from(result)).toEqual([0, 1]);
+    });
+
+    test('normalizedHammingBatch', () => {
+      const result = wasm.normalizedHammingBatch([
+        ['hello', 'hello'],
+        ['hello', 'world'],
+      ]);
+      expect(result).toHaveLength(2);
+      expect(result[0]).toBe(1.0);
+    });
   });
 
   describe('many functions', () => {
@@ -63,6 +100,21 @@ describe('WASM on Bun (wasm-bindgen)', () => {
       const result = wasm.levenshteinMany('hello', ['hello', 'world', 'help']);
       expect(result).toHaveLength(3);
       expect(result[0]).toBe(0);
+    });
+
+    test('indelMany', () => {
+      const result = wasm.indelMany('abc', ['abc', 'ac', '']);
+      expect(result).toHaveLength(3);
+      expect(result[0]).toBe(0);
+      expect(result[1]).toBe(1);
+    });
+
+    test('normalizedHammingMany', () => {
+      const result = wasm.normalizedHammingMany('hello', ['hello', 'world', 'hi']);
+      expect(result).toHaveLength(3);
+      expect(result[0]).toBe(1.0);
+      // wasm-bindgen serializes None as undefined inside arrays (not null)
+      expect(result[2]).toBeUndefined();
     });
   });
 

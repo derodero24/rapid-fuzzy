@@ -28,6 +28,9 @@ describe.skipIf(!wasmAvailable)('wasm', () => {
         'hamming',
         'hammingBatch',
         'hammingMany',
+        'indel',
+        'indelBatch',
+        'indelMany',
         'jaro',
         'jaroBatch',
         'jaroMany',
@@ -37,6 +40,12 @@ describe.skipIf(!wasmAvailable)('wasm', () => {
         'levenshtein',
         'levenshteinBatch',
         'levenshteinMany',
+        'normalizedHamming',
+        'normalizedHammingBatch',
+        'normalizedHammingMany',
+        'normalizedIndel',
+        'normalizedIndelBatch',
+        'normalizedIndelMany',
         'normalizedLevenshtein',
         'normalizedLevenshteinBatch',
         'normalizedLevenshteinMany',
@@ -113,6 +122,31 @@ describe.skipIf(!wasmAvailable)('wasm', () => {
       expect(wasm.hamming('hello', 'world')).toBe(4);
       expect(wasm.hamming('hello', 'hi')).toBeNull();
       expect(wasm.hamming('', '')).toBe(0);
+    });
+
+    it('indel', () => {
+      expect(wasm.indel('hello', 'hello')).toBe(0);
+      expect(wasm.indel('abc', 'ac')).toBe(1);
+      expect(wasm.indel('abc', 'bc')).toBe(1);
+      expect(wasm.indel('', '')).toBe(0);
+      expect(wasm.indel('abc', '')).toBe(3);
+    });
+
+    it('normalizedIndel', () => {
+      expect(wasm.normalizedIndel('hello', 'hello')).toBe(1.0);
+      expect(wasm.normalizedIndel('', '')).toBe(1.0);
+      const score = wasm.normalizedIndel('hello', 'world');
+      expect(score).toBeGreaterThanOrEqual(0);
+      expect(score).toBeLessThanOrEqual(1);
+    });
+
+    it('normalizedHamming', () => {
+      expect(wasm.normalizedHamming('hello', 'hello')).toBe(1.0);
+      expect(wasm.normalizedHamming('', '')).toBe(1.0);
+      expect(wasm.normalizedHamming('hello', 'hi')).toBeNull();
+      const score = wasm.normalizedHamming('karolin', 'kathrin');
+      expect(score).toBeGreaterThanOrEqual(0);
+      expect(score).toBeLessThanOrEqual(1);
     });
 
     it('tokenSortRatio', () => {
@@ -213,6 +247,34 @@ describe.skipIf(!wasmAvailable)('wasm', () => {
       expect(result[2]).toBeNull();
     });
 
+    it('indelBatch', () => {
+      const result = wasm.indelBatch([
+        ['hello', 'hello'],
+        ['abc', 'ac'],
+      ]);
+      expect(result).toEqual([0, 1]);
+    });
+
+    it('normalizedIndelBatch', () => {
+      const result = wasm.normalizedIndelBatch([
+        ['hello', 'hello'],
+        ['hello', 'world'],
+      ]);
+      expect(result).toHaveLength(2);
+      expect(result[0]).toBe(1.0);
+    });
+
+    it('normalizedHammingBatch', () => {
+      const result = wasm.normalizedHammingBatch([
+        ['hello', 'hello'],
+        ['hello', 'world'],
+        ['hello', 'hi'],
+      ]);
+      expect(result).toHaveLength(3);
+      expect(result[0]).toBe(1.0);
+      expect(result[2]).toBeNull();
+    });
+
     it('tokenSortRatioBatch', () => {
       const result = wasm.tokenSortRatioBatch([
         ['hello world', 'hello world'],
@@ -292,6 +354,26 @@ describe.skipIf(!wasmAvailable)('wasm', () => {
       expect(result).toHaveLength(3);
       expect(result[0]).toBe(0);
       expect(result[1]).toBe(4);
+      expect(result[2]).toBeNull();
+    });
+
+    it('indelMany', () => {
+      const result = wasm.indelMany('abc', ['abc', 'ac', 'bc', '']);
+      expect(result).toHaveLength(4);
+      expect(result[0]).toBe(0);
+      expect(result[1]).toBe(1);
+    });
+
+    it('normalizedIndelMany', () => {
+      const result = wasm.normalizedIndelMany('hello', ['hello', 'world']);
+      expect(result).toHaveLength(2);
+      expect(result[0]).toBe(1.0);
+    });
+
+    it('normalizedHammingMany', () => {
+      const result = wasm.normalizedHammingMany('hello', ['hello', 'world', 'hi']);
+      expect(result).toHaveLength(3);
+      expect(result[0]).toBe(1.0);
       expect(result[2]).toBeNull();
     });
 
@@ -409,6 +491,24 @@ describe.skipIf(!wasmAvailable)('wasm', () => {
     it('hamming results should match native', () => {
       for (const [a, b] of testPairs) {
         expect(wasm.hamming(a, b)).toBe(native.hamming(a, b));
+      }
+    });
+
+    it('indel results should match native', () => {
+      for (const [a, b] of testPairs) {
+        expect(wasm.indel(a, b)).toBe(native.indel(a, b));
+      }
+    });
+
+    it('normalizedIndel results should match native', () => {
+      for (const [a, b] of testPairs) {
+        expect(wasm.normalizedIndel(a, b)).toBe(native.normalizedIndel(a, b));
+      }
+    });
+
+    it('normalizedHamming results should match native', () => {
+      for (const [a, b] of testPairs) {
+        expect(wasm.normalizedHamming(a, b)).toBe(native.normalizedHamming(a, b));
       }
     });
 
