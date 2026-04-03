@@ -76,6 +76,23 @@ describe('WASM on Bun (wasm-bindgen)', () => {
         ]),
       ).toEqual(new Uint32Array([0, 4]));
     });
+
+    test('indelBatch', () => {
+      const result = wasm.indelBatch([
+        ['hello', 'hello'],
+        ['abc', 'ac'],
+      ]);
+      expect(Array.from(result)).toEqual([0, 1]);
+    });
+
+    test('normalizedHammingBatch', () => {
+      const result = wasm.normalizedHammingBatch([
+        ['hello', 'hello'],
+        ['hello', 'world'],
+      ]);
+      expect(result).toHaveLength(2);
+      expect(result[0]).toBe(1.0);
+    });
   });
 
   describe('many functions', () => {
@@ -83,6 +100,20 @@ describe('WASM on Bun (wasm-bindgen)', () => {
       const result = wasm.levenshteinMany('hello', ['hello', 'world', 'help']);
       expect(result).toHaveLength(3);
       expect(result[0]).toBe(0);
+    });
+
+    test('indelMany', () => {
+      const result = wasm.indelMany('abc', ['abc', 'ac', '']);
+      expect(result).toHaveLength(3);
+      expect(result[0]).toBe(0);
+      expect(result[1]).toBe(1);
+    });
+
+    test('normalizedHammingMany', () => {
+      const result = wasm.normalizedHammingMany('hello', ['hello', 'world', 'hi']);
+      expect(result).toHaveLength(3);
+      expect(result[0]).toBe(1.0);
+      expect(result[2]).toBeNull();
     });
   });
 

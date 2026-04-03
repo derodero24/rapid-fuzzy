@@ -56,9 +56,18 @@
       results.levenshteinBatch = Array.from(mod.levenshteinBatch([['hello', 'hello'], ['hello', 'world']]));
       results.jaroBatch = Array.from(mod.jaroBatch([['hello', 'hello'], ['abc', 'xyz']]));
 
+      results.hammingBatch = Array.from(mod.hammingBatch([['hello', 'hello'], ['karolin', 'kathrin']]));
+      results.indelBatch = Array.from(mod.indelBatch([['hello', 'hello'], ['abc', 'ac']]));
+      results.normalizedIndelBatch = Array.from(mod.normalizedIndelBatch([['hello', 'hello'], ['hello', 'world']]));
+      results.normalizedHammingBatch = Array.from(mod.normalizedHammingBatch([['hello', 'hello'], ['hello', 'world']]));
+
       // Many functions — convert TypedArray to plain array for JSON serialization
       results.levenshteinMany = Array.from(mod.levenshteinMany('hello', ['hello', 'world', 'help']));
       results.jaroMany = Array.from(mod.jaroMany('hello', ['hello', 'world']));
+      results.hammingMany = Array.from(mod.hammingMany('hello', ['hello', 'world', 'hi']));
+      results.indelMany = Array.from(mod.indelMany('abc', ['abc', 'ac', '']));
+      results.normalizedIndelMany = Array.from(mod.normalizedIndelMany('hello', ['hello', 'world']));
+      results.normalizedHammingMany = Array.from(mod.normalizedHammingMany('hello', ['hello', 'world', 'hi']));
 
       // Token-based functions
       results.tokenSortRatio = mod.tokenSortRatio('New York Mets', 'Mets New York');

@@ -58,10 +58,32 @@ Deno.test('batch - levenshteinBatch', () => {
   );
 });
 
+Deno.test('batch - indelBatch', () => {
+  const result = wasm.indelBatch([
+    ['hello', 'hello'],
+    ['abc', 'ac'],
+  ]);
+  assertEquals(Array.from(result), [0, 1]);
+});
+
 Deno.test('many - levenshteinMany', () => {
   const result = wasm.levenshteinMany('hello', ['hello', 'world', 'help']);
   assertEquals(result.length, 3);
   assertEquals(result[0], 0);
+});
+
+Deno.test('many - indelMany', () => {
+  const result = wasm.indelMany('abc', ['abc', 'ac', '']);
+  assertEquals(result.length, 3);
+  assertEquals(result[0], 0);
+  assertEquals(result[1], 1);
+});
+
+Deno.test('many - normalizedHammingMany', () => {
+  const result = wasm.normalizedHammingMany('hello', ['hello', 'world', 'hi']);
+  assertEquals(result.length, 3);
+  assertEquals(result[0], 1.0);
+  assertEquals(result[2], null);
 });
 
 Deno.test('token - tokenSortRatio', () => {

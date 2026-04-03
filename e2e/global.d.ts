@@ -17,8 +17,16 @@ interface Window {
     normalizedHammingNull: number | null;
     levenshteinBatch: number[];
     jaroBatch: number[];
+    hammingBatch: (number | null)[];
+    indelBatch: number[];
+    normalizedIndelBatch: number[];
+    normalizedHammingBatch: (number | null)[];
     levenshteinMany: number[];
     jaroMany: number[];
+    hammingMany: (number | null)[];
+    indelMany: number[];
+    normalizedIndelMany: number[];
+    normalizedHammingMany: (number | null)[];
     tokenSortRatio: number;
     tokenSetRatio: number;
     partialRatio: number;

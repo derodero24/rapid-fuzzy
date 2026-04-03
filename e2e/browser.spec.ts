@@ -100,6 +100,28 @@ test.describe('batch functions', () => {
     expect(result[0]).toBe(1.0);
     expect(result[1]).toBe(0.0);
   });
+
+  test('hammingBatch', async ({ page }) => {
+    const result = await page.evaluate(() => window.__results.hammingBatch);
+    expect(result).toEqual([0, 3]);
+  });
+
+  test('indelBatch', async ({ page }) => {
+    const result = await page.evaluate(() => window.__results.indelBatch);
+    expect(result).toEqual([0, 1]);
+  });
+
+  test('normalizedIndelBatch', async ({ page }) => {
+    const result = await page.evaluate(() => window.__results.normalizedIndelBatch);
+    expect(result).toHaveLength(2);
+    expect(result[0]).toBe(1.0);
+  });
+
+  test('normalizedHammingBatch', async ({ page }) => {
+    const result = await page.evaluate(() => window.__results.normalizedHammingBatch);
+    expect(result).toHaveLength(2);
+    expect(result[0]).toBe(1.0);
+  });
 });
 
 test.describe('many functions', () => {
@@ -113,6 +135,33 @@ test.describe('many functions', () => {
     const result = await page.evaluate(() => window.__results.jaroMany);
     expect(result).toHaveLength(2);
     expect(result[0]).toBe(1.0);
+  });
+
+  test('hammingMany', async ({ page }) => {
+    const result = await page.evaluate(() => window.__results.hammingMany);
+    expect(result).toHaveLength(3);
+    expect(result[0]).toBe(0);
+    expect(result[2]).toBeNull();
+  });
+
+  test('indelMany', async ({ page }) => {
+    const result = await page.evaluate(() => window.__results.indelMany);
+    expect(result).toHaveLength(3);
+    expect(result[0]).toBe(0);
+    expect(result[1]).toBe(1);
+  });
+
+  test('normalizedIndelMany', async ({ page }) => {
+    const result = await page.evaluate(() => window.__results.normalizedIndelMany);
+    expect(result).toHaveLength(2);
+    expect(result[0]).toBe(1.0);
+  });
+
+  test('normalizedHammingMany', async ({ page }) => {
+    const result = await page.evaluate(() => window.__results.normalizedHammingMany);
+    expect(result).toHaveLength(3);
+    expect(result[0]).toBe(1.0);
+    expect(result[2]).toBeNull();
   });
 });
 
