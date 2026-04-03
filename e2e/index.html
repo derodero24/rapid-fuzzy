@@ -52,7 +52,7 @@
       results.normalizedHamming = mod.normalizedHamming('hello', 'hello');
       results.normalizedHammingNull = mod.normalizedHamming('hello', 'hi');
 
-      // Batch functions — convert TypedArray to plain array for JSON serialization
+      // Batch functions — normalize to plain arrays for consistent JSON serialization
       results.levenshteinBatch = Array.from(mod.levenshteinBatch([['hello', 'hello'], ['hello', 'world']]));
       results.jaroBatch = Array.from(mod.jaroBatch([['hello', 'hello'], ['abc', 'xyz']]));
 
@@ -61,7 +61,7 @@
       results.normalizedIndelBatch = Array.from(mod.normalizedIndelBatch([['hello', 'hello'], ['hello', 'world']]));
       results.normalizedHammingBatch = Array.from(mod.normalizedHammingBatch([['hello', 'hello'], ['hello', 'world']]));
 
-      // Many functions — convert TypedArray to plain array for JSON serialization
+      // Many functions — normalize to plain arrays for consistent JSON serialization
       results.levenshteinMany = Array.from(mod.levenshteinMany('hello', ['hello', 'world', 'help']));
       results.jaroMany = Array.from(mod.jaroMany('hello', ['hello', 'world']));
       results.hammingMany = Array.from(mod.hammingMany('hello', ['hello', 'world', 'hi']));
