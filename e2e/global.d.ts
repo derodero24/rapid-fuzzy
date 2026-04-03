@@ -9,6 +9,12 @@ interface Window {
     jaro: number;
     jaroWinkler: number;
     sorensenDice: number;
+    hamming: number;
+    hammingNull: number | null;
+    indel: number;
+    normalizedIndel: number;
+    normalizedHamming: number;
+    normalizedHammingNull: number | null;
     levenshteinBatch: number[];
     jaroBatch: number[];
     levenshteinMany: number[];

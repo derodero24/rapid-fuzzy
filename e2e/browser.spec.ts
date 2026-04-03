@@ -56,6 +56,36 @@ test.describe('distance functions', () => {
     const score = await page.evaluate(() => window.__results.sorensenDice);
     expect(score).toBe(1.0);
   });
+
+  test('hamming', async ({ page }) => {
+    const dist = await page.evaluate(() => window.__results.hamming);
+    expect(dist).toBe(3);
+  });
+
+  test('hamming returns null for different lengths', async ({ page }) => {
+    const result = await page.evaluate(() => window.__results.hammingNull);
+    expect(result).toBeNull();
+  });
+
+  test('indel', async ({ page }) => {
+    const dist = await page.evaluate(() => window.__results.indel);
+    expect(dist).toBe(1);
+  });
+
+  test('normalizedIndel', async ({ page }) => {
+    const score = await page.evaluate(() => window.__results.normalizedIndel);
+    expect(score).toBe(1.0);
+  });
+
+  test('normalizedHamming', async ({ page }) => {
+    const score = await page.evaluate(() => window.__results.normalizedHamming);
+    expect(score).toBe(1.0);
+  });
+
+  test('normalizedHamming returns null for different lengths', async ({ page }) => {
+    const result = await page.evaluate(() => window.__results.normalizedHammingNull);
+    expect(result).toBeNull();
+  });
 });
 
 test.describe('batch functions', () => {

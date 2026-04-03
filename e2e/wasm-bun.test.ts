@@ -45,6 +45,26 @@ describe('WASM on Bun (wasm-bindgen)', () => {
     test('sorensenDice', () => {
       expect(wasm.sorensenDice('hello', 'hello')).toBe(1.0);
     });
+
+    test('hamming', () => {
+      expect(wasm.hamming('hello', 'hello')).toBe(0);
+      expect(wasm.hamming('karolin', 'kathrin')).toBe(3);
+      expect(wasm.hamming('hello', 'hi')).toBeNull();
+    });
+
+    test('indel', () => {
+      expect(wasm.indel('hello', 'hello')).toBe(0);
+      expect(wasm.indel('abc', 'ac')).toBe(1);
+    });
+
+    test('normalizedIndel', () => {
+      expect(wasm.normalizedIndel('hello', 'hello')).toBe(1.0);
+    });
+
+    test('normalizedHamming', () => {
+      expect(wasm.normalizedHamming('hello', 'hello')).toBe(1.0);
+      expect(wasm.normalizedHamming('hello', 'hi')).toBeNull();
+    });
   });
 
   describe('batch functions', () => {

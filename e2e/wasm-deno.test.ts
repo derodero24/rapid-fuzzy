@@ -28,6 +28,26 @@ Deno.test('distance - sorensenDice', () => {
   assertEquals(wasm.sorensenDice('hello', 'hello'), 1.0);
 });
 
+Deno.test('distance - hamming', () => {
+  assertEquals(wasm.hamming('hello', 'hello'), 0);
+  assertEquals(wasm.hamming('karolin', 'kathrin'), 3);
+  assertEquals(wasm.hamming('hello', 'hi'), null);
+});
+
+Deno.test('distance - indel', () => {
+  assertEquals(wasm.indel('hello', 'hello'), 0);
+  assertEquals(wasm.indel('abc', 'ac'), 1);
+});
+
+Deno.test('distance - normalizedIndel', () => {
+  assertEquals(wasm.normalizedIndel('hello', 'hello'), 1.0);
+});
+
+Deno.test('distance - normalizedHamming', () => {
+  assertEquals(wasm.normalizedHamming('hello', 'hello'), 1.0);
+  assertEquals(wasm.normalizedHamming('hello', 'hi'), null);
+});
+
 Deno.test('batch - levenshteinBatch', () => {
   assertEquals(
     wasm.levenshteinBatch([

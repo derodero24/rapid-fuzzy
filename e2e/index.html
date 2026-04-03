@@ -45,6 +45,12 @@
       results.jaro = mod.jaro('hello', 'hello');
       results.jaroWinkler = mod.jaroWinkler('hello', 'hello');
       results.sorensenDice = mod.sorensenDice('hello', 'hello');
+      results.hamming = mod.hamming('karolin', 'kathrin');
+      results.hammingNull = mod.hamming('hello', 'hi');
+      results.indel = mod.indel('abc', 'ac');
+      results.normalizedIndel = mod.normalizedIndel('hello', 'hello');
+      results.normalizedHamming = mod.normalizedHamming('hello', 'hello');
+      results.normalizedHammingNull = mod.normalizedHamming('hello', 'hi');
 
       // Batch functions — convert TypedArray to plain array for JSON serialization
       results.levenshteinBatch = Array.from(mod.levenshteinBatch([['hello', 'hello'], ['hello', 'world']]));
@@ -81,10 +87,14 @@
 
       // Export list check
       const expectedExports = [
-        'closest', 'search', 'FuzzyIndex',
+        'closest', 'search', 'searchKeys', 'FuzzyIndex',
         'levenshtein', 'levenshteinBatch', 'levenshteinMany',
         'normalizedLevenshtein', 'normalizedLevenshteinBatch', 'normalizedLevenshteinMany',
         'damerauLevenshtein', 'damerauLevenshteinBatch', 'damerauLevenshteinMany',
+        'hamming', 'hammingBatch', 'hammingMany',
+        'indel', 'indelBatch', 'indelMany',
+        'normalizedIndel', 'normalizedIndelBatch', 'normalizedIndelMany',
+        'normalizedHamming', 'normalizedHammingBatch', 'normalizedHammingMany',
         'jaro', 'jaroBatch', 'jaroMany',
         'jaroWinkler', 'jaroWinklerBatch', 'jaroWinklerMany',
         'sorensenDice', 'sorensenDiceBatch', 'sorensenDiceMany',
