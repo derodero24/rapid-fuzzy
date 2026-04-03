@@ -242,7 +242,7 @@ jobs:
         with:
           components: llvm-tools-preview
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-      - uses: taiki-e/install-action@4bb73acd2ddc568523ecd3ef0d0e84736a9145bd
+      - uses: taiki-e/install-action@f8b8d555f84da49ac7e1e22379742eb1b8ded407
         with:
           tool: cargo-llvm-cov
       - name: Rust coverage
