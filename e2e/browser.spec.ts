@@ -64,6 +64,7 @@ test.describe('distance functions', () => {
 
   test('hamming returns null for different lengths', async ({ page }) => {
     const result = await page.evaluate(() => window.__results.hammingNull);
+    // wasm-bindgen single functions return JsValue::NULL which Playwright preserves as null
     expect(result).toBeNull();
   });
 
@@ -141,7 +142,8 @@ test.describe('many functions', () => {
     const result = await page.evaluate(() => window.__results.hammingMany);
     expect(result).toHaveLength(3);
     expect(result[0]).toBe(0);
-    expect(result[2]).toBeNull();
+    // serde_wasm_bindgen serializes None as undefined in arrays; Playwright preserves it
+    expect(result[2]).toBeUndefined();
   });
 
   test('indelMany', async ({ page }) => {
@@ -161,7 +163,8 @@ test.describe('many functions', () => {
     const result = await page.evaluate(() => window.__results.normalizedHammingMany);
     expect(result).toHaveLength(3);
     expect(result[0]).toBe(1.0);
-    expect(result[2]).toBeNull();
+    // serde_wasm_bindgen serializes None as undefined in arrays; Playwright preserves it
+    expect(result[2]).toBeUndefined();
   });
 });
 

@@ -113,7 +113,8 @@ describe('WASM on Bun (wasm-bindgen)', () => {
       const result = wasm.normalizedHammingMany('hello', ['hello', 'world', 'hi']);
       expect(result).toHaveLength(3);
       expect(result[0]).toBe(1.0);
-      expect(result[2]).toBeNull();
+      // wasm-bindgen serializes None as undefined inside arrays (not null)
+      expect(result[2]).toBeUndefined();
     });
   });
 

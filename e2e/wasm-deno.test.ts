@@ -83,7 +83,8 @@ Deno.test('many - normalizedHammingMany', () => {
   const result = wasm.normalizedHammingMany('hello', ['hello', 'world', 'hi']);
   assertEquals(result.length, 3);
   assertEquals(result[0], 1.0);
-  assertEquals(result[2], null);
+  // wasm-bindgen serializes None as undefined inside arrays (not null)
+  assertEquals(result[2], undefined);
 });
 
 Deno.test('token - tokenSortRatio', () => {
