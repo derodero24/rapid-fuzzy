@@ -28,7 +28,7 @@ Try rapid-fuzzy in the browser — no installation required: **[Open Playground]
 import { search } from 'rapid-fuzzy';
 
 const results = search('typscript', ['TypeScript', 'JavaScript', 'Python']);
-// → [{ item: 'TypeScript', score: 0.85, index: 0 }, ...]
+// → [{ item: 'TypeScript', score: 0.85, index: 0, positions: [] }, ...]
 ```
 
 For repeated searches, use `FuzzyIndex` for up to 297x faster lookups:
