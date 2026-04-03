@@ -656,6 +656,9 @@ Switching from another library? These guides provide API mapping tables, code ex
 - [**From leven / fastest-levenshtein**](docs/migration/from-leven.md) — Multi-algorithm upgrade with batch APIs
 - [**From fuzzysort**](docs/migration/from-fuzzysort.md) — Richer matching with query syntax and 10 distance algorithms
 - [**From uFuzzy**](docs/migration/from-ufuzzy.md) — Weighted object search, batch APIs, and persistent indexes
+- [**From fuzzball**](docs/migration/from-fuzzball.md) — Same ratio functions (token sort, token set, weighted), now 0.0–1.0 scale
+- [**From FlexSearch**](docs/migration/from-flexsearch.md) — Typo-tolerant fuzzy search to replace exact-token full-text search
+- [**From MiniSearch**](docs/migration/from-minisearch.md) — Faster fuzzy search with richer distance algorithms
 
 ## License
 
