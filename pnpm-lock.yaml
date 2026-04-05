@@ -61,7 +61,7 @@ importers:
         version: 0.8.212
       fuse.js:
         specifier: ^7.1.0
-        version: 7.2.0
+        version: 7.3.0
       fuzzball:
         specifier: ^2.2.3
         version: 2.2.3
@@ -1412,8 +1412,8 @@ packages:
   function-bind@1.1.2:
     resolution: {integrity: sha512-7XHNxH7qX9xG5mIwxkhumTox/MIRNcOgDrxWsMt2pAr23WHp6MrRlN7FBSFpCpr+oVO0F744iUgR82nJMfG2SA==}
 
-  fuse.js@7.2.0:
-    resolution: {integrity: sha512-zf4vdcIGpjNKTuXwug33Hm2okqX6a0t2ZEbez+o9oBJQSNhVJ5AqERfeiRD3r8HcLqP66MrjdkmzxrncbAOTUQ==}
+  fuse.js@7.3.0:
+    resolution: {integrity: sha512-plz8RVjfcDedTGfVngWH1jmJvBvAwi1v2jecfDerbEnMcmOYUEEwKFTHbNoCiYyzaK2Ws8lABkTCcRSqCY1q4w==}
     engines: {node: '>=10'}
 
   fuzzball@2.2.3:
@@ -3449,7 +3449,7 @@ snapshots:
 
   function-bind@1.1.2: {}
 
-  fuse.js@7.2.0: {}
+  fuse.js@7.3.0: {}
 
   fuzzball@2.2.3:
     dependencies:
