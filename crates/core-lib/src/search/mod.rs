@@ -1,3 +1,12 @@
+mod fuzzy_index;
+mod keyed_index;
+mod keys;
+pub mod serialization;
+
+pub use fuzzy_index::FuzzyIndexCore;
+pub use keyed_index::KeyedFuzzyIndexCore;
+pub use keys::{SearchKeysOptions, search_keys_impl};
+
 use std::cell::RefCell;
 use std::collections::HashMap;
 

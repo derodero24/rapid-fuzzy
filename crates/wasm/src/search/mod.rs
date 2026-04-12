@@ -94,11 +94,7 @@ pub(crate) fn to_js<T: Serialize>(value: &T) -> JsValue {
     serde_wasm_bindgen::to_value(value).unwrap_or(JsValue::NULL)
 }
 
-pub(crate) use rapid_fuzzy_core::search::{
-    BigramIndex, PrecomputedSearch, compute_char_mask, compute_max_score, compute_query_mask,
-    extract_query_bigrams, resolve_case_matching, search_over_precomputed,
-    search_over_precomputed_indices,
-};
+pub(crate) use rapid_fuzzy_core::search::resolve_case_matching;
 
 // ─── Standalone search functions ────────────────────────────────────────────
 
