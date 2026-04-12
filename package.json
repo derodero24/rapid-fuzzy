@@ -171,6 +171,9 @@
     "onlyBuiltDependencies": [
       "lefthook"
     ],
+    "overrides": {
+      "axios": ">=1.15.0"
+    },
     "peerDependencyRules": {
       "allowedVersions": {
         "@codspeed/vitest-plugin>vite": "8"
