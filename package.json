@@ -9,6 +9,9 @@
     "url": "git+https://github.com/derodero24/rapid-fuzzy.git"
   },
   "homepage": "https://github.com/derodero24/rapid-fuzzy",
+  "bugs": {
+    "url": "https://github.com/derodero24/rapid-fuzzy/issues"
+  },
   "keywords": [
     "fuzzy",
     "fuzzy-search",
