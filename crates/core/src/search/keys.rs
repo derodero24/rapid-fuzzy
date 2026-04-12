@@ -1,8 +1,11 @@
 use napi_derive::napi;
-use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
-use nucleo_matcher::{Config, Matcher};
+use rapid_fuzzy_core::search::SearchKeysOptions;
 
-use super::{SearchOptions, compute_max_score, resolve_case_matching};
+use super::SearchOptions;
+
+// Re-export CaseMatching so tests can access it via `use super::*`.
+#[cfg(test)]
+pub(crate) use nucleo_matcher::pattern::CaseMatching;
 
 /// A single result from multi-key fuzzy search.
 #[napi(object)]
@@ -14,6 +17,16 @@ pub struct KeySearchResult {
     /// Per-key scores in the same order as the input keys.
     /// A score of 0.0 means the item did not match on that key.
     pub key_scores: Vec<f64>,
+}
+
+impl From<rapid_fuzzy_core::search::KeySearchResult> for KeySearchResult {
+    fn from(r: rapid_fuzzy_core::search::KeySearchResult) -> Self {
+        Self {
+            index: r.index,
+            score: r.score,
+            key_scores: r.key_scores,
+        }
+    }
 }
 
 /// Perform fuzzy search across multiple text keys with weights.
@@ -30,151 +43,16 @@ pub fn search_keys(
     weights: Vec<f64>,
     options: Option<SearchOptions>,
 ) -> Vec<KeySearchResult> {
-    let num_keys = key_texts.len();
+    let core_opts = options.map(|opts| SearchKeysOptions {
+        max_results: opts.max_results,
+        min_score: opts.min_score,
+        is_case_sensitive: opts.is_case_sensitive,
+        return_all_on_empty: opts.return_all_on_empty,
+    });
 
-    if num_keys == 0 || weights.len() != num_keys {
-        return Vec::new();
-    }
-
-    let num_items = key_texts[0].len();
-    if num_items == 0 {
-        return Vec::new();
-    }
-
-    // Validate all key_texts have the same length
-    for texts in &key_texts {
-        if texts.len() != num_items {
-            return Vec::new();
-        }
-    }
-
-    let return_all_on_empty = options
-        .as_ref()
-        .and_then(|o| o.return_all_on_empty)
-        .unwrap_or(false);
-
-    if return_all_on_empty && query.trim().is_empty() {
-        let max_results = options.as_ref().and_then(|o| o.max_results);
-        let limit = max_results.unwrap_or(num_items as u32) as usize;
-        return (0..num_items)
-            .take(limit)
-            .map(|i| KeySearchResult {
-                index: i as u32,
-                score: 1.0,
-                key_scores: vec![1.0; num_keys],
-            })
-            .collect();
-    }
-
-    if query.is_empty() {
-        return Vec::new();
-    }
-
-    let (max_results, min_score, case_matching) = match &options {
-        Some(opts) => (
-            opts.max_results,
-            opts.min_score,
-            resolve_case_matching(opts.is_case_sensitive),
-        ),
-        None => (None, None, CaseMatching::Smart),
-    };
-
-    let threshold = min_score.unwrap_or(0.0);
-
-    // Reject negative, NaN, or infinite weights to guarantee scores stay in [0.0, 1.0]
-    if weights.iter().any(|w| !w.is_finite() || *w < 0.0) {
-        return Vec::new();
-    }
-
-    let total_weight: f64 = weights.iter().sum();
-    if total_weight <= 0.0 {
-        return Vec::new();
-    }
-
-    let mut matcher = Matcher::new(Config::DEFAULT);
-    let pattern = Pattern::parse(&query, case_matching, Normalization::Smart);
-    let max_score = compute_max_score(&query, &pattern, &mut matcher);
-
-    // Compute per-key scores for all items
-    let mut per_key_scores: Vec<Vec<f64>> = Vec::with_capacity(num_keys);
-    let mut buf = Vec::new();
-
-    for texts in &key_texts {
-        let mut scores = Vec::with_capacity(num_items);
-        for text in texts {
-            buf.clear();
-            let atoms = nucleo_matcher::Utf32Str::new(text, &mut buf);
-            let score = match pattern.score(atoms, &mut matcher) {
-                Some(raw) => ((raw as f64) / max_score).min(1.0),
-                None => 0.0,
-            };
-            scores.push(score);
-        }
-        per_key_scores.push(scores);
-    }
-
-    // Pass 1: Compute combined scores, collect (index, score) only.
-    let mut scored: Vec<(u32, f64)> = (0..num_items)
-        .filter_map(|i| {
-            let mut weighted_sum = 0.0;
-            let mut matched_any = false;
-
-            for k in 0..num_keys {
-                let score = per_key_scores[k][i];
-                if score > 0.0 {
-                    weighted_sum += score * weights[k];
-                    matched_any = true;
-                }
-            }
-
-            if !matched_any {
-                return None;
-            }
-
-            let combined = weighted_sum / total_weight;
-            if combined >= threshold {
-                Some((i as u32, combined))
-            } else {
-                None
-            }
-        })
-        .collect();
-
-    // Sort by score descending, with original index as tiebreaker
-    // for deterministic ordering.
-    let cmp = |a: &(u32, f64), b: &(u32, f64)| {
-        let score_ord = b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal);
-        if score_ord != std::cmp::Ordering::Equal {
-            return score_ord;
-        }
-        a.0.cmp(&b.0)
-    };
-
-    // Top-k selection: use quickselect O(n) + sort O(k log k) instead of
-    // full sort O(n log n) when maxResults is set.
-    if let Some(max) = max_results {
-        let k = max as usize;
-        if scored.len() > k {
-            scored.select_nth_unstable_by(k, cmp);
-            scored.truncate(k);
-        }
-    }
-    scored.sort_unstable_by(cmp);
-
-    // Pass 2: Construct KeySearchResult only for the final top-k items.
-    scored
+    rapid_fuzzy_core::search::search_keys_impl(&query, &key_texts, &weights, core_opts)
         .into_iter()
-        .map(|(index, score)| {
-            let key_scores: Vec<f64> = per_key_scores
-                .iter()
-                .map(|scores| scores[index as usize])
-                .collect();
-            KeySearchResult {
-                index,
-                score,
-                key_scores,
-            }
-        })
+        .map(KeySearchResult::from)
         .collect()
 }
 

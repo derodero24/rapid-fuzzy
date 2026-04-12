@@ -7,14 +7,13 @@ pub use keyed_index::KeyedFuzzyIndex;
 pub use keys::search_keys;
 
 // Re-export core algorithm functions and types for use in submodules and tests.
-pub(crate) use rapid_fuzzy_core::search::{
-    BigramIndex, PrecomputedSearch, compute_char_mask, compute_max_score, compute_query_mask,
-    extract_query_bigrams, intersect_sorted, resolve_case_matching, search_over_precomputed,
-    search_over_precomputed_indices,
-};
+pub(crate) use rapid_fuzzy_core::search::resolve_case_matching;
 
 #[cfg(test)]
-pub(crate) use rapid_fuzzy_core::search::{bigram_key, extract_bigrams};
+pub(crate) use rapid_fuzzy_core::search::{
+    BigramIndex, PrecomputedSearch, bigram_key, compute_char_mask, extract_bigrams,
+    extract_query_bigrams, intersect_sorted, search_over_precomputed,
+};
 
 use napi::Either;
 use napi_derive::napi;
