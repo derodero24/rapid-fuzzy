@@ -193,11 +193,7 @@ pub fn jaro_batch(pairs: &[Vec<String>]) -> Vec<f64> {
     batch_apply(pairs, |a, b| rapid_jaro::similarity(a.chars(), b.chars()))
 }
 
-pub fn jaro_many(
-    reference: &str,
-    candidates: &[String],
-    min_similarity: Option<f64>,
-) -> Vec<f64> {
+pub fn jaro_many(reference: &str, candidates: &[String], min_similarity: Option<f64>) -> Vec<f64> {
     let scorer = rapid_jaro::BatchComparator::new(reference.chars());
     match min_similarity {
         Some(cutoff) => {
@@ -351,11 +347,7 @@ pub fn indel_batch(pairs: &[Vec<String>]) -> Vec<u32> {
     })
 }
 
-pub fn indel_many(
-    reference: &str,
-    candidates: &[String],
-    max_distance: Option<u32>,
-) -> Vec<u32> {
+pub fn indel_many(reference: &str, candidates: &[String], max_distance: Option<u32>) -> Vec<u32> {
     let scorer = rapid_indel::BatchComparator::new(reference.chars());
     match max_distance {
         Some(cutoff) => {
