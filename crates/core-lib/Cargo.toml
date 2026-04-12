@@ -10,3 +10,5 @@ crate-type = ["rlib"]
 
 [dependencies]
 nucleo-matcher = { workspace = true }
+strsim = { workspace = true }
+rapidfuzz = { workspace = true }
