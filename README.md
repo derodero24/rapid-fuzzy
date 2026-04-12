@@ -154,7 +154,27 @@ import { search } from 'https://esm.sh/rapid-fuzzy';
 
 #### Bun
 
-Bun uses the native napi-rs bindings when available (fastest). You can also use the wasm-bindgen WASM files directly if needed — see [`e2e/wasm-bun.test.ts`](e2e/wasm-bun.test.ts) for the manual initialization pattern.
+Bun uses the native napi-rs bindings when available (fastest). You can also use the wasm-bindgen WASM files directly if needed:
+
+```typescript
+import * as wasm from 'rapid-fuzzy/rapid-fuzzy-wasm-bindgen_bg.js';
+import { readFileSync } from 'node:fs';
+
+const wasmPath = require.resolve('rapid-fuzzy/rapid-fuzzy-wasm-bindgen_bg.wasm');
+const wasmModule = new WebAssembly.Module(readFileSync(wasmPath));
+const wasmInstance = new WebAssembly.Instance(wasmModule, {
+  './rapid-fuzzy-wasm-bindgen_bg.js': wasm,
+});
+wasm.__wbg_set_wasm(wasmInstance.exports);
+
+// Now use the WASM API directly
+const results = wasm.search('typscript', ['TypeScript', 'JavaScript', 'Python']);
+const index = new wasm.FuzzyIndex(['apple', 'banana', 'cherry']);
+index.search('aple');
+index.destroy();
+```
+
+See [`e2e/wasm-bun.test.ts`](e2e/wasm-bun.test.ts) for a complete working example.
 
 ## API
 
@@ -267,7 +287,9 @@ searchObjects('new york', items, { keys: ['address.city'] });
 
 ### Persistent Index
 
-For applications that search the same dataset repeatedly (autocomplete, file finders, etc.), use `FuzzyIndex` or `FuzzyObjectIndex` to keep data on the Rust side and eliminate per-search FFI overhead:
+For applications that search the same dataset repeatedly (autocomplete, file finders, etc.), use `FuzzyIndex` or `FuzzyObjectIndex` to keep data on the Rust side and eliminate per-search FFI overhead.
+
+**When to use which:** The standalone `search()` function requires zero setup and is ideal for one-off queries or small datasets. `FuzzyIndex` has an initial build cost but delivers sub-millisecond repeated queries, making it the better choice when querying the same dataset multiple times (autocomplete, live search, file finders).
 
 ```typescript
 import { FuzzyIndex, FuzzyObjectIndex } from 'rapid-fuzzy';
@@ -572,6 +594,21 @@ onUnmounted(() => index.destroy());
 - `tokenSortRatio`, `tokenSetRatio`, `partialRatio`, `weightedRatio` → float between 0.0 and 1.0
 - `search` → array of `{ item, score, index, positions }` sorted by relevance (score: 0.0–1.0)
 
+### Memory Usage
+
+`FuzzyIndex` and `FuzzyObjectIndex` store items and precomputed data (UTF-32 representations, character masks, bigram index) on the Rust side. Always call `.destroy()` when the index is no longer needed to free this memory immediately rather than waiting for garbage collection.
+
+For read-heavy workloads, prefer `searchIndices()` over `search()` — it returns only indices and scores without cloning item strings back to JavaScript, reducing GC pressure.
+
+Serialized indexes use a compact binary format suitable for disk or IndexedDB storage. The serialized size is larger than raw text due to precomputed data, but deserialization is faster than rebuilding.
+
+### Error Handling
+
+- `hamming()` / `normalizedHamming()` return `null` when the input strings have different lengths.
+- `closest()` returns `null` if no match meets the `minScore` threshold (or if the item list is empty).
+- Calling methods on a `FuzzyIndex` or `FuzzyObjectIndex` after `.destroy()` throws an error.
+- `searchObjects()` and `FuzzyObjectIndex` throw a `TypeError` if `options.keys` is missing or empty.
+
 ## Benchmarks
 
 Measured on Apple M-series with Node.js v22 using [Vitest bench](https://vitest.dev/guide/features.html#benchmarking). Each benchmark processes 6 realistic string pairs of varying length and similarity.
@@ -646,6 +683,30 @@ Measured on Apple M-series with Node.js v22 using [Vitest bench](https://vitest.
 | **Node.js native** | ✅ napi-rs | — | — | — | — |
 | **Browser** | ✅ WASM (~230 KB gzipped) | ✅ | ✅ | ✅ | ✅ |
 | **TypeScript** | ✅ full | ✅ full | ✅ | ✅ | ✅ |
+
+## Troubleshooting
+
+### "Cannot find native binding" error
+
+The native binary for your platform may not have been installed correctly. Run `npm rebuild rapid-fuzzy` or delete `node_modules` and reinstall. Ensure your platform and architecture are [supported by napi-rs](https://napi.rs/docs/cross-build/summary).
+
+### WASM fails to load in the browser
+
+Verify that your bundler is configured to handle `.wasm` files. If loading from a CDN, check that the server serves `.wasm` files with the correct `application/wasm` MIME type and that CORS headers allow the request.
+
+### SSR or Edge runtime errors
+
+Server-side rendering frameworks need to externalize rapid-fuzzy so the native module is not bundled. See [Framework Integration (SSR)](#framework-integration-ssr) above. For edge runtimes (Cloudflare Workers, Deno Deploy), rapid-fuzzy automatically uses the WASM build — see [Browser and Edge Runtime Usage](#browser-and-edge-runtime-usage).
+
+### Bun WASM initialization
+
+Bun does not yet support the TC39 WebAssembly ESM integration that wasm-bindgen relies on. If you need the WASM build in Bun, initialize it manually — see the [Bun section](#bun) for a complete code example.
+
+## Limitations
+
+- **WASM memory limit**: The WASM build is subject to the WebAssembly linear memory maximum of 4 GB (65,536 pages of 64 KB). This is sufficient for most use cases but may be a constraint for extremely large datasets.
+- **Synchronous search**: All search and distance functions are synchronous. This is by design — operations are fast enough (sub-millisecond for indexed search) that async overhead would be counterproductive. For large index construction, use `FuzzyIndex.fromAsync()`.
+- **No phonetic or language-specific matching**: rapid-fuzzy focuses on edit-distance and character-level fuzzy matching. It does not perform phonetic matching (e.g., Soundex, Metaphone) or language-specific stemming/lemmatization.
 
 ## Migration Guides
 
