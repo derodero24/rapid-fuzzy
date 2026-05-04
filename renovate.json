@@ -23,6 +23,12 @@
       "automerge": true
     },
     {
+      "description": "Skip stability wait for github-actions digest pins (no releaseTimestamp)",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["digest"],
+      "minimumReleaseAge": "0 days"
+    },
+    {
       "description": "Group Rust crate updates",
       "matchManagers": ["cargo"],
       "groupName": "rust-dependencies"
