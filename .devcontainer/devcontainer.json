@@ -2,7 +2,7 @@
   "name": "rapid-fuzzy",
   "image": "mcr.microsoft.com/devcontainers/rust:2-bookworm",
   "features": {
-    "ghcr.io/devcontainers/features/node:1": {
+    "ghcr.io/devcontainers/features/node:2": {
       "version": "24"
     }
   },
