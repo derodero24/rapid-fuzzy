@@ -26,7 +26,7 @@
       "description": "Skip stability wait for github-actions digest pins (no releaseTimestamp)",
       "matchManagers": ["github-actions"],
       "matchUpdateTypes": ["digest"],
-      "minimumReleaseAge": "0"
+      "minimumReleaseAge": "0 days"
     },
     {
       "description": "Group Rust crate updates",
