@@ -1,6 +1,6 @@
 {
   "name": "rapid-fuzzy-win32-arm64-msvc",
-  "version": "1.2.0",
+  "version": "2.0.0",
   "cpu": [
     "arm64"
   ],
@@ -26,7 +26,7 @@
   "homepage": "https://github.com/derodero24/rapid-fuzzy",
   "license": "MIT",
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.0.0"
   },
   "repository": {
     "type": "git",

@@ -2,6 +2,7 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["config:recommended"],
   "baseBranchPatterns": ["develop"],
+  "minimumReleaseAge": "3 days",
   "prConcurrentLimit": 0,
   "ignoreDeps": ["string-similarity", "@types/string-similarity"],
   "lockFileMaintenance": {
@@ -20,6 +21,12 @@
       "matchUpdateTypes": ["minor", "patch", "digest"],
       "pinDigests": true,
       "automerge": true
+    },
+    {
+      "description": "Skip stability wait for github-actions digest pins (no releaseTimestamp)",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["digest"],
+      "minimumReleaseAge": "0 days"
     },
     {
       "description": "Group Rust crate updates",

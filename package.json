@@ -1,7 +1,7 @@
 {
   "name": "rapid-fuzzy",
-  "version": "1.2.0",
-  "description": "Rust-powered fuzzy search and string distance for JavaScript/TypeScript. 10-50x faster than fuse.js/leven.",
+  "version": "2.0.0",
+  "description": "Rust-powered fuzzy search and string distance for JavaScript/TypeScript. Up to 15,000x faster than fuse.js with indexed mode.",
   "license": "MIT",
   "author": "derodero24",
   "repository": {
@@ -9,6 +9,9 @@
     "url": "git+https://github.com/derodero24/rapid-fuzzy.git"
   },
   "homepage": "https://github.com/derodero24/rapid-fuzzy",
+  "bugs": {
+    "url": "https://github.com/derodero24/rapid-fuzzy/issues"
+  },
   "keywords": [
     "fuzzy",
     "fuzzy-search",
@@ -100,9 +103,9 @@
     ]
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.0.0"
   },
-  "packageManager": "pnpm@10.33.0",
+  "packageManager": "pnpm@10.33.2",
   "scripts": {
     "build": "napi build --manifest-path crates/core/Cargo.toml --platform --release --js index.js --dts index.d.ts --output-dir .",
     "postbuild": "node scripts/patch-binding.js",
@@ -115,7 +118,7 @@
     "artifacts": "napi artifacts",
     "prepublishOnly": "napi prepublish -t npm",
     "version": "napi version",
-    "changeset:version": "pnpm changeset version && node scripts/sync-cargo-version.js && napi version && pnpm run build",
+    "changeset:version": "pnpm changeset version && node scripts/sync-cargo-version.js && napi version && pnpm run build && pnpm exec biome format --write npm/",
     "check": "biome ci",
     "format": "biome format --write",
     "lint": "biome check",
@@ -143,8 +146,8 @@
     "@codspeed/vitest-plugin": "^5.2.0",
     "@commitlint/cli": "^20.5.0",
     "@commitlint/config-conventional": "^20.5.0",
-    "@emnapi/core": "^1.9.1",
-    "@emnapi/runtime": "^1.9.1",
+    "@emnapi/core": "^1.10.0",
+    "@emnapi/runtime": "^1.10.0",
     "@leeoniya/ufuzzy": "^1.0.19",
     "@napi-rs/cli": "^3.5.1",
     "@napi-rs/wasm-runtime": "^1.1.1",
@@ -171,6 +174,9 @@
     "onlyBuiltDependencies": [
       "lefthook"
     ],
+    "overrides": {
+      "axios": ">=1.15.0"
+    },
     "peerDependencyRules": {
       "allowedVersions": {
         "@codspeed/vitest-plugin>vite": "8"

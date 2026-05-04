@@ -1,8 +1,8 @@
-export { searchObjects, FuzzyObjectIndex } from './objects.js';
 export type {
   KeyConfig,
-  ObjectSearchOptions,
-  ObjectSearchResult,
   ObjectIndexOptions,
   ObjectIndexSearchOptions,
+  ObjectSearchOptions,
+  ObjectSearchResult,
 } from './objects.js';
+export { FuzzyObjectIndex, searchObjects } from './objects.js';

@@ -1,4 +1,5 @@
 [advisories]
+yanked = "deny"
 
 [licenses]
 allow = [
@@ -17,7 +18,7 @@ allow = [
 multiple-versions = "warn"
 
 [sources]
-unknown-registry = "warn"
-unknown-git = "warn"
+unknown-registry = "deny"
+unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 allow-git = []

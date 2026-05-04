@@ -1,0 +1,22 @@
+# Auto-detect text files and normalize line endings
+* text=auto
+
+# Source files
+*.rs text eol=lf
+*.ts text eol=lf
+*.mts text eol=lf
+*.js text eol=lf
+*.mjs text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.toml text eol=lf
+*.md text eol=lf
+
+# Lockfiles
+*.lock text eol=lf
+pnpm-lock.yaml text eol=lf
+
+# Binary files
+*.node binary
+*.wasm binary

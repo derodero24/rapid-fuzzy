@@ -5,7 +5,7 @@ Thank you for your interest in contributing! This guide covers everything you ne
 ## Prerequisites
 
 - [Rust](https://rustup.rs/) ≥ 1.85 (stable toolchain)
-- [Node.js](https://nodejs.org/) ≥ 20
+- [Node.js](https://nodejs.org/) ≥ 22
 - [pnpm](https://pnpm.io/) ≥ 10
 - [Git](https://git-scm.com/)
 

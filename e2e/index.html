@@ -45,14 +45,29 @@
       results.jaro = mod.jaro('hello', 'hello');
       results.jaroWinkler = mod.jaroWinkler('hello', 'hello');
       results.sorensenDice = mod.sorensenDice('hello', 'hello');
+      results.hamming = mod.hamming('karolin', 'kathrin');
+      results.hammingNull = mod.hamming('hello', 'hi');
+      results.indel = mod.indel('abc', 'ac');
+      results.normalizedIndel = mod.normalizedIndel('hello', 'hello');
+      results.normalizedHamming = mod.normalizedHamming('hello', 'hello');
+      results.normalizedHammingNull = mod.normalizedHamming('hello', 'hi');
 
-      // Batch functions — convert TypedArray to plain array for JSON serialization
+      // Batch functions — normalize to plain arrays for consistent JSON serialization
       results.levenshteinBatch = Array.from(mod.levenshteinBatch([['hello', 'hello'], ['hello', 'world']]));
       results.jaroBatch = Array.from(mod.jaroBatch([['hello', 'hello'], ['abc', 'xyz']]));
 
-      // Many functions — convert TypedArray to plain array for JSON serialization
+      results.hammingBatch = Array.from(mod.hammingBatch([['hello', 'hello'], ['karolin', 'kathrin']]));
+      results.indelBatch = Array.from(mod.indelBatch([['hello', 'hello'], ['abc', 'ac']]));
+      results.normalizedIndelBatch = Array.from(mod.normalizedIndelBatch([['hello', 'hello'], ['hello', 'world']]));
+      results.normalizedHammingBatch = Array.from(mod.normalizedHammingBatch([['hello', 'hello'], ['hello', 'world']]));
+
+      // Many functions — normalize to plain arrays for consistent JSON serialization
       results.levenshteinMany = Array.from(mod.levenshteinMany('hello', ['hello', 'world', 'help']));
       results.jaroMany = Array.from(mod.jaroMany('hello', ['hello', 'world']));
+      results.hammingMany = Array.from(mod.hammingMany('hello', ['hello', 'world', 'hi']));
+      results.indelMany = Array.from(mod.indelMany('abc', ['abc', 'ac', '']));
+      results.normalizedIndelMany = Array.from(mod.normalizedIndelMany('hello', ['hello', 'world']));
+      results.normalizedHammingMany = Array.from(mod.normalizedHammingMany('hello', ['hello', 'world', 'hi']));
 
       // Token-based functions
       results.tokenSortRatio = mod.tokenSortRatio('New York Mets', 'Mets New York');
@@ -81,10 +96,14 @@
 
       // Export list check
       const expectedExports = [
-        'closest', 'search', 'FuzzyIndex',
+        'closest', 'search', 'searchKeys', 'FuzzyIndex',
         'levenshtein', 'levenshteinBatch', 'levenshteinMany',
         'normalizedLevenshtein', 'normalizedLevenshteinBatch', 'normalizedLevenshteinMany',
         'damerauLevenshtein', 'damerauLevenshteinBatch', 'damerauLevenshteinMany',
+        'hamming', 'hammingBatch', 'hammingMany',
+        'indel', 'indelBatch', 'indelMany',
+        'normalizedIndel', 'normalizedIndelBatch', 'normalizedIndelMany',
+        'normalizedHamming', 'normalizedHammingBatch', 'normalizedHammingMany',
         'jaro', 'jaroBatch', 'jaroMany',
         'jaroWinkler', 'jaroWinklerBatch', 'jaroWinklerMany',
         'sorensenDice', 'sorensenDiceBatch', 'sorensenDiceMany',
