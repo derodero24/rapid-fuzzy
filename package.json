@@ -105,7 +105,7 @@
   "engines": {
     "node": ">=20.0.0"
   },
-  "packageManager": "pnpm@10.33.0",
+  "packageManager": "pnpm@10.33.2",
   "scripts": {
     "build": "napi build --manifest-path crates/core/Cargo.toml --platform --release --js index.js --dts index.d.ts --output-dir .",
     "postbuild": "node scripts/patch-binding.js",
