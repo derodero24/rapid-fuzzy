@@ -1,7 +1,7 @@
 /* @ts-self-types="./rapid-fuzzy-wasm-bindgen.d.ts" */
-
 import * as wasm from "./rapid-fuzzy-wasm-bindgen_bg.wasm";
 import { __wbg_set_wasm } from "./rapid-fuzzy-wasm-bindgen_bg.js";
+
 __wbg_set_wasm(wasm);
 
 export {
