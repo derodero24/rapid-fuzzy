@@ -6,7 +6,7 @@
 [![npm version](https://img.shields.io/npm/v/rapid-fuzzy)](https://www.npmjs.com/package/rapid-fuzzy)
 [![npm downloads](https://img.shields.io/npm/dm/rapid-fuzzy)](https://www.npmjs.com/package/rapid-fuzzy)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Node.js](https://img.shields.io/badge/node-%3E%3D20.0.0-brightgreen)](https://nodejs.org/)
+[![Node.js](https://img.shields.io/badge/node-%3E%3D22.0.0-brightgreen)](https://nodejs.org/)
 
 Blazing-fast fuzzy search for JavaScript — powered by Rust, works everywhere.
 
@@ -50,7 +50,7 @@ pnpm add rapid-fuzzy
 
 ### Runtime-specific notes
 
-- **Node.js** (>=20): Uses native bindings via napi-rs for best performance.
+- **Node.js** (>=22): Uses native bindings via napi-rs for best performance.
 - **Bun**: Uses native napi-rs bindings. WASM fallback also works — see [Bun section](#bun) below.
 - **Browser / CDN / Cloudflare Workers / Deno**: Falls back to the wasm-bindgen WASM build (~195 KB raw). No `SharedArrayBuffer` or COOP/COEP headers required.
 
