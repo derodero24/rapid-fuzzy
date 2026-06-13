@@ -652,3 +652,8 @@ module.exports.tokenSortRatioManyF64 = (r, c, s) => new Float64Array(nativeBindi
 module.exports.tokenSetRatioManyF64 = (r, c, s) => new Float64Array(nativeBinding.tokenSetRatioMany(r, c, s));
 module.exports.partialRatioManyF64 = (r, c, s) => new Float64Array(nativeBinding.partialRatioMany(r, c, s));
 module.exports.weightedRatioManyF64 = (r, c, s) => new Float64Array(nativeBinding.weightedRatioMany(r, c, s));
+// hamming variants return null for length mismatches or filtered candidates;
+// the TypedArray cannot hold null, so those slots use a sentinel:
+//   hammingManyU32 -> 0xffffffff (4294967295), normalizedHammingManyF64 -> NaN.
+module.exports.hammingManyU32 = (r, c, d) => Uint32Array.from(nativeBinding.hammingMany(r, c, d), (v) => (v == null ? 0xffffffff : v));
+module.exports.normalizedHammingManyF64 = (r, c, s) => Float64Array.from(nativeBinding.normalizedHammingMany(r, c, s), (v) => (v == null ? Number.NaN : v));

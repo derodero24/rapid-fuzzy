@@ -68,6 +68,9 @@ impl FuzzyIndex {
     ///
     /// Returns matches sorted by score (best match first).
     /// Scores are normalized to a 0.0-1.0 range where 1.0 is a perfect match.
+    ///
+    /// The second argument accepts either a number (maxResults shorthand) or a
+    /// SearchOptions object.
     #[napi]
     pub fn search(
         &self,
@@ -128,6 +131,9 @@ impl FuzzyIndex {
     /// This is more efficient than `search()` when you maintain your own data
     /// array and only need the index to look up the original item. Avoids
     /// String cloning overhead for each result.
+    ///
+    /// The second argument accepts either a number (maxResults shorthand) or a
+    /// SearchOptions object.
     #[napi]
     pub fn search_indices(
         &self,

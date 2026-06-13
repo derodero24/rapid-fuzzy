@@ -10,6 +10,7 @@ import {
   hamming,
   hammingBatch,
   hammingMany,
+  hammingManyU32,
   indel,
   indelBatch,
   indelMany,
@@ -29,6 +30,7 @@ import {
   normalizedHamming,
   normalizedHammingBatch,
   normalizedHammingMany,
+  normalizedHammingManyF64,
   normalizedIndel,
   normalizedIndelBatch,
   normalizedIndelMany,
@@ -131,6 +133,12 @@ describe('distance', () => {
       const score = sorensenDice('night', 'nacht');
       expect(score).toBeGreaterThan(0);
       expect(score).toBeLessThan(1);
+    });
+
+    it('distinguishes single characters by content (no bigrams)', () => {
+      // Single-char inputs have no bigrams; equal chars score 1.0, different chars 0.0.
+      expect(sorensenDice('a', 'a')).toBe(1.0);
+      expect(sorensenDice('a', 'b')).toBe(0.0);
     });
   });
 
@@ -967,6 +975,13 @@ describe('token-based matching', () => {
     it('should return 0.0 for one empty', () => {
       expect(tokenSortRatio('hello', '')).toBe(0.0);
     });
+
+    it('preserves duplicate tokens when sorting', () => {
+      // Duplicates are kept, so a reordering with the same multiset still scores 1.0,
+      // while dropping a duplicate lowers the score.
+      expect(tokenSortRatio('hello hello world', 'world hello hello')).toBe(1.0);
+      expect(tokenSortRatio('hello hello world', 'hello world')).toBeLessThan(1.0);
+    });
   });
 
   describe('tokenSortRatioBatch', () => {
@@ -1081,6 +1096,20 @@ describe('token-based matching', () => {
       const result = partialRatioMany('hello', ['hello world', 'xyz']);
       expect(result[0]).toBe(1.0);
       expect(result[1]).toBeLessThan(0.5);
+    });
+
+    it('with a threshold matches the per-candidate result, zeroing sub-threshold scores', () => {
+      const ref = 'hello world';
+      const cands = ['hello', 'world peace', 'helo wrld', 'xyz', 'lo wo'];
+      const minSimilarity = 0.5;
+      const got = partialRatioMany(ref, cands, minSimilarity);
+      const expected = cands.map((c) => {
+        const s = partialRatio(ref, c);
+        return s >= minSimilarity ? s : 0;
+      });
+      got.forEach((value, i) => {
+        expect(value).toBeCloseTo(expected[i] as number, 10);
+      });
     });
   });
 
@@ -2019,5 +2048,53 @@ describe('TypedArray variants', () => {
     const arr = levenshteinManyU32('kitten', cands, 2);
     const plain = levenshteinMany('kitten', cands, 2);
     expect(Array.from(arr)).toEqual(plain);
+  });
+
+  describe('hamming variants (null -> sentinel)', () => {
+    // 'abd','xyz','abc' are same length as 'abc'; 'ab' and 'abcd' differ -> null.
+    const hammingCands = ['abd', 'ab', 'abcd', 'xyz', 'abc'];
+
+    it('hammingManyU32 maps null to the 0xffffffff sentinel and keeps real distances', () => {
+      const arr = hammingManyU32('abc', hammingCands);
+      expect(arr).toBeInstanceOf(Uint32Array);
+      const plain = hammingMany('abc', hammingCands);
+      const expected = plain.map((v) => (v == null ? 0xffffffff : v));
+      expect(Array.from(arr)).toEqual(expected);
+      // length mismatches become the sentinel
+      expect(arr[1]).toBe(0xffffffff);
+      expect(arr[2]).toBe(0xffffffff);
+    });
+
+    it('hammingManyU32 sentinels candidates filtered by maxDistance', () => {
+      const arr = hammingManyU32('abc', hammingCands, 1);
+      const plain = hammingMany('abc', hammingCands, 1);
+      const expected = plain.map((v) => (v == null ? 0xffffffff : v));
+      expect(Array.from(arr)).toEqual(expected);
+    });
+
+    it('normalizedHammingManyF64 maps null to NaN and keeps real similarities', () => {
+      const arr = normalizedHammingManyF64('abc', hammingCands);
+      expect(arr).toBeInstanceOf(Float64Array);
+      const plain = normalizedHammingMany('abc', hammingCands);
+      arr.forEach((value, i) => {
+        if (plain[i] == null) {
+          expect(Number.isNaN(value)).toBe(true);
+        } else {
+          expect(value).toBeCloseTo(plain[i] as number, 10);
+        }
+      });
+    });
+
+    it('normalizedHammingManyF64 sentinels candidates filtered by minSimilarity', () => {
+      const arr = normalizedHammingManyF64('abc', hammingCands, 0.9);
+      const plain = normalizedHammingMany('abc', hammingCands, 0.9);
+      arr.forEach((value, i) => {
+        if (plain[i] == null) {
+          expect(Number.isNaN(value)).toBe(true);
+        } else {
+          expect(value).toBeCloseTo(plain[i] as number, 10);
+        }
+      });
+    });
   });
 });

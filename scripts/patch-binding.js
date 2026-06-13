@@ -43,6 +43,11 @@ patchFile(
     'module.exports.tokenSetRatioManyF64 = (r, c, s) => new Float64Array(nativeBinding.tokenSetRatioMany(r, c, s));',
     'module.exports.partialRatioManyF64 = (r, c, s) => new Float64Array(nativeBinding.partialRatioMany(r, c, s));',
     'module.exports.weightedRatioManyF64 = (r, c, s) => new Float64Array(nativeBinding.weightedRatioMany(r, c, s));',
+    '// hamming variants return null for length mismatches or filtered candidates;',
+    '// the TypedArray cannot hold null, so those slots use a sentinel:',
+    '//   hammingManyU32 -> 0xffffffff (4294967295), normalizedHammingManyF64 -> NaN.',
+    'module.exports.hammingManyU32 = (r, c, d) => Uint32Array.from(nativeBinding.hammingMany(r, c, d), (v) => (v == null ? 0xffffffff : v));',
+    'module.exports.normalizedHammingManyF64 = (r, c, s) => Float64Array.from(nativeBinding.normalizedHammingMany(r, c, s), (v) => (v == null ? Number.NaN : v));',
   ].join('\n'),
 );
 
@@ -64,6 +69,19 @@ patchFile(
     'export declare function tokenSetRatioManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array;',
     'export declare function partialRatioManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array;',
     'export declare function weightedRatioManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array;',
+    '/**',
+    ' * TypedArray variant of `hammingMany`. Slots that `hammingMany` returns as `null`',
+    ' * (length mismatch, or filtered out by `maxDistance`) become the sentinel `0xffffffff`',
+    ' * (4294967295), since a Uint32Array cannot hold `null`. Check for it with',
+    ' * `value === 0xffffffff` before treating a slot as a real distance.',
+    ' */',
+    'export declare function hammingManyU32(reference: string, candidates: Array<string>, maxDistance?: number | undefined | null): Uint32Array;',
+    '/**',
+    ' * TypedArray variant of `normalizedHammingMany`. Slots that `normalizedHammingMany`',
+    ' * returns as `null` (length mismatch, or filtered out by `minSimilarity`) become `NaN`,',
+    ' * since a Float64Array cannot hold `null`. Check for it with `Number.isNaN(value)`.',
+    ' */',
+    'export declare function normalizedHammingManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array;',
   ].join('\n'),
 );
 

@@ -66,6 +66,8 @@ export const {
   tokenSetRatioManyF64,
   partialRatioManyF64,
   weightedRatioManyF64,
+  hammingManyU32,
+  normalizedHammingManyF64,
 } = { ...binding, ...require('./highlight.js') };
 
 export const { searchObjects, FuzzyObjectIndex } = require('./objects.js');
