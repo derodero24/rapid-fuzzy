@@ -105,7 +105,7 @@
   "engines": {
     "node": ">=22.0.0"
   },
-  "packageManager": "pnpm@10.33.2",
+  "packageManager": "pnpm@10.34.1",
   "scripts": {
     "build": "napi build --manifest-path crates/core/Cargo.toml --platform --release --js index.js --dts index.d.ts --output-dir .",
     "postbuild": "node scripts/patch-binding.js",
@@ -144,8 +144,8 @@
     "@biomejs/biome": "^2.5.0",
     "@changesets/cli": "^2.30.0",
     "@codspeed/vitest-plugin": "^5.2.0",
-    "@commitlint/cli": "^20.5.0",
-    "@commitlint/config-conventional": "^20.5.0",
+    "@commitlint/cli": "^21.0.0",
+    "@commitlint/config-conventional": "^21.0.0",
     "@emnapi/core": "^1.11.1",
     "@emnapi/runtime": "^1.11.1",
     "@leeoniya/ufuzzy": "^1.0.19",
