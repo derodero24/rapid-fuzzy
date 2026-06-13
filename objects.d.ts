@@ -1,22 +1,38 @@
 import type { SearchOptions } from './index';
 
 export interface KeyConfig {
+  /**
+   * Object key to search. Supports dot-separated paths for nested values,
+   * e.g. `'address.city'`.
+   */
   name: string;
+  /** Relative weight of this key in the combined score. Defaults to `1.0`. */
   weight?: number;
 }
 
 /**
  * Options for searchObjects(). Extends SearchOptions with key configuration.
- * Note: `includePositions` has no effect for multi-key search.
+ *
+ * Note: `includePositions` has no effect for multi-key search — match positions
+ * are per-key and are not merged, so the `positions`/`matchType` fields from
+ * single-key {@link SearchOptions} are not populated. All other SearchOptions
+ * fields (maxResults, minScore, isCaseSensitive, returnAllOnEmpty) apply.
  */
 export interface ObjectSearchOptions extends SearchOptions {
   keys: Array<string | KeyConfig>;
 }
 
 export interface ObjectSearchResult<T> {
+  /** The matched object from the original input array. */
   item: T;
+  /** Index of the matched item in the original input array. */
   index: number;
+  /** Combined weighted score normalized to the 0.0–1.0 range. */
   score: number;
+  /**
+   * Per-key scores in the same order as the configured keys.
+   * A score of 0.0 means the item did not match on that key.
+   */
   keyScores: Array<number>;
 }
 

@@ -27,6 +27,9 @@ export declare class FuzzyIndex {
    *
    * Returns matches sorted by score (best match first).
    * Scores are normalized to a 0.0-1.0 range where 1.0 is a perfect match.
+   *
+   * The second argument accepts either a number (maxResults shorthand) or a
+   * SearchOptions object.
    */
   search(query: string, options?: number | SearchOptions | undefined | null): Array<SearchResult>
   /**
@@ -42,6 +45,9 @@ export declare class FuzzyIndex {
    * This is more efficient than `search()` when you maintain your own data
    * array and only need the index to look up the original item. Avoids
    * String cloning overhead for each result.
+   *
+   * The second argument accepts either a number (maxResults shorthand) or a
+   * SearchOptions object.
    */
   searchIndices(query: string, options?: number | SearchOptions | undefined | null): Array<IndexSearchResult>
   /** Add a single item to the index. */
@@ -636,3 +642,16 @@ export declare function tokenSortRatioManyF64(reference: string, candidates: Arr
 export declare function tokenSetRatioManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array;
 export declare function partialRatioManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array;
 export declare function weightedRatioManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array;
+/**
+ * TypedArray variant of `hammingMany`. Slots that `hammingMany` returns as `null`
+ * (length mismatch, or filtered out by `maxDistance`) become the sentinel `0xffffffff`
+ * (4294967295), since a Uint32Array cannot hold `null`. Check for it with
+ * `value === 0xffffffff` before treating a slot as a real distance.
+ */
+export declare function hammingManyU32(reference: string, candidates: Array<string>, maxDistance?: number | undefined | null): Uint32Array;
+/**
+ * TypedArray variant of `normalizedHammingMany`. Slots that `normalizedHammingMany`
+ * returns as `null` (length mismatch, or filtered out by `minSimilarity`) become `NaN`,
+ * since a Float64Array cannot hold `null`. Check for it with `Number.isNaN(value)`.
+ */
+export declare function normalizedHammingManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array;
