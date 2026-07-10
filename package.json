@@ -151,7 +151,7 @@
     "@leeoniya/ufuzzy": "^1.0.19",
     "@napi-rs/cli": "^3.7.1",
     "@napi-rs/wasm-runtime": "^1.1.6",
-    "@playwright/test": "^1.58.2",
+    "@playwright/test": "^1.61.1",
     "@tybys/wasm-util": "^0.10.3",
     "@types/node": "^24.13.2",
     "@types/string-similarity": "^4.0.2",
