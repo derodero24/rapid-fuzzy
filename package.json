@@ -152,7 +152,7 @@
     "@napi-rs/cli": "^3.7.1",
     "@napi-rs/wasm-runtime": "^1.1.5",
     "@playwright/test": "^1.58.2",
-    "@tybys/wasm-util": "^0.10.1",
+    "@tybys/wasm-util": "^0.10.3",
     "@types/node": "^24.13.2",
     "@types/string-similarity": "^4.0.2",
     "@vitest/coverage-v8": "^4.1.0",
