@@ -167,7 +167,7 @@
     "publint": "^0.3.18",
     "string-similarity": "^4.0.4",
     "typescript": "^6.0.0",
-    "vite": "^8.0.0",
+    "vite": "^8.1.4",
     "vitest": "^4.1.0"
   },
   "pnpm": {
