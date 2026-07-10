@@ -155,7 +155,7 @@
     "@tybys/wasm-util": "^0.10.3",
     "@types/node": "^24.13.2",
     "@types/string-similarity": "^4.0.2",
-    "@vitest/coverage-v8": "^4.1.0",
+    "@vitest/coverage-v8": "^4.1.10",
     "fastest-levenshtein": "^1.0.16",
     "flexsearch": "^0.8.212",
     "fuse.js": "^7.1.0",
@@ -168,7 +168,7 @@
     "string-similarity": "^4.0.4",
     "typescript": "^6.0.0",
     "vite": "^8.1.4",
-    "vitest": "^4.1.0"
+    "vitest": "^4.1.10"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
