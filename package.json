@@ -150,7 +150,7 @@
     "@emnapi/runtime": "^1.11.2",
     "@leeoniya/ufuzzy": "^1.0.19",
     "@napi-rs/cli": "^3.7.1",
-    "@napi-rs/wasm-runtime": "^1.1.5",
+    "@napi-rs/wasm-runtime": "^1.1.6",
     "@playwright/test": "^1.58.2",
     "@tybys/wasm-util": "^0.10.3",
     "@types/node": "^24.13.2",
