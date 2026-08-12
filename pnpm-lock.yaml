@@ -74,8 +74,8 @@ importers:
         specifier: ^2.2.3
         version: 2.2.6
       fuzzysort:
-        specifier: ^3.1.0
-        version: 3.1.0
+        specifier: ^4.0.0
+        version: 4.0.1
       lefthook:
         specifier: ^2.1.4
         version: 2.1.10
@@ -1446,8 +1446,8 @@ packages:
   fuzzball@2.2.6:
     resolution: {integrity: sha512-RFYKY0GGDOmocz6rYmvOk9qOnV2UCsLHbVPl5zfZVvcdBlilDg/84WSgAvOCGDq+UEnpnqjZMHk6a/hamC5VuQ==}
 
-  fuzzysort@3.1.0:
-    resolution: {integrity: sha512-sR9BNCjBg6LNgwvxlBd0sBABvQitkLzoVY9MYYROQVX/FvfJ4Mai9LsGhDgd8qYdds0bY77VzYd5iuB+v5rwQQ==}
+  fuzzysort@4.0.1:
+    resolution: {integrity: sha512-aQwFrCgx1HmMSnxK5UQIsRL9KBwj2AffSMo8SmbyvZvd1NcZXvVRYm8/hs9QTn+rDwa3QKg1TZoctf8Y3t1vgg==}
 
   get-caller-file@2.0.5:
     resolution: {integrity: sha512-DyFP3BM/3YHTQOCUL/w0OZHR0lpKeGrxotcHWcqNEdnltqFwXVfhEBQ94eIo34AfQpo0rGki4cyIiftY06h2Fg==}
@@ -3500,7 +3500,7 @@ snapshots:
       lodash: 4.18.1
       setimmediate: 1.0.5
 
-  fuzzysort@3.1.0: {}
+  fuzzysort@4.0.1: {}
 
   get-caller-file@2.0.5: {}
 
