@@ -23,6 +23,7 @@ import {
   jaroWinklerBatch,
   jaroWinklerMany,
   jaroWinklerManyF64,
+  KeyedFuzzyIndex,
   levenshtein,
   levenshteinBatch,
   levenshteinMany,
@@ -910,6 +911,26 @@ describe('search', () => {
     it('should return empty when returnAllOnEmpty is false (default)', () => {
       expect(search('', items)).toEqual([]);
       expect(search('', items, { returnAllOnEmpty: false })).toEqual([]);
+    });
+
+    it('should treat whitespace-only query as empty when returnAllOnEmpty is false', () => {
+      // A pattern with no atoms scored 0 against every item and normalized to
+      // NaN -> 1.0, so every item used to come back with a perfect score.
+      expect(search(' ', items)).toEqual([]);
+      expect(search('\t \n', items, { returnAllOnEmpty: false })).toEqual([]);
+      expect(closest(' ', items)).toBeNull();
+      expect(searchKeys(' ', [items], [1])).toEqual([]);
+
+      const index = new FuzzyIndex(items);
+      expect(index.search(' ')).toEqual([]);
+      expect(index.searchIndices(' ')).toEqual([]);
+      expect(index.closest(' ')).toBeNull();
+      index.destroy();
+
+      const keyed = new KeyedFuzzyIndex([items], [1]);
+      expect(keyed.search(' ')).toEqual([]);
+      expect(keyed.closest(' ')).toBeNull();
+      keyed.destroy();
     });
 
     it('should perform normal search when query is non-empty', () => {
