@@ -579,6 +579,31 @@ mod tests {
     }
 
     #[test]
+    fn test_sorensen_dice_many_matches_single_edge_cases() {
+        // Single-char inputs, whitespace stripping and multi-byte chars used to
+        // differ between the strsim-backed single function and the many variant.
+        let reference = "a".to_string();
+        for (r, c) in [
+            ("a", "b"),
+            ("a b", "ab"),
+            ("aé", "aéx"),
+            ("apple event", "apple    event"),
+            ("", ""),
+        ] {
+            let many = sorensen_dice_many(r.to_string(), vec![c.to_string()], None)[0];
+            let single = sorensen_dice(r.to_string(), c.to_string());
+            assert!(
+                (many - single).abs() < f64::EPSILON,
+                "{r:?} vs {c:?}: many={many} single={single}"
+            );
+        }
+        assert_eq!(
+            sorensen_dice_many(reference, vec!["b".to_string()], None),
+            vec![0.0]
+        );
+    }
+
+    #[test]
     fn test_sorensen_dice_batch() {
         let pairs = vec![
             vec!["night".to_string(), "nacht".to_string()],
@@ -1403,6 +1428,25 @@ mod tests {
         }
 
         #[test]
+        fn weighted_ratio_raw_component_uses_normalized_strings() {
+            // The single function computed its plain ratio on the original strings
+            // while the many variant normalized first; both now take the better
+            // of the two, so they agree and never drop below the plain ratio.
+            let single = weighted_ratio("aby cb ".to_string(), " céA".to_string());
+            let many =
+                weighted_ratio_many("aby cb ".to_string(), vec![" céA".to_string()], None)[0];
+            assert!(
+                (single - many).abs() < f64::EPSILON,
+                "single={single} many={many}"
+            );
+            assert!(
+                (weighted_ratio("Hello World".to_string(), "hello   world".to_string()) - 1.0)
+                    .abs()
+                    < f64::EPSILON
+            );
+        }
+
+        #[test]
         fn weighted_ratio_many_matches_impl() {
             let reference = "New York Mets".to_string();
             let candidates = test_candidates();
@@ -1569,6 +1613,20 @@ mod tests {
             fn jaro_winkler_unicode_bounded(ref a in any::<String>(), ref b in any::<String>()) {
                 let score = jaro_winkler(a.clone(), b.clone());
                 prop_assert!(score >= 0.0 && score <= 1.0, "score {} out of [0, 1]", score);
+            }
+
+            #[test]
+            fn sorensen_dice_many_matches_single_unicode(ref a in any::<String>(), ref b in any::<String>()) {
+                let many = sorensen_dice_many(a.clone(), vec![b.clone()], None);
+                let single = sorensen_dice(a.clone(), b.clone());
+                prop_assert!((many[0] - single).abs() < f64::EPSILON, "many={} single={}", many[0], single);
+            }
+
+            #[test]
+            fn weighted_ratio_many_matches_single(ref a in "[a-zA-Zé ]{0,12}", ref b in "[a-zA-Zé ]{0,12}") {
+                let many = weighted_ratio_many(a.clone(), vec![b.clone()], None);
+                let single = weighted_ratio(a.clone(), b.clone());
+                prop_assert!((many[0] - single).abs() < f64::EPSILON, "many={} single={}", many[0], single);
             }
 
             #[test]

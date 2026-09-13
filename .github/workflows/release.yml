@@ -23,11 +23,13 @@ jobs:
     env:
       LEFTHOOK: "0"
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      # This job is the only one that needs git credentials: changesets/action
+      # commits the version bump on a branch it manages.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
-      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -35,16 +37,14 @@ jobs:
 
       - name: Create version PR or detect release
         id: changesets
-        uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
+        uses: changesets/action@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2.1.2
         with:
-          version: pnpm changeset:version
-          title: "chore(release): version packages"
-          commit: "chore(release): version packages"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          version-script: pnpm changeset:version
+          pr-title: "chore(release): version packages"
+          commit-message: "chore(release): version packages"
 
       - name: Create or update release PR
-        if: steps.changesets.outputs.hasChangesets == 'false'
+        if: steps.changesets.outputs.has-changesets == 'false'
         run: |
           VERSION=$(node -p "require('./package.json').version")
 
@@ -79,8 +79,10 @@ jobs:
     outputs:
       should_publish: ${{ steps.check.outputs.should_publish }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version-file: .nvmrc
 
@@ -129,17 +131,19 @@ jobs:
             target: wasm32-wasip1-threads
     runs-on: ${{ matrix.settings.host }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
-      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
-      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
           targets: ${{ matrix.settings.target }}
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           shared-key: release-${{ matrix.settings.target }}
 
@@ -156,11 +160,13 @@ jobs:
           ${{ matrix.settings.use-cross && '--use-napi-cross' || '' }}
           ${{ matrix.settings.use-zig && '--cross-compile' || '' }}
 
+      - name: Install binaryen
+        if: matrix.settings.target == 'wasm32-wasip1-threads'
+        run: bash scripts/install-binaryen.sh
+
       - name: Optimize WASM with wasm-opt
         if: matrix.settings.target == 'wasm32-wasip1-threads'
-        run: |
-          sudo apt-get update && sudo apt-get install -y binaryen
-          pnpm run optimize:wasm
+        run: pnpm run optimize:wasm
 
       - name: Upload artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -170,21 +176,62 @@ jobs:
             rapid-fuzzy.*.node
             rapid-fuzzy.*.wasm
             rapid-fuzzy.wasi*.cjs
+            rapid-fuzzy.wasi*.cts
             rapid-fuzzy.wasi*.js
             wasi-worker*.mjs
+          retention-days: 7
+          if-no-files-found: error
+
+  # ──── Build the wasm-bindgen browser binary shipped in the root package ────
+  build-wasm-bindgen:
+    name: Build - wasm-bindgen
+    needs: check
+    if: needs.check.outputs.should_publish == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          shared-key: build-wasm-bindgen
+      - run: pnpm install --frozen-lockfile
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      - name: Install binaryen
+        run: bash scripts/install-binaryen.sh
+      - name: Build wasm-bindgen
+        run: pnpm run build:wasm-bindgen
+      - name: Verify generated wasm-bindgen glue is up to date
+        run: git diff --exit-code rapid-fuzzy-wasm-bindgen.js rapid-fuzzy-wasm-bindgen_bg.js rapid-fuzzy-wasm-bindgen.d.ts rapid-fuzzy-wasm-bindgen_bg.wasm.d.ts
+      - name: Upload wasm-bindgen artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: bindings-wasm-bindgen
+          path: rapid-fuzzy-wasm-bindgen_bg.wasm
           retention-days: 7
           if-no-files-found: error
 
   # ──── Publish to npm after all builds succeed ────
   publish:
     name: Publish
-    needs: [check, build]
+    needs: [check, build, build-wasm-bindgen]
     if: needs.check.outputs.should_publish == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -200,13 +247,23 @@ jobs:
         run: |
           WASM_DIR="artifacts/bindings-wasm32-wasip1-threads"
           if [ -d "$WASM_DIR" ]; then
-            cp "$WASM_DIR"/*.cjs "$WASM_DIR"/*.js "$WASM_DIR"/*.mjs . 2>/dev/null || true
+            cp "$WASM_DIR"/*.cjs "$WASM_DIR"/*.cts "$WASM_DIR"/*.js "$WASM_DIR"/*.mjs . 2>/dev/null || true
             echo "Copied WASM wrapper files from $WASM_DIR"
             ls -la rapid-fuzzy.wasi* wasi-worker* 2>/dev/null
           fi
 
+      - name: Copy wasm-bindgen binary to workspace root
+        run: cp artifacts/bindings-wasm-bindgen/rapid-fuzzy-wasm-bindgen_bg.wasm .
+
       - name: Move artifacts to platform packages
         run: pnpm napi artifacts --output-dir artifacts
+
+      # `napi artifacts` rewrites the root loader files from its templates,
+      # which drops the wasm-bindgen browser entry and the appended JS
+      # utilities. The committed files are the source of truth (CI verifies
+      # they match the build output), so restore them before publishing.
+      - name: Restore committed binding files
+        run: git checkout -- index.js index.d.ts browser.js
 
       - name: List packages
         run: |
@@ -216,6 +273,21 @@ jobs:
             ls -la "$dir" 2>/dev/null
             echo ""
           done
+
+      # Every entry in package.json "files" must exist, otherwise npm silently
+      # publishes a tarball without it (this is how the browser .wasm went
+      # missing from every release up to 2.1.0).
+      - name: Verify package contents
+        run: |
+          missing=0
+          for f in $(node -p "require('./package.json').files.join(' ')"); do
+            if [ ! -f "$f" ]; then
+              echo "::error::missing file listed in package.json files: $f"
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ]
+          npm pack --dry-run
 
       - name: Publish to npm
         run: |
@@ -233,8 +305,10 @@ jobs:
     if: needs.check.outputs.should_publish == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version-file: .nvmrc
 

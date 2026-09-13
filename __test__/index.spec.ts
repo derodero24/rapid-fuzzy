@@ -23,6 +23,7 @@ import {
   jaroWinklerBatch,
   jaroWinklerMany,
   jaroWinklerManyF64,
+  KeyedFuzzyIndex,
   levenshtein,
   levenshteinBatch,
   levenshteinMany,
@@ -912,6 +913,26 @@ describe('search', () => {
       expect(search('', items, { returnAllOnEmpty: false })).toEqual([]);
     });
 
+    it('should treat whitespace-only query as empty when returnAllOnEmpty is false', () => {
+      // A pattern with no atoms scored 0 against every item and normalized to
+      // NaN -> 1.0, so every item used to come back with a perfect score.
+      expect(search(' ', items)).toEqual([]);
+      expect(search('\t \n', items, { returnAllOnEmpty: false })).toEqual([]);
+      expect(closest(' ', items)).toBeNull();
+      expect(searchKeys(' ', [items], [1])).toEqual([]);
+
+      const index = new FuzzyIndex(items);
+      expect(index.search(' ')).toEqual([]);
+      expect(index.searchIndices(' ')).toEqual([]);
+      expect(index.closest(' ')).toBeNull();
+      index.destroy();
+
+      const keyed = new KeyedFuzzyIndex([items], [1]);
+      expect(keyed.search(' ')).toEqual([]);
+      expect(keyed.closest(' ')).toBeNull();
+      keyed.destroy();
+    });
+
     it('should perform normal search when query is non-empty', () => {
       const results = search('apple', items, { returnAllOnEmpty: true });
       expect(results.length).toBeGreaterThan(0);
@@ -1477,6 +1498,44 @@ describe('extended query syntax', () => {
   });
 });
 
+describe('index prefilters vs standalone search (diacritics)', () => {
+  // The char-mask and bigram prefilters used to compare raw characters while
+  // nucleo folds diacritics, so the indexes dropped matches search() returned.
+  const accented = ['café', 'naïve', 'über', 'Ärger', 'plain'];
+
+  it('FuzzyIndex returns the same matches as search()', () => {
+    const index = new FuzzyIndex(accented);
+    for (const query of ['cafe', 'naive', 'uber', 'arger', 'café']) {
+      expect(index.search(query).map((r) => r.item)).toEqual(
+        search(query, accented).map((r) => r.item),
+      );
+      expect(index.closest(query)).toBe(closest(query, accented));
+    }
+    index.destroy();
+  });
+
+  it('KeyedFuzzyIndex returns the same matches as searchKeys()', () => {
+    const keyed = new KeyedFuzzyIndex([accented], [1]);
+    expect(keyed.search('cafe').map((r) => r.index)).toEqual(
+      searchKeys('cafe', [accented], [1]).map((r) => r.index),
+    );
+    keyed.destroy();
+  });
+
+  it('bigram prefilter (5000+ items) keeps folded matches', () => {
+    // Half the items match so the bigram candidate set is selective (the
+    // index skips the prefilter when more than 80% of items share the bigrams).
+    const items = Array.from({ length: 6002 }, (_, i) =>
+      i % 2 === 0 ? `café numero ${i}` : `lorem ipsum ${i}`,
+    );
+    const index = new FuzzyIndex(items);
+    const expected = search('cafe', items).map((r) => r.item);
+    expect(expected.length).toBe(3001);
+    expect(index.search('cafe').map((r) => r.item)).toEqual(expected);
+    index.destroy();
+  });
+});
+
 describe('FuzzyIndex', () => {
   const items = ['apple', 'banana', 'grape', 'orange', 'pineapple', 'mango'];
 
@@ -1641,6 +1700,57 @@ describe('FuzzyIndex', () => {
       const results = index.searchIndices('apple', { includePositions: true });
       expect(results.length).toBe(1);
       expect(results[0]?.positions.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('incremental cache', () => {
+    // 300 items match 'ab' loosely; only 'abc' and 'abd' score above 0.9.
+    const cacheItems = Array.from({ length: 300 }, (_, i) => `axxxxxbc${i}`).concat(['abc', 'abd']);
+
+    it('should not reuse candidates narrowed by closest() with a threshold', () => {
+      const index = new FuzzyIndex(cacheItems);
+      expect(index.closest('ab', 0.9)).toBe('abc');
+      expect(index.search('abc').length).toBe(new FuzzyIndex(cacheItems).search('abc').length);
+      index.destroy();
+    });
+
+    it('should not reuse candidates narrowed by a minScore search', () => {
+      const index = new FuzzyIndex(cacheItems);
+      index.search('ab', { minScore: 0.9 });
+      expect(index.search('abc').length).toBe(301);
+      index.destroy();
+    });
+
+    it('should not reuse narrowed candidates on the searchIndices path either', () => {
+      const index = new FuzzyIndex(cacheItems);
+      index.searchIndices('ab', { minScore: 0.9 });
+      expect(index.searchIndices('abc').length).toBe(301);
+      index.search('ab', { minScore: 0.9 });
+      expect(index.searchIndices('abc').length).toBe(301);
+      index.destroy();
+    });
+
+    it('should not reuse candidates matched with a different case mode', () => {
+      // 'ab' -> 'abc' is a prefix extension, so the cache would be consulted;
+      // the case-sensitive pass matched only 'abc' (fewer than half the items,
+      // so it was cached), and smart case must widen back to 'ABC' as well.
+      const index = new FuzzyIndex(['ABC', 'abc', 'xyz', 'x1', 'x2', 'x3']);
+      expect(index.search('ab', { isCaseSensitive: true }).map((r) => r.item)).toEqual(['abc']);
+      expect(
+        index
+          .search('abc')
+          .map((r) => r.item)
+          .sort(),
+      ).toEqual(['ABC', 'abc']);
+      index.destroy();
+    });
+
+    it('should still narrow prefix-extended queries after an unfiltered search', () => {
+      const index = new FuzzyIndex(cacheItems);
+      const expected = new FuzzyIndex(cacheItems).search('abc');
+      index.search('ab');
+      expect(index.search('abc')).toEqual(expected);
+      index.destroy();
     });
   });
 

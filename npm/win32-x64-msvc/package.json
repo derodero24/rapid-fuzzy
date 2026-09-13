@@ -1,6 +1,6 @@
 {
   "name": "rapid-fuzzy-win32-x64-msvc",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "cpu": [
     "x64"
   ],
@@ -8,15 +8,19 @@
   "files": [
     "rapid-fuzzy.win32-x64-msvc.node"
   ],
-  "description": "Rust-powered fuzzy search and string distance for JavaScript/TypeScript. 10-50x faster than fuse.js/leven.",
+  "description": "Rust-powered fuzzy search and string distance for JavaScript/TypeScript. Up to 15,000x faster than fuse.js with indexed mode.",
   "keywords": [
     "fuzzy",
     "fuzzy-search",
+    "fuzzy-matching",
     "string-distance",
+    "string-similarity",
     "levenshtein",
     "jaro-winkler",
+    "hamming",
+    "damerau-levenshtein",
     "rust",
-    "napi",
+    "napi-rs",
     "wasm",
     "typescript",
     "search",
@@ -31,6 +35,9 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/derodero24/rapid-fuzzy.git"
+  },
+  "bugs": {
+    "url": "https://github.com/derodero24/rapid-fuzzy/issues"
   },
   "os": [
     "win32"

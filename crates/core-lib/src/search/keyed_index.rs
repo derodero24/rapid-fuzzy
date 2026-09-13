@@ -127,7 +127,7 @@ impl KeyedFuzzyIndexCore {
                 .collect();
         }
 
-        if query.is_empty() {
+        if query.trim().is_empty() {
             return Vec::new();
         }
 

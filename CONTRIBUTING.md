@@ -6,7 +6,7 @@ Thank you for your interest in contributing! This guide covers everything you ne
 
 - [Rust](https://rustup.rs/) ≥ 1.85 (stable toolchain)
 - [Node.js](https://nodejs.org/) ≥ 22
-- [pnpm](https://pnpm.io/) ≥ 10
+- [pnpm](https://pnpm.io/) ≥ 12 (the exact version is pinned in `package.json` `packageManager`; `corepack enable` picks it up automatically)
 - [Git](https://git-scm.com/)
 
 ## Development setup

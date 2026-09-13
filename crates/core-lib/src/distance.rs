@@ -256,38 +256,28 @@ pub fn sorensen_dice_many(
     candidates: &[String],
     min_similarity: Option<f64>,
 ) -> Vec<f64> {
-    let ref_chars: Vec<char> = reference.chars().collect();
-    let ref_len = ref_chars.len();
-    let ref_count = ref_len.saturating_sub(1);
-
-    let mut ref_bigrams: HashMap<(char, char), usize> = HashMap::new();
-    for i in 0..ref_count {
-        *ref_bigrams
-            .entry((ref_chars[i], ref_chars[i + 1]))
-            .or_insert(0) += 1;
-    }
+    // Same definition as `sorensen_dice` (strsim): whitespace is stripped,
+    // identical strings score 1.0, strings shorter than two bytes score 0.0,
+    // and the denominator counts bigrams by byte length. Only the reference
+    // side is precomputed here.
+    let ref_str: String = reference.chars().filter(|c| !c.is_whitespace()).collect();
+    let ref_bigrams = bigram_counts(&ref_str);
 
     candidates
         .iter()
         .map(|c| {
-            let c_chars: Vec<char> = c.chars().collect();
-            let c_len = c_chars.len();
-            let c_count = c_len.saturating_sub(1);
-
-            let score = if ref_len + c_len == 0 {
+            let c_str: String = c.chars().filter(|ch| !ch.is_whitespace()).collect();
+            let score = if ref_str == c_str {
                 1.0
-            } else if ref_count + c_count == 0 {
-                if ref_len == c_len { 1.0 } else { 0.0 }
+            } else if ref_str.len() < 2 || c_str.len() < 2 {
+                0.0
             } else {
-                let mut c_bigrams: HashMap<(char, char), usize> = HashMap::new();
-                for i in 0..c_count {
-                    *c_bigrams.entry((c_chars[i], c_chars[i + 1])).or_insert(0) += 1;
-                }
-                let mut intersection = 0_usize;
-                for (bigram, count) in &ref_bigrams {
-                    intersection += count.min(c_bigrams.get(bigram).unwrap_or(&0));
-                }
-                (2 * intersection) as f64 / (ref_count + c_count) as f64
+                let c_bigrams = bigram_counts(&c_str);
+                let intersection: usize = ref_bigrams
+                    .iter()
+                    .map(|(bigram, count)| count.min(c_bigrams.get(bigram).unwrap_or(&0)))
+                    .sum();
+                (2 * intersection) as f64 / (ref_str.len() + c_str.len() - 2) as f64
             };
 
             match min_similarity {
@@ -296,6 +286,18 @@ pub fn sorensen_dice_many(
             }
         })
         .collect()
+}
+
+fn bigrams(s: &str) -> impl Iterator<Item = (char, char)> + '_ {
+    s.chars().zip(s.chars().skip(1))
+}
+
+fn bigram_counts(s: &str) -> HashMap<(char, char), usize> {
+    let mut counts = HashMap::new();
+    for bigram in bigrams(s) {
+        *counts.entry(bigram).or_insert(0) += 1;
+    }
+    counts
 }
 
 // ─── Normalized Levenshtein ──────────────────────────────────────────────────
@@ -537,14 +539,28 @@ pub fn partial_ratio_from_normalized(norm_a: &str, norm_b: &str) -> f64 {
 }
 
 pub fn weighted_ratio_impl(a: &str, b: &str) -> f64 {
-    let raw = rapid_lev::normalized_similarity(a.chars(), b.chars());
+    // The plain ratio is taken on both the original and the normalized
+    // (lower-cased, whitespace collapsed) strings; `weighted_ratio_many`
+    // computes the same two so the variants always agree.
+    let raw_original = rapid_lev::normalized_similarity(a.chars(), b.chars());
+    if raw_original == 1.0 {
+        return 1.0;
+    }
+    let norm_a = normalize_str(a);
+    let norm_b = normalize_str(b);
+    // Normalization changed nothing: the second ratio would be identical.
+    let raw = if norm_a == a && norm_b == b {
+        raw_original
+    } else {
+        raw_original.max(rapid_lev::normalized_similarity(
+            norm_a.chars(),
+            norm_b.chars(),
+        ))
+    };
     if raw == 1.0 {
         return 1.0;
     }
     let sort = token_sort_ratio_impl(a, b);
-
-    let norm_a = normalize_str(a);
-    let norm_b = normalize_str(b);
     let set = token_set_ratio_from_normalized(&norm_a, &norm_b);
     let partial = partial_ratio_from_normalized(&norm_a, &norm_b);
 
@@ -758,12 +774,26 @@ pub fn weighted_ratio_many(
     let sorted_ref = sorted_tokens(reference).join(" ");
     let tokens_ref: BTreeSet<String> = norm_ref.split_whitespace().map(String::from).collect();
     let ref_scorer = rapid_lev::BatchComparator::new(norm_ref.chars());
+    let ref_is_normalized = norm_ref == reference;
+    // Only needed when the original reference differs from the normalized one.
+    let raw_ref_scorer =
+        (!ref_is_normalized).then(|| rapid_lev::BatchComparator::new(reference.chars()));
 
     candidates
         .iter()
         .map(|c| {
             let norm_c = normalize_str(c);
-            let raw = ref_scorer.normalized_similarity(norm_c.chars());
+            let raw_normalized = ref_scorer.normalized_similarity(norm_c.chars());
+            if raw_normalized == 1.0 {
+                return 1.0;
+            }
+            // Skip the original-string pass when normalization changed nothing.
+            let raw = if ref_is_normalized && norm_c == *c {
+                raw_normalized
+            } else {
+                let scorer = raw_ref_scorer.as_ref().unwrap_or(&ref_scorer);
+                raw_normalized.max(scorer.normalized_similarity(c.chars()))
+            };
             if raw == 1.0 {
                 return 1.0;
             }

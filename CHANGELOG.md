@@ -1,5 +1,23 @@
 # rapid-fuzzy
 
+## 2.1.1
+
+### Patch Changes
+
+- ec2c8e1: Fix `FuzzyIndex` returning too few results after a thresholded search. The incremental cache reused the candidates left over from a previous `minScore` search or `closest()` call, so a longer query typed afterwards was limited to the items that had passed the earlier threshold. The cache now only stores unfiltered matches, and it is not reused across a change of case mode (`isCaseSensitive`).
+- b4d0546: Fix `FuzzyIndex` and `KeyedFuzzyIndex` dropping matches on accented text. The standalone `search()` folds diacritics (`cafe` matches `café`), but the index prefilters compared raw characters and rejected those items before scoring, so `new FuzzyIndex(['café']).search('cafe')` returned nothing and indexes over 5000 items lost most folded matches. The prefilters now normalize characters the same way the matcher does.
+- eb1b247: Update the napi-rs toolchain (`napi` 3.12, `@napi-rs/cli` 3.9, emnapi 2.0) and align the `rapid-fuzzy-wasm32-wasi` fallback package with the current napi-rs layout:
+  
+  - It now declares exact `@emnapi/core` / `@emnapi/runtime` dependencies matching the runtime the WASM binary was built against, instead of relying on peer resolution.
+  - It ships its own type definitions (`rapid-fuzzy.wasi.d.cts`).
+  - It no longer carries a `cpu: ["wasm32"]` restriction, so package managers can install it as the fallback on platforms without a prebuilt native binary.
+  - Its `engines.node` range follows the WASI API requirements (`>=22.13.0 <23.0.0-0 || >=23.5.0`).
+  
+  The platform package manifests also pick up the current package description, keywords, and bug tracker URL.
+- 0b55a12: `sorensenDiceMany` now returns the same scores as `sorensenDice` and `sorensenDiceBatch`. The many variant used its own bigram implementation, so it disagreed with the single-pair function on whitespace (`'a b'` vs `'ab'`), inputs shorter than two characters, and multi-byte characters.
+- e63f755: `weightedRatio`, `weightedRatioBatch` and `weightedRatioMany` now return identical scores. The plain-ratio component was computed on the original strings by the single-pair function but on the normalized (lower-cased, whitespace-collapsed) strings by the many variant; all three now take the better of the two.
+- e6642b3: Treat whitespace-only queries as empty in `search`, `closest`, `searchKeys`, `FuzzyIndex` and `KeyedFuzzyIndex`. A query such as `' '` used to return every item with a score of 1.0 (a pattern with no atoms scored 0 and normalized to NaN); it now returns no results unless `returnAllOnEmpty` is set, matching the behavior of the empty string.
+
 ## 2.1.0
 
 ### Minor Changes

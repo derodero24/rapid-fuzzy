@@ -10,6 +10,7 @@ on:
       - 'src/**'
       - 'package.json'
       - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
       - 'Cargo.toml'
       - 'Cargo.lock'
       - 'tsconfig.json'
@@ -17,10 +18,14 @@ on:
       - 'playwright.config.ts'
       - '.github/workflows/ci.yml'
       - 'deny.toml'
+      - 'rust-toolchain.toml'
+      - 'scripts/**'
       - 'vitest.config.mts'
       - 'codecov.yml'
   pull_request:
     branches: [develop]
+    # "labeled" lets the ci-full label re-run the plan job on an open PR.
+    types: [opened, synchronize, reopened, labeled]
     paths:
       - 'crates/**'
       - '__test__/**'
@@ -28,6 +33,7 @@ on:
       - 'src/**'
       - 'package.json'
       - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
       - 'Cargo.toml'
       - 'Cargo.lock'
       - 'tsconfig.json'
@@ -35,29 +41,86 @@ on:
       - 'playwright.config.ts'
       - '.github/workflows/ci.yml'
       - 'deny.toml'
+      - 'rust-toolchain.toml'
+      - 'scripts/**'
       - 'vitest.config.mts'
       - 'codecov.yml'
 
 permissions:
   contents: read
+  pull-requests: read # the plan job reads the PR's changed files and labels
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # A label event whose jobs are all skipped must not cancel a run in progress.
+  cancel-in-progress: ${{ github.event.action != 'labeled' }}
 
 jobs:
+  # Decide how much of the build matrix a run needs. Pushes to develop always
+  # build every target. Pull requests only build the targets the test jobs
+  # consume unless they touch the Rust sources, the Cargo manifests or this
+  # workflow, which keeps dependency-only PRs cheap.
+  plan:
+    name: Plan
+    # Label events only matter for ci-full; other labels must not rerun CI.
+    if: ${{ github.event.action != 'labeled' || github.event.label.name == 'ci-full' }}
+    runs-on: ubuntu-latest
+    outputs:
+      build-matrix: ${{ steps.plan.outputs.build-matrix }}
+    steps:
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          full='[
+            {"host":"macos-latest","target":"x86_64-apple-darwin"},
+            {"host":"macos-latest","target":"aarch64-apple-darwin"},
+            {"host":"ubuntu-latest","target":"x86_64-unknown-linux-gnu"},
+            {"host":"ubuntu-latest","target":"x86_64-unknown-linux-musl"},
+            {"host":"ubuntu-latest","target":"aarch64-unknown-linux-gnu"},
+            {"host":"ubuntu-latest","target":"aarch64-unknown-linux-musl"},
+            {"host":"windows-latest","target":"x86_64-pc-windows-msvc"},
+            {"host":"windows-latest","target":"aarch64-pc-windows-msvc"},
+            {"host":"ubuntu-latest","target":"wasm32-wasip1-threads"}
+          ]'
+          reduced='[
+            {"host":"macos-latest","target":"aarch64-apple-darwin"},
+            {"host":"ubuntu-latest","target":"x86_64-unknown-linux-gnu"},
+            {"host":"windows-latest","target":"x86_64-pc-windows-msvc"},
+            {"host":"ubuntu-latest","target":"wasm32-wasip1-threads"}
+          ]'
+          matrix="$full"
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            files=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --paginate --jq '.[].filename')
+            labels=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.labels[].name')
+            # Add the "ci-full" label to a PR to force every target.
+            if ! grep -qx 'ci-full' <<< "$labels" \
+              && ! grep -Eq '^(crates/|Cargo\.toml$|Cargo\.lock$|rust-toolchain\.toml$|deny\.toml$|scripts/|\.github/workflows/ci\.yml$)' <<< "$files"; then
+              matrix="$reduced"
+            fi
+          fi
+          echo "Selected build targets:"
+          jq -r '.[].target' <<< "$matrix"
+          echo "build-matrix=$(jq -c . <<< "$matrix")" >> "$GITHUB_OUTPUT"
+
   lint:
     name: Lint
+    # Label events only matter for ci-full; other labels must not rerun CI.
+    if: ${{ github.event.action != 'labeled' || github.event.label.name == 'ci-full' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
-      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       - run: pnpm install --frozen-lockfile
       - run: pnpm run check
       - run: pnpm run build
@@ -68,11 +131,15 @@ jobs:
 
   audit:
     name: Dependency Audit
+    # Label events only matter for ci-full; other labels must not rerun CI.
+    if: ${{ github.event.action != 'labeled' || github.event.label.name == 'ci-full' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -80,66 +147,59 @@ jobs:
       - name: Audit npm dependencies
         run: pnpm audit --prod
       - name: Audit Rust dependencies
-        uses: EmbarkStudios/cargo-deny-action@bb137d7af7e4fb67e5f82a49c4fce4fad40782fe # v2
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2
 
   rust-lint:
     name: Rust Lint
+    # Label events only matter for ci-full; other labels must not rerun CI.
+    if: ${{ github.event.action != 'labeled' || github.event.label.name == 'ci-full' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
           components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       - run: cargo fmt -- --check
       - run: cargo clippy -- -W clippy::all
 
   rust-test:
     name: Rust Test
+    # Label events only matter for ci-full; other labels must not rerun CI.
+    if: ${{ github.event.action != 'labeled' || github.event.label.name == 'ci-full' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       - run: cargo test
 
   build:
     name: Build - ${{ matrix.settings.target }}
+    needs: plan
     runs-on: ${{ matrix.settings.host }}
     strategy:
       fail-fast: false
       matrix:
-        settings:
-          - host: macos-latest
-            target: x86_64-apple-darwin
-          - host: macos-latest
-            target: aarch64-apple-darwin
-          - host: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-          - host: ubuntu-latest
-            target: x86_64-unknown-linux-musl
-          - host: ubuntu-latest
-            target: aarch64-unknown-linux-gnu
-          - host: ubuntu-latest
-            target: aarch64-unknown-linux-musl
-          - host: windows-latest
-            target: x86_64-pc-windows-msvc
-          - host: windows-latest
-            target: aarch64-pc-windows-msvc
-          - host: ubuntu-latest
-            target: wasm32-wasip1-threads
+        settings: ${{ fromJSON(needs.plan.outputs.build-matrix) }}
 
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
-      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
           targets: ${{ matrix.settings.target }}
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           shared-key: build-${{ matrix.settings.target }}
       - run: pnpm install --frozen-lockfile
@@ -173,11 +233,13 @@ jobs:
         if: matrix.settings.target == 'wasm32-wasip1-threads'
         run: pnpm run build --target wasm32-wasip1-threads
 
+      - name: Install binaryen
+        if: matrix.settings.target == 'wasm32-wasip1-threads'
+        run: bash scripts/install-binaryen.sh
+
       - name: Optimize WASM with wasm-opt
         if: matrix.settings.target == 'wasm32-wasip1-threads'
-        run: |
-          sudo apt-get update && sudo apt-get install -y binaryen
-          pnpm run optimize:wasm
+        run: pnpm run optimize:wasm
 
       - name: Upload artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -197,9 +259,11 @@ jobs:
           name: bindings-wasm32
           path: |
             *.wasm
+            *.wasi.cjs
             *.wasi-browser.js
+            wasi-worker.mjs
             wasi-worker-browser.mjs
-          if-no-files-found: ignore
+          if-no-files-found: error
           retention-days: 7
 
   test:
@@ -208,20 +272,31 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
+      # Every supported Node line runs on Linux; macOS and Windows only need
+      # the current LTS since they exist to exercise the native binary loader.
       matrix:
-        node: [22, 24]
-        os: [ubuntu-latest, macos-latest, windows-latest]
         include:
           - os: ubuntu-latest
+            node: 22
+            artifact: bindings-x86_64-unknown-linux-gnu
+          - os: ubuntu-latest
+            node: 24
+            artifact: bindings-x86_64-unknown-linux-gnu
+          - os: ubuntu-latest
+            node: 26
             artifact: bindings-x86_64-unknown-linux-gnu
           - os: macos-latest
+            node: 24
             artifact: bindings-aarch64-apple-darwin
           - os: windows-latest
+            node: 24
             artifact: bindings-x86_64-pc-windows-msvc
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: ${{ matrix.node }}
           cache: pnpm
@@ -231,7 +306,17 @@ jobs:
         with:
           name: ${{ matrix.artifact }}
           path: .
+      # Also exercise the WASI binding on Linux: __test__/wasm.spec.ts skips
+      # silently when the binary is absent, so require it here.
+      - name: Download WASI artifact
+        if: runner.os == 'Linux'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: bindings-wasm32
+          path: .
       - run: pnpm test
+        env:
+          RAPID_FUZZY_REQUIRE_WASM: ${{ runner.os == 'Linux' && '1' || '' }}
       - name: ESM import smoke test
         run: node __test__/esm-import.mjs
 
@@ -240,13 +325,15 @@ jobs:
     needs: [build]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       # Rust coverage
-      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
           components: llvm-tools-preview
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       - uses: taiki-e/install-action@f8b8d555f84da49ac7e1e22379742eb1b8ded407
         with:
           tool: cargo-llvm-cov
@@ -254,8 +341,8 @@ jobs:
         run: cargo llvm-cov --lcov --output-path rust-lcov.info
 
       # JS coverage
-      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -278,23 +365,29 @@ jobs:
 
   build-wasm-bindgen:
     name: Build - wasm-bindgen
+    # Label events only matter for ci-full; other labels must not rerun CI.
+    if: ${{ github.event.action != 'labeled' || github.event.label.name == 'ci-full' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
-      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
           targets: wasm32-unknown-unknown
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           shared-key: build-wasm-bindgen
       - run: pnpm install --frozen-lockfile
       - name: Install wasm-pack
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      - name: Install binaryen
+        run: bash scripts/install-binaryen.sh
       - name: Build wasm-bindgen
         run: pnpm run build:wasm-bindgen
       - name: Upload wasm-bindgen artifact
@@ -309,9 +402,11 @@ jobs:
     needs: [build-wasm-bindgen]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -331,9 +426,11 @@ jobs:
     needs: [build-wasm-bindgen]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -352,9 +449,11 @@ jobs:
     needs: [build-wasm-bindgen]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version-file: .nvmrc
           cache: pnpm

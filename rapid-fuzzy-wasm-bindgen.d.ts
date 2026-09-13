@@ -22,13 +22,13 @@ export class FuzzyIndex {
     free(): void;
     [Symbol.dispose](): void;
     /**
-     * Add a single item to the index.
-     */
-    add(item: string): void;
-    /**
      * Add multiple items to the index at once.
      */
     addMany(items: string[]): void;
+    /**
+     * Add a single item to the index.
+     */
+    add(item: string): void;
     /**
      * Find the closest matching string in the index.
      *
@@ -54,15 +54,15 @@ export class FuzzyIndex {
      */
     remove(index: number): boolean;
     /**
+     * Search the index, returning only indices and scores (no item strings).
+     */
+    searchIndices(query: string, options?: SearchOptions | null): any;
+    /**
      * Search the index for items matching the query.
      *
      * Returns matches sorted by score (best match first) as a JS Array.
      */
     search(query: string, options?: SearchOptions | null): any;
-    /**
-     * Search the index, returning only indices and scores (no item strings).
-     */
-    searchIndices(query: string, options?: SearchOptions | null): any;
     /**
      * Serialize the index to a compact binary format (Uint8Array).
      */
@@ -82,18 +82,18 @@ export class KeyedFuzzyIndex {
     free(): void;
     [Symbol.dispose](): void;
     /**
-     * Add a single item to the index.
-     *
-     * `key_values` must be a JS Array of strings with one value per key.
-     */
-    add(key_values: any): void;
-    /**
      * Add multiple items to the index at once.
      *
      * `items_key_values` is a JS Array where each element is an Array of strings
      * (one per key). Throws if any element has the wrong number of key values.
      */
     addMany(items_key_values: any): void;
+    /**
+     * Add a single item to the index.
+     *
+     * `key_values` must be a JS Array of strings with one value per key.
+     */
+    add(key_values: any): void;
     /**
      * Find the index of the closest matching item.
      */

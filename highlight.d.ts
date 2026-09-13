@@ -17,7 +17,7 @@ export interface HighlightRange {
  * ```typescript
  * const results = search('fzy', ['fuzzy'], { includePositions: true });
  * highlight(results[0].item, results[0].positions, '<b>', '</b>');
- * // → '<b>f</b>u<b>zy</b>'
+ * // → '<b>f</b>uz<b>zy</b>'
  * ```
  *
  * @example Callback (React, custom DOM, etc.)
