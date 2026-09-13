@@ -1659,16 +1659,24 @@ describe('FuzzyIndex', () => {
       const index = new FuzzyIndex(cacheItems);
       index.search('ab', { minScore: 0.9 });
       expect(index.search('abc').length).toBe(301);
-      expect(index.searchIndices('abcd').length).toBe(
-        new FuzzyIndex(cacheItems).search('abcd').length,
-      );
+      index.destroy();
+    });
+
+    it('should not reuse narrowed candidates on the searchIndices path either', () => {
+      const index = new FuzzyIndex(cacheItems);
+      index.searchIndices('ab', { minScore: 0.9 });
+      expect(index.searchIndices('abc').length).toBe(301);
+      index.search('ab', { minScore: 0.9 });
+      expect(index.searchIndices('abc').length).toBe(301);
       index.destroy();
     });
 
     it('should not reuse candidates matched with a different case mode', () => {
-      const index = new FuzzyIndex(['ABC', 'abc', 'xyz']);
-      expect(index.search('AB', { isCaseSensitive: true }).map((r) => r.item)).toEqual(['ABC']);
-      // Smart case: an all-lowercase query is case-insensitive again.
+      // 'ab' -> 'abc' is a prefix extension, so the cache would be consulted;
+      // the case-sensitive pass matched only 'abc' (fewer than half the items,
+      // so it was cached), and smart case must widen back to 'ABC' as well.
+      const index = new FuzzyIndex(['ABC', 'abc', 'xyz', 'x1', 'x2', 'x3']);
+      expect(index.search('ab', { isCaseSensitive: true }).map((r) => r.item)).toEqual(['abc']);
       expect(
         index
           .search('abc')
