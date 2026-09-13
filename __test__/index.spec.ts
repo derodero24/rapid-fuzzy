@@ -1503,9 +1503,15 @@ describe('index prefilters vs standalone search (diacritics)', () => {
   });
 
   it('bigram prefilter (5000+ items) keeps folded matches', () => {
-    const items = Array.from({ length: 6001 }, (_, i) => `café numero ${i}`);
+    // Half the items match so the bigram candidate set is selective (the
+    // index skips the prefilter when more than 80% of items share the bigrams).
+    const items = Array.from({ length: 6002 }, (_, i) =>
+      i % 2 === 0 ? `café numero ${i}` : `lorem ipsum ${i}`,
+    );
     const index = new FuzzyIndex(items);
-    expect(index.search('cafe').length).toBe(search('cafe', items).length);
+    const expected = search('cafe', items).map((r) => r.item);
+    expect(expected.length).toBe(3001);
+    expect(index.search('cafe').map((r) => r.item)).toEqual(expected);
     index.destroy();
   });
 });
