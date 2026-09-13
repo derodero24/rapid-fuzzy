@@ -38,6 +38,44 @@
       "matchManagers": ["cargo"],
       "matchUpdateTypes": ["minor", "patch"],
       "automerge": true
+    },
+    {
+      "description": "Keep the napi-rs toolchain in lockstep: napi-build exports symbols that only exist in matching emnapi archives, and @napi-rs/cli regenerates the loader files",
+      "matchPackageNames": [
+        "napi",
+        "napi-build",
+        "napi-derive",
+        "@napi-rs/cli",
+        "emnapi",
+        "@emnapi/core",
+        "@emnapi/runtime"
+      ],
+      "groupName": "napi-rs toolchain",
+      "automerge": false
+    },
+    {
+      "description": "Bump the biome.json $schema URL together with @biomejs/biome",
+      "matchPackageNames": ["@biomejs/biome"],
+      "groupName": "biome"
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "biome.json $schema URL carries the Biome version",
+      "managerFilePatterns": ["/^biome\\.json$/"],
+      "matchStrings": ["https://biomejs\\.dev/schemas/(?<currentValue>[^/]+)/schema\\.json"],
+      "depNameTemplate": "@biomejs/biome",
+      "datasourceTemplate": "npm"
+    },
+    {
+      "customType": "regex",
+      "description": "Pinned binaryen release installed in CI",
+      "managerFilePatterns": ["/^scripts/install-binaryen\\.sh$/"],
+      "matchStrings": ["BINARYEN_VERSION=\"(?<currentValue>version_\\d+)\""],
+      "depNameTemplate": "WebAssembly/binaryen",
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "regex:^version_(?<major>\\d+)$"
     }
   ]
 }
