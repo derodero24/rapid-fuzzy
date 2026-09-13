@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 // Check if WASM module is available and functional.
 // Handles both missing binary (not built) and stale binary (outdated build).
 let wasmAvailable = false;
+let wasmLoadError: unknown;
 // biome-ignore lint/suspicious/noExplicitAny: WASM module has dynamic exports
 let wasm: Record<string, any> = {};
 try {
@@ -11,12 +12,19 @@ try {
   // Check for a recently-added export to detect stale binaries
   wasmAvailable = typeof mod.levenshtein === 'function' && typeof mod.hamming === 'function';
   if (wasmAvailable) wasm = mod;
-} catch {
+  else wasmLoadError = new Error('rapid-fuzzy.wasi.cjs loaded but is missing expected exports');
+} catch (err) {
   wasmAvailable = false;
+  wasmLoadError = err;
 }
 
 // Skip all WASM tests if the module is not available or outdated
 // Build with: pnpm run build:wasm
+// CI sets RAPID_FUZZY_REQUIRE_WASM so a broken binary fails instead of skipping.
+if (!wasmAvailable && process.env.RAPID_FUZZY_REQUIRE_WASM) {
+  throw new Error('WASI binding is required but could not be loaded', { cause: wasmLoadError });
+}
+
 describe.skipIf(!wasmAvailable)('wasm', () => {
   describe('exports', () => {
     it('should export all expected functions', () => {
