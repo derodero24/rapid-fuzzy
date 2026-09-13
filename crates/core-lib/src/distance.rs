@@ -539,14 +539,28 @@ pub fn partial_ratio_from_normalized(norm_a: &str, norm_b: &str) -> f64 {
 }
 
 pub fn weighted_ratio_impl(a: &str, b: &str) -> f64 {
-    let raw = rapid_lev::normalized_similarity(a.chars(), b.chars());
+    // The plain ratio is taken on both the original and the normalized
+    // (lower-cased, whitespace collapsed) strings; `weighted_ratio_many`
+    // computes the same two so the variants always agree.
+    let raw_original = rapid_lev::normalized_similarity(a.chars(), b.chars());
+    if raw_original == 1.0 {
+        return 1.0;
+    }
+    let norm_a = normalize_str(a);
+    let norm_b = normalize_str(b);
+    // Normalization changed nothing: the second ratio would be identical.
+    let raw = if norm_a == a && norm_b == b {
+        raw_original
+    } else {
+        raw_original.max(rapid_lev::normalized_similarity(
+            norm_a.chars(),
+            norm_b.chars(),
+        ))
+    };
     if raw == 1.0 {
         return 1.0;
     }
     let sort = token_sort_ratio_impl(a, b);
-
-    let norm_a = normalize_str(a);
-    let norm_b = normalize_str(b);
     let set = token_set_ratio_from_normalized(&norm_a, &norm_b);
     let partial = partial_ratio_from_normalized(&norm_a, &norm_b);
 
@@ -760,12 +774,26 @@ pub fn weighted_ratio_many(
     let sorted_ref = sorted_tokens(reference).join(" ");
     let tokens_ref: BTreeSet<String> = norm_ref.split_whitespace().map(String::from).collect();
     let ref_scorer = rapid_lev::BatchComparator::new(norm_ref.chars());
+    let ref_is_normalized = norm_ref == reference;
+    // Only needed when the original reference differs from the normalized one.
+    let raw_ref_scorer =
+        (!ref_is_normalized).then(|| rapid_lev::BatchComparator::new(reference.chars()));
 
     candidates
         .iter()
         .map(|c| {
             let norm_c = normalize_str(c);
-            let raw = ref_scorer.normalized_similarity(norm_c.chars());
+            let raw_normalized = ref_scorer.normalized_similarity(norm_c.chars());
+            if raw_normalized == 1.0 {
+                return 1.0;
+            }
+            // Skip the original-string pass when normalization changed nothing.
+            let raw = if ref_is_normalized && norm_c == *c {
+                raw_normalized
+            } else {
+                let scorer = raw_ref_scorer.as_ref().unwrap_or(&ref_scorer);
+                raw_normalized.max(scorer.normalized_similarity(c.chars()))
+            };
             if raw == 1.0 {
                 return 1.0;
             }
