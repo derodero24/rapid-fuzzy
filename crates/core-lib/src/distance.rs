@@ -272,16 +272,11 @@ pub fn sorensen_dice_many(
             } else if ref_str.len() < 2 || c_str.len() < 2 {
                 0.0
             } else {
-                let mut remaining = ref_bigrams.clone();
-                let mut intersection = 0_usize;
-                for bigram in bigrams(&c_str) {
-                    if let Some(count) = remaining.get_mut(&bigram)
-                        && *count > 0
-                    {
-                        *count -= 1;
-                        intersection += 1;
-                    }
-                }
+                let c_bigrams = bigram_counts(&c_str);
+                let intersection: usize = ref_bigrams
+                    .iter()
+                    .map(|(bigram, count)| count.min(c_bigrams.get(bigram).unwrap_or(&0)))
+                    .sum();
                 (2 * intersection) as f64 / (ref_str.len() + c_str.len() - 2) as f64
             };
 
