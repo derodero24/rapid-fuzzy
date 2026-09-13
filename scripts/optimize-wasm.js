@@ -19,10 +19,12 @@ const path = require('node:path');
 const ROOT = path.resolve(__dirname, '..');
 
 // Enable exactly the proposals the Rust wasm targets emit (see
-// `rustc --print cfg --target wasm32-wasip1-threads`) plus threads for the
-// WASI build. `--all-features` also turns on in-progress proposals, and newer
-// binaryen releases then re-encode the shared memory import in a form that
-// Node.js rejects with "unknown import kind".
+// `rustc --print cfg --target wasm32-wasip1-threads`) plus threads, which the
+// WASI build needs and which is harmless for the single-threaded wasm-bindgen
+// build. The same list is applied to every binary. `--all-features` also
+// turns on in-progress proposals, and newer binaryen releases then re-encode
+// the shared memory import in a form that Node.js rejects with
+// "unknown import kind".
 const WASM_FEATURES = [
   '--enable-threads',
   '--enable-bulk-memory',

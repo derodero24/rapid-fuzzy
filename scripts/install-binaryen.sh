@@ -21,5 +21,11 @@ echo "${BINARYEN_SHA256}  ${ARCHIVE}" | sha256sum -c -
 tar -xzf "$ARCHIVE"
 rm -f "$ARCHIVE"
 
-echo "${INSTALL_DIR}/binaryen-${BINARYEN_VERSION}/bin" >> "$GITHUB_PATH"
+# Expose wasm-opt to later workflow steps; when run outside GitHub Actions
+# just report where it landed.
+if [ -n "${GITHUB_PATH:-}" ]; then
+  echo "${INSTALL_DIR}/binaryen-${BINARYEN_VERSION}/bin" >> "$GITHUB_PATH"
+else
+  echo "wasm-opt installed to ${INSTALL_DIR}/binaryen-${BINARYEN_VERSION}/bin (add it to PATH)"
+fi
 "${INSTALL_DIR}/binaryen-${BINARYEN_VERSION}/bin/wasm-opt" --version
