@@ -142,7 +142,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.3",
-    "@changesets/cli": "^2.30.0",
+    "@changesets/cli": "^3.0.2",
     "@codspeed/vitest-plugin": "^5.7.1",
     "@commitlint/cli": "^21.2.1",
     "@commitlint/config-conventional": "^21.2.0",
@@ -179,7 +179,6 @@
       "axios": ">=1.15.0",
       "fast-uri": ">=3.1.2",
       "form-data": ">=4.0.6",
-      "js-yaml@3": ">=3.15.0 <4.0.0",
       "js-yaml@4": ">=4.2.0"
     },
     "peerDependencyRules": {
