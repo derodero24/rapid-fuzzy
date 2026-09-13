@@ -59,6 +59,8 @@ jobs:
   # workflow, which keeps dependency-only PRs cheap.
   plan:
     name: Plan
+    # Label events only matter for ci-full; other labels must not rerun CI.
+    if: ${{ github.event.action != 'labeled' || github.event.label.name == 'ci-full' }}
     runs-on: ubuntu-latest
     outputs:
       build-matrix: ${{ steps.plan.outputs.build-matrix }}
@@ -102,6 +104,8 @@ jobs:
 
   lint:
     name: Lint
+    # Label events only matter for ci-full; other labels must not rerun CI.
+    if: ${{ github.event.action != 'labeled' || github.event.label.name == 'ci-full' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -122,6 +126,8 @@ jobs:
 
   audit:
     name: Dependency Audit
+    # Label events only matter for ci-full; other labels must not rerun CI.
+    if: ${{ github.event.action != 'labeled' || github.event.label.name == 'ci-full' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -138,6 +144,8 @@ jobs:
 
   rust-lint:
     name: Rust Lint
+    # Label events only matter for ci-full; other labels must not rerun CI.
+    if: ${{ github.event.action != 'labeled' || github.event.label.name == 'ci-full' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -150,6 +158,8 @@ jobs:
 
   rust-test:
     name: Rust Test
+    # Label events only matter for ci-full; other labels must not rerun CI.
+    if: ${{ github.event.action != 'labeled' || github.event.label.name == 'ci-full' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -324,6 +334,8 @@ jobs:
 
   build-wasm-bindgen:
     name: Build - wasm-bindgen
+    # Label events only matter for ci-full; other labels must not rerun CI.
+    if: ${{ github.event.action != 'labeled' || github.event.label.name == 'ci-full' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
