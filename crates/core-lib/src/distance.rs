@@ -540,11 +540,16 @@ pub fn weighted_ratio_impl(a: &str, b: &str) -> f64 {
     // The plain ratio is taken on both the original and the normalized
     // (lower-cased, whitespace collapsed) strings; `weighted_ratio_many`
     // computes the same two so the variants always agree.
+    let raw_original = rapid_lev::normalized_similarity(a.chars(), b.chars());
+    if raw_original == 1.0 {
+        return 1.0;
+    }
     let norm_a = normalize_str(a);
     let norm_b = normalize_str(b);
-    let raw = rapid_lev::normalized_similarity(a.chars(), b.chars()).max(
-        rapid_lev::normalized_similarity(norm_a.chars(), norm_b.chars()),
-    );
+    let raw = raw_original.max(rapid_lev::normalized_similarity(
+        norm_a.chars(),
+        norm_b.chars(),
+    ));
     if raw == 1.0 {
         return 1.0;
     }
@@ -768,9 +773,11 @@ pub fn weighted_ratio_many(
         .iter()
         .map(|c| {
             let norm_c = normalize_str(c);
-            let raw = raw_ref_scorer
-                .normalized_similarity(c.chars())
-                .max(ref_scorer.normalized_similarity(norm_c.chars()));
+            let raw_normalized = ref_scorer.normalized_similarity(norm_c.chars());
+            if raw_normalized == 1.0 {
+                return 1.0;
+            }
+            let raw = raw_normalized.max(raw_ref_scorer.normalized_similarity(c.chars()));
             if raw == 1.0 {
                 return 1.0;
             }
