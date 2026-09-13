@@ -50,7 +50,7 @@ pnpm add rapid-fuzzy
 
 ### Runtime-specific notes
 
-- **Node.js** (>=22): Uses native bindings via napi-rs for best performance.
+- **Node.js** (>=22): Uses native bindings via napi-rs for best performance. On a platform without a prebuilt binary, install the WASI fallback alongside the package (`npm install rapid-fuzzy rapid-fuzzy-wasm32-wasi`); the loader picks it up automatically, or set `NAPI_RS_FORCE_WASI=1` to prefer it.
 - **Bun**: Uses native napi-rs bindings. WASM fallback also works — see [Bun section](#bun) below.
 - **Browser / CDN / Cloudflare Workers / Deno**: Falls back to the wasm-bindgen WASM build (~195 KB raw). No `SharedArrayBuffer` or COOP/COEP headers required.
 
