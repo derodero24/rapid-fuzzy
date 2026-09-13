@@ -579,6 +579,31 @@ mod tests {
     }
 
     #[test]
+    fn test_sorensen_dice_many_matches_single_edge_cases() {
+        // Single-char inputs, whitespace stripping and multi-byte chars used to
+        // differ between the strsim-backed single function and the many variant.
+        let reference = "a".to_string();
+        for (r, c) in [
+            ("a", "b"),
+            ("a b", "ab"),
+            ("aé", "aéx"),
+            ("apple event", "apple    event"),
+            ("", ""),
+        ] {
+            let many = sorensen_dice_many(r.to_string(), vec![c.to_string()], None)[0];
+            let single = sorensen_dice(r.to_string(), c.to_string());
+            assert!(
+                (many - single).abs() < f64::EPSILON,
+                "{r:?} vs {c:?}: many={many} single={single}"
+            );
+        }
+        assert_eq!(
+            sorensen_dice_many(reference, vec!["b".to_string()], None),
+            vec![0.0]
+        );
+    }
+
+    #[test]
     fn test_sorensen_dice_batch() {
         let pairs = vec![
             vec!["night".to_string(), "nacht".to_string()],
@@ -1569,6 +1594,13 @@ mod tests {
             fn jaro_winkler_unicode_bounded(ref a in any::<String>(), ref b in any::<String>()) {
                 let score = jaro_winkler(a.clone(), b.clone());
                 prop_assert!(score >= 0.0 && score <= 1.0, "score {} out of [0, 1]", score);
+            }
+
+            #[test]
+            fn sorensen_dice_many_matches_single_unicode(ref a in any::<String>(), ref b in any::<String>()) {
+                let many = sorensen_dice_many(a.clone(), vec![b.clone()], None);
+                let single = sorensen_dice(a.clone(), b.clone());
+                prop_assert!((many[0] - single).abs() < f64::EPSILON, "many={} single={}", many[0], single);
             }
 
             #[test]
