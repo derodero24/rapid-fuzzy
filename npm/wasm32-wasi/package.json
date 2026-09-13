@@ -1,26 +1,28 @@
 {
   "name": "rapid-fuzzy-wasm32-wasi",
   "version": "2.1.0",
-  "cpu": [
-    "wasm32"
-  ],
   "main": "rapid-fuzzy.wasi.cjs",
   "files": [
     "rapid-fuzzy.wasm32-wasi.wasm",
     "rapid-fuzzy.wasi.cjs",
+    "rapid-fuzzy.wasi.d.cts",
     "rapid-fuzzy.wasi-browser.js",
     "wasi-worker.mjs",
     "wasi-worker-browser.mjs"
   ],
-  "description": "Rust-powered fuzzy search and string distance for JavaScript/TypeScript. 10-50x faster than fuse.js/leven.",
+  "description": "Rust-powered fuzzy search and string distance for JavaScript/TypeScript. Up to 15,000x faster than fuse.js with indexed mode.",
   "keywords": [
     "fuzzy",
     "fuzzy-search",
+    "fuzzy-matching",
     "string-distance",
+    "string-similarity",
     "levenshtein",
     "jaro-winkler",
+    "hamming",
+    "damerau-levenshtein",
     "rust",
-    "napi",
+    "napi-rs",
     "wasm",
     "typescript",
     "search",
@@ -30,14 +32,21 @@
   "homepage": "https://github.com/derodero24/rapid-fuzzy",
   "license": "MIT",
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=22.13.0 <23.0.0-0 || >=23.5.0"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/derodero24/rapid-fuzzy.git"
   },
+  "bugs": {
+    "url": "https://github.com/derodero24/rapid-fuzzy/issues"
+  },
+  "types": "rapid-fuzzy.wasi.d.cts",
   "browser": "rapid-fuzzy.wasi-browser.js",
+  "type": "module",
   "dependencies": {
-    "@napi-rs/wasm-runtime": "^1.1.1"
+    "@napi-rs/wasm-runtime": "~1.2.4",
+    "@emnapi/core": "2.0.0-alpha.5",
+    "@emnapi/runtime": "2.0.0-alpha.5"
   }
 }

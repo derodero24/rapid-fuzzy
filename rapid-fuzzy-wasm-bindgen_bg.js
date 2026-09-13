@@ -22,15 +22,6 @@ export class FuzzyIndex {
         wasm.__wbg_fuzzyindex_free(ptr, 0);
     }
     /**
-     * Add a single item to the index.
-     * @param {string} item
-     */
-    add(item) {
-        const ptr0 = passStringToWasm0(item, wasm.__wbindgen_export, wasm.__wbindgen_export2);
-        const len0 = WASM_VECTOR_LEN;
-        wasm.fuzzyindex_add(this.__wbg_ptr, ptr0, len0);
-    }
-    /**
      * Add multiple items to the index at once.
      * @param {string[]} items
      */
@@ -38,6 +29,15 @@ export class FuzzyIndex {
         const ptr0 = passArrayJsValueToWasm0(items, wasm.__wbindgen_export);
         const len0 = WASM_VECTOR_LEN;
         wasm.fuzzyindex_addMany(this.__wbg_ptr, ptr0, len0);
+    }
+    /**
+     * Add a single item to the index.
+     * @param {string} item
+     */
+    add(item) {
+        const ptr0 = passStringToWasm0(item, wasm.__wbindgen_export, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.fuzzyindex_add(this.__wbg_ptr, ptr0, len0);
     }
     /**
      * Find the closest matching string in the index.
@@ -57,7 +57,7 @@ export class FuzzyIndex {
             var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
             let v2;
             if (r0 !== 0) {
-                v2 = getStringFromWasm0(r0, r1).slice();
+                v2 = getStringFromWasm0(r0, r1);
                 wasm.__wbindgen_export4(r0, r1 * 1, 1);
             }
             return v2;
@@ -117,6 +117,18 @@ export class FuzzyIndex {
         return ret !== 0;
     }
     /**
+     * Search the index, returning only indices and scores (no item strings).
+     * @param {string} query
+     * @param {SearchOptions | null} [options]
+     * @returns {any}
+     */
+    searchIndices(query, options) {
+        const ptr0 = passStringToWasm0(query, wasm.__wbindgen_export, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.fuzzyindex_searchIndices(this.__wbg_ptr, ptr0, len0, isLikeNone(options) ? 0 : addHeapObject(options));
+        return takeObject(ret);
+    }
+    /**
      * Search the index for items matching the query.
      *
      * Returns matches sorted by score (best match first) as a JS Array.
@@ -128,18 +140,6 @@ export class FuzzyIndex {
         const ptr0 = passStringToWasm0(query, wasm.__wbindgen_export, wasm.__wbindgen_export2);
         const len0 = WASM_VECTOR_LEN;
         const ret = wasm.fuzzyindex_search(this.__wbg_ptr, ptr0, len0, isLikeNone(options) ? 0 : addHeapObject(options));
-        return takeObject(ret);
-    }
-    /**
-     * Search the index, returning only indices and scores (no item strings).
-     * @param {string} query
-     * @param {SearchOptions | null} [options]
-     * @returns {any}
-     */
-    searchIndices(query, options) {
-        const ptr0 = passStringToWasm0(query, wasm.__wbindgen_export, wasm.__wbindgen_export2);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.fuzzyindex_searchIndices(this.__wbg_ptr, ptr0, len0, isLikeNone(options) ? 0 : addHeapObject(options));
         return takeObject(ret);
     }
     /**
@@ -193,25 +193,6 @@ export class KeyedFuzzyIndex {
         wasm.__wbg_keyedfuzzyindex_free(ptr, 0);
     }
     /**
-     * Add a single item to the index.
-     *
-     * `key_values` must be a JS Array of strings with one value per key.
-     * @param {any} key_values
-     */
-    add(key_values) {
-        try {
-            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
-            wasm.keyedfuzzyindex_add(retptr, this.__wbg_ptr, addHeapObject(key_values));
-            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
-            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
-            if (r1) {
-                throw takeObject(r0);
-            }
-        } finally {
-            wasm.__wbindgen_add_to_stack_pointer(16);
-        }
-    }
-    /**
      * Add multiple items to the index at once.
      *
      * `items_key_values` is a JS Array where each element is an Array of strings
@@ -222,6 +203,25 @@ export class KeyedFuzzyIndex {
         try {
             const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
             wasm.keyedfuzzyindex_addMany(retptr, this.__wbg_ptr, addHeapObject(items_key_values));
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            if (r1) {
+                throw takeObject(r0);
+            }
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+    /**
+     * Add a single item to the index.
+     *
+     * `key_values` must be a JS Array of strings with one value per key.
+     * @param {any} key_values
+     */
+    add(key_values) {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.keyedfuzzyindex_add(retptr, this.__wbg_ptr, addHeapObject(key_values));
             var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
             var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
             if (r1) {
@@ -373,7 +373,7 @@ export function closest(query, items, min_score) {
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
         let v3;
         if (r0 !== 0) {
-            v3 = getStringFromWasm0(r0, r1).slice();
+            v3 = getStringFromWasm0(r0, r1);
             wasm.__wbindgen_export4(r0, r1 * 1, 1);
         }
         return v3;
@@ -1171,11 +1171,11 @@ export function weightedRatioMany(reference, candidates, score_cutoff) {
         wasm.__wbindgen_add_to_stack_pointer(16);
     }
 }
-export function __wbg_Error_3639a60ed15f87e7(arg0, arg1) {
+export function __wbg_Error_67e7344beaa85059(arg0, arg1) {
     const ret = Error(getStringFromWasm0(arg0, arg1));
     return addHeapObject(ret);
 }
-export function __wbg_Number_a3d737fd183f7dca(arg0) {
+export function __wbg_Number_c54e7112a3fa7e3e(arg0) {
     const ret = Number(getObject(arg0));
     return ret;
 }
@@ -1186,46 +1186,46 @@ export function __wbg_String_8564e559799eccda(arg0, arg1) {
     getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
     getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
 }
-export function __wbg___wbindgen_boolean_get_c3dd5c39f1b5a12b(arg0) {
+export function __wbg___wbindgen_boolean_get_7a12af2b3f899c5a(arg0) {
     const v = getObject(arg0);
     const ret = typeof(v) === 'boolean' ? v : undefined;
     return isLikeNone(ret) ? 0xFFFFFF : ret ? 1 : 0;
 }
-export function __wbg___wbindgen_debug_string_07cb72cfcc952e2b(arg0, arg1) {
+export function __wbg___wbindgen_debug_string_0e68cf47c9cbd9b0(arg0, arg1) {
     const ret = debugString(getObject(arg1));
     const ptr1 = passStringToWasm0(ret, wasm.__wbindgen_export, wasm.__wbindgen_export2);
     const len1 = WASM_VECTOR_LEN;
     getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
     getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
 }
-export function __wbg___wbindgen_in_2617fa76397620d3(arg0, arg1) {
+export function __wbg___wbindgen_in_50072d4d6e45c193(arg0, arg1) {
     const ret = getObject(arg0) in getObject(arg1);
     return ret;
 }
-export function __wbg___wbindgen_is_function_2f0fd7ceb86e64c5(arg0) {
+export function __wbg___wbindgen_is_function_fcda5e3902d732fe(arg0) {
     const ret = typeof(getObject(arg0)) === 'function';
     return ret;
 }
-export function __wbg___wbindgen_is_object_5b22ff2418063a9c(arg0) {
+export function __wbg___wbindgen_is_object_edb6b15aa3afe12e(arg0) {
     const val = getObject(arg0);
     const ret = typeof(val) === 'object' && val !== null;
     return ret;
 }
-export function __wbg___wbindgen_is_undefined_244a92c34d3b6ec0(arg0) {
+export function __wbg___wbindgen_is_undefined_8c687d0b90d5b524(arg0) {
     const ret = getObject(arg0) === undefined;
     return ret;
 }
-export function __wbg___wbindgen_jsval_loose_eq_1978f1e77b4bce62(arg0, arg1) {
+export function __wbg___wbindgen_jsval_loose_eq_3c30021c243b64cd(arg0, arg1) {
     const ret = getObject(arg0) == getObject(arg1);
     return ret;
 }
-export function __wbg___wbindgen_number_get_dd6d69a6079f26f1(arg0, arg1) {
+export function __wbg___wbindgen_number_get_1dc732b810cb937c(arg0, arg1) {
     const obj = getObject(arg1);
     const ret = typeof(obj) === 'number' ? obj : undefined;
     getDataViewMemory0().setFloat64(arg0 + 8 * 1, isLikeNone(ret) ? 0 : ret, true);
     getDataViewMemory0().setInt32(arg0 + 4 * 0, !isLikeNone(ret), true);
 }
-export function __wbg___wbindgen_string_get_965592073e5d848c(arg0, arg1) {
+export function __wbg___wbindgen_string_get_92ab86bb19cbc12f(arg0, arg1) {
     const obj = getObject(arg1);
     const ret = typeof(obj) === 'string' ? obj : undefined;
     var ptr1 = isLikeNone(ret) ? 0 : passStringToWasm0(ret, wasm.__wbindgen_export, wasm.__wbindgen_export2);
@@ -1233,22 +1233,22 @@ export function __wbg___wbindgen_string_get_965592073e5d848c(arg0, arg1) {
     getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
     getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
 }
-export function __wbg___wbindgen_throw_9c75d47bf9e7731e(arg0, arg1) {
+export function __wbg___wbindgen_throw_5d9e815e6fdf150f(arg0, arg1) {
     throw new Error(getStringFromWasm0(arg0, arg1));
 }
-export function __wbg_call_add9e5a76382e668() { return handleError(function (arg0, arg1) {
+export function __wbg_call_269c5566fbede3eb() { return handleError(function (arg0, arg1) {
     const ret = getObject(arg0).call(getObject(arg1));
     return addHeapObject(ret);
 }, arguments); }
-export function __wbg_done_b1afd6201ac045e0(arg0) {
+export function __wbg_done_cffed884d87aa22e(arg0) {
     const ret = getObject(arg0).done;
     return ret;
 }
-export function __wbg_get_9cfea9b7bbf12a15() { return handleError(function (arg0, arg1) {
+export function __wbg_get_6cf5a4d4d8ad3c5a() { return handleError(function (arg0, arg1) {
     const ret = Reflect.get(getObject(arg0), getObject(arg1));
     return addHeapObject(ret);
 }, arguments); }
-export function __wbg_get_unchecked_be562b1421656321(arg0, arg1) {
+export function __wbg_get_unchecked_363572bdd397d473(arg0, arg1) {
     const ret = getObject(arg0)[arg1 >>> 0];
     return addHeapObject(ret);
 }
@@ -1256,7 +1256,7 @@ export function __wbg_get_with_ref_key_6412cf3094599694(arg0, arg1) {
     const ret = getObject(arg0)[getObject(arg1)];
     return addHeapObject(ret);
 }
-export function __wbg_instanceof_ArrayBuffer_eab9f28fbec23477(arg0) {
+export function __wbg_instanceof_ArrayBuffer_d4ff01f8247925ae(arg0) {
     let result;
     try {
         result = getObject(arg0) instanceof ArrayBuffer;
@@ -1266,7 +1266,7 @@ export function __wbg_instanceof_ArrayBuffer_eab9f28fbec23477(arg0) {
     const ret = result;
     return ret;
 }
-export function __wbg_instanceof_Uint8Array_57d77acd50e4c44d(arg0) {
+export function __wbg_instanceof_Uint8Array_598adc0fef426aa8(arg0) {
     let result;
     try {
         result = getObject(arg0) instanceof Uint8Array;
@@ -1276,65 +1276,65 @@ export function __wbg_instanceof_Uint8Array_57d77acd50e4c44d(arg0) {
     const ret = result;
     return ret;
 }
-export function __wbg_isArray_c6c6ef8308995bcf(arg0) {
+export function __wbg_isArray_5674713bb7b79043(arg0) {
     const ret = Array.isArray(getObject(arg0));
     return ret;
 }
-export function __wbg_isSafeInteger_3c56c421a5b4cce4(arg0) {
+export function __wbg_isSafeInteger_8f51c743827d1ec5(arg0) {
     const ret = Number.isSafeInteger(getObject(arg0));
     return ret;
 }
-export function __wbg_iterator_9d68985a1d096fc2() {
+export function __wbg_iterator_22ddeb808cf55a6f() {
     const ret = Symbol.iterator;
     return addHeapObject(ret);
 }
-export function __wbg_length_0a6ce016dc1460b0(arg0) {
+export function __wbg_length_31bdaf014f5fbde2(arg0) {
     const ret = getObject(arg0).length;
     return ret;
 }
-export function __wbg_length_ba3c032602efe310(arg0) {
+export function __wbg_length_4e1adc0d42e23620(arg0) {
     const ret = getObject(arg0).length;
     return ret;
 }
-export function __wbg_new_2fad8ca02fd00684() {
-    const ret = new Object();
-    return addHeapObject(ret);
-}
-export function __wbg_new_3baa8d9866155c79() {
-    const ret = new Array();
-    return addHeapObject(ret);
-}
-export function __wbg_new_8454eee672b2ba6e(arg0) {
+export function __wbg_new_1da3429bc3c4541c(arg0) {
     const ret = new Uint8Array(getObject(arg0));
     return addHeapObject(ret);
 }
-export function __wbg_next_261c3c48c6e309a5(arg0) {
+export function __wbg_new_bebc3f4757acf305() {
+    const ret = new Object();
+    return addHeapObject(ret);
+}
+export function __wbg_new_ffa92086ea89f79c() {
+    const ret = new Array();
+    return addHeapObject(ret);
+}
+export function __wbg_next_95053e306b1c3aed(arg0) {
     const ret = getObject(arg0).next;
     return addHeapObject(ret);
 }
-export function __wbg_next_aacee310bcfe6461() { return handleError(function (arg0) {
+export function __wbg_next_f31ecb8646d2c605() { return handleError(function (arg0) {
     const ret = getObject(arg0).next();
     return addHeapObject(ret);
 }, arguments); }
-export function __wbg_prototypesetcall_fd4050e806e1d519(arg0, arg1, arg2) {
+export function __wbg_prototypesetcall_ae9f5e7459250748(arg0, arg1, arg2) {
     Uint8Array.prototype.set.call(getArrayU8FromWasm0(arg0, arg1), getObject(arg2));
+}
+export function __wbg_set_13d25b81ab403f5e(arg0, arg1, arg2) {
+    getObject(arg0)[arg1 >>> 0] = takeObject(arg2);
 }
 export function __wbg_set_6be42768c690e380(arg0, arg1, arg2) {
     getObject(arg0)[takeObject(arg1)] = takeObject(arg2);
 }
-export function __wbg_set_f614f6a0608d1d1d(arg0, arg1, arg2) {
-    getObject(arg0)[arg1 >>> 0] = takeObject(arg2);
-}
-export function __wbg_value_f852716acdeb3e82(arg0) {
+export function __wbg_value_c227f843d21da141(arg0) {
     const ret = getObject(arg0).value;
     return addHeapObject(ret);
 }
-export function __wbindgen_cast_0000000000000001(arg0) {
+export function __wbindgen_generic_0000000000000001(arg0) {
     // Cast intrinsic for `F64 -> Externref`.
     const ret = arg0;
     return addHeapObject(ret);
 }
-export function __wbindgen_cast_0000000000000002(arg0, arg1) {
+export function __wbindgen_generic_0000000000000002(arg0, arg1) {
     // Cast intrinsic for `Ref(String) -> Externref`.
     const ret = getStringFromWasm0(arg0, arg1);
     return addHeapObject(ret);

@@ -18,6 +18,23 @@ const path = require('node:path');
 
 const ROOT = path.resolve(__dirname, '..');
 
+// Enable exactly the proposals the Rust wasm targets emit (see
+// `rustc --print cfg --target wasm32-wasip1-threads`) plus threads, which the
+// WASI build needs and which is harmless for the single-threaded wasm-bindgen
+// build. The same list is applied to every binary. `--all-features` also
+// turns on in-progress proposals, and newer binaryen releases then re-encode
+// the shared memory import in a form that Node.js rejects with
+// "unknown import kind".
+const WASM_FEATURES = [
+  '--enable-threads',
+  '--enable-bulk-memory',
+  '--enable-mutable-globals',
+  '--enable-sign-ext',
+  '--enable-nontrapping-float-to-int',
+  '--enable-reference-types',
+  '--enable-multivalue',
+];
+
 // Parse CLI flags
 const optimizeForSize = process.argv.includes('--size');
 const optLevel = optimizeForSize ? '-Oz' : '-O3';
@@ -62,7 +79,7 @@ for (const wasmFile of wasmFiles) {
   try {
     // wasm-opt in-place: write to temp then rename
     const tmpFile = `${wasmFile}.opt`;
-    execFileSync(wasmOpt, [optLevel, '--all-features', '-o', tmpFile, wasmFile], {
+    execFileSync(wasmOpt, [optLevel, ...WASM_FEATURES, '-o', tmpFile, wasmFile], {
       stdio: 'pipe',
       timeout: 120_000,
     });

@@ -156,11 +156,13 @@ jobs:
           ${{ matrix.settings.use-cross && '--use-napi-cross' || '' }}
           ${{ matrix.settings.use-zig && '--cross-compile' || '' }}
 
+      - name: Install binaryen
+        if: matrix.settings.target == 'wasm32-wasip1-threads'
+        run: bash scripts/install-binaryen.sh
+
       - name: Optimize WASM with wasm-opt
         if: matrix.settings.target == 'wasm32-wasip1-threads'
-        run: |
-          sudo apt-get update && sudo apt-get install -y binaryen
-          pnpm run optimize:wasm
+        run: pnpm run optimize:wasm
 
       - name: Upload artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -170,6 +172,7 @@ jobs:
             rapid-fuzzy.*.node
             rapid-fuzzy.*.wasm
             rapid-fuzzy.wasi*.cjs
+            rapid-fuzzy.wasi*.cts
             rapid-fuzzy.wasi*.js
             wasi-worker*.mjs
           retention-days: 7
@@ -200,13 +203,20 @@ jobs:
         run: |
           WASM_DIR="artifacts/bindings-wasm32-wasip1-threads"
           if [ -d "$WASM_DIR" ]; then
-            cp "$WASM_DIR"/*.cjs "$WASM_DIR"/*.js "$WASM_DIR"/*.mjs . 2>/dev/null || true
+            cp "$WASM_DIR"/*.cjs "$WASM_DIR"/*.cts "$WASM_DIR"/*.js "$WASM_DIR"/*.mjs . 2>/dev/null || true
             echo "Copied WASM wrapper files from $WASM_DIR"
             ls -la rapid-fuzzy.wasi* wasi-worker* 2>/dev/null
           fi
 
       - name: Move artifacts to platform packages
         run: pnpm napi artifacts --output-dir artifacts
+
+      # `napi artifacts` rewrites the root loader files from its templates,
+      # which drops the wasm-bindgen browser entry and the appended JS
+      # utilities. The committed files are the source of truth (CI verifies
+      # they match the build output), so restore them before publishing.
+      - name: Restore committed binding files
+        run: git checkout -- index.js index.d.ts browser.js
 
       - name: List packages
         run: |
