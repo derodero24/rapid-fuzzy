@@ -774,8 +774,10 @@ pub fn weighted_ratio_many(
     let sorted_ref = sorted_tokens(reference).join(" ");
     let tokens_ref: BTreeSet<String> = norm_ref.split_whitespace().map(String::from).collect();
     let ref_scorer = rapid_lev::BatchComparator::new(norm_ref.chars());
-    let raw_ref_scorer = rapid_lev::BatchComparator::new(reference.chars());
     let ref_is_normalized = norm_ref == reference;
+    // Only needed when the original reference differs from the normalized one.
+    let raw_ref_scorer =
+        (!ref_is_normalized).then(|| rapid_lev::BatchComparator::new(reference.chars()));
 
     candidates
         .iter()
@@ -789,7 +791,8 @@ pub fn weighted_ratio_many(
             let raw = if ref_is_normalized && norm_c == *c {
                 raw_normalized
             } else {
-                raw_normalized.max(raw_ref_scorer.normalized_similarity(c.chars()))
+                let scorer = raw_ref_scorer.as_ref().unwrap_or(&ref_scorer);
+                raw_normalized.max(scorer.normalized_similarity(c.chars()))
             };
             if raw == 1.0 {
                 return 1.0;
