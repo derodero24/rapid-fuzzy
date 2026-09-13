@@ -1,2 +1,17 @@
-ignoredBuiltDependencies:
-  - lefthook
+# pnpm settings live here (pnpm 11+ no longer reads the "pnpm" field in package.json).
+
+# Only lefthook needs to run its install script (it downloads the git hook binary).
+allowBuilds:
+  lefthook: true
+
+# Security floors for transitive dependencies.
+overrides:
+  axios: '>=1.15.0'
+  fast-uri: '>=3.1.2'
+  form-data: '>=4.0.6'
+  js-yaml@4: '>=4.2.0'
+
+# @codspeed/vitest-plugin has not declared vite 8 support yet.
+peerDependencyRules:
+  allowedVersions:
+    '@codspeed/vitest-plugin>vite': '8'
