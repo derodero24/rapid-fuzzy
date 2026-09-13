@@ -197,7 +197,7 @@ search('app', items, { maxResults: 5, minScore: 0.3 });
 
 // Get matched character positions for highlighting
 const [match] = search('hlo', ['hello world'], { includePositions: true });
-// → { item: 'hello world', score: 0.75, index: 0, positions: [0, 2, 4] }
+// → { item: 'hello world', score: 0.77, index: 0, positions: [0, 3, 4] }
 
 // Case-sensitive matching (default: smart case)
 search('Type', items, { isCaseSensitive: true });
@@ -370,7 +370,7 @@ const { item, positions } = results[0];
 
 // String markers
 highlight(item, positions, '<b>', '</b>');
-// → '<b>f</b>u<b>zy</b>'
+// → '<b>f</b>uz<b>zy</b>'
 
 // Callback (React, JSX, custom DOM)
 highlight(item, positions, (matched) => `<mark>${matched}</mark>`);
@@ -397,13 +397,13 @@ import {
 tokenSortRatio('New York Mets', 'Mets New York'); // 1.0
 
 // Token Set: handles extra/missing tokens
-tokenSetRatio('Great Gatsby', 'The Great Gatsby by Fitzgerald'); // ~0.85
+tokenSetRatio('Great Gatsby', 'The Great Gatsby by Fitzgerald'); // 1.0 (all tokens of one side are present)
 
 // Partial: best substring match
 partialRatio('hello', 'hello world'); // 1.0
 
 // Weighted: best score across all methods
-weightedRatio('John Smith', 'Smith, John'); // 1.0
+weightedRatio('John Smith', 'Smith John'); // 1.0
 ```
 
 All token-based functions include `Batch` and `Many` variants (e.g., `tokenSortRatioBatch`, `tokenSortRatioMany`).
