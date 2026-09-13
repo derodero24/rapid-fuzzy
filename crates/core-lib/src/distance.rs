@@ -546,10 +546,15 @@ pub fn weighted_ratio_impl(a: &str, b: &str) -> f64 {
     }
     let norm_a = normalize_str(a);
     let norm_b = normalize_str(b);
-    let raw = raw_original.max(rapid_lev::normalized_similarity(
-        norm_a.chars(),
-        norm_b.chars(),
-    ));
+    // Normalization changed nothing: the second ratio would be identical.
+    let raw = if norm_a == a && norm_b == b {
+        raw_original
+    } else {
+        raw_original.max(rapid_lev::normalized_similarity(
+            norm_a.chars(),
+            norm_b.chars(),
+        ))
+    };
     if raw == 1.0 {
         return 1.0;
     }
@@ -768,6 +773,7 @@ pub fn weighted_ratio_many(
     let tokens_ref: BTreeSet<String> = norm_ref.split_whitespace().map(String::from).collect();
     let ref_scorer = rapid_lev::BatchComparator::new(norm_ref.chars());
     let raw_ref_scorer = rapid_lev::BatchComparator::new(reference.chars());
+    let ref_is_normalized = norm_ref == reference;
 
     candidates
         .iter()
@@ -777,7 +783,12 @@ pub fn weighted_ratio_many(
             if raw_normalized == 1.0 {
                 return 1.0;
             }
-            let raw = raw_normalized.max(raw_ref_scorer.normalized_similarity(c.chars()));
+            // Skip the original-string pass when normalization changed nothing.
+            let raw = if ref_is_normalized && norm_c == *c {
+                raw_normalized
+            } else {
+                raw_normalized.max(raw_ref_scorer.normalized_similarity(c.chars()))
+            };
             if raw == 1.0 {
                 return 1.0;
             }
