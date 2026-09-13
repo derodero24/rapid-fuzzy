@@ -256,38 +256,28 @@ pub fn sorensen_dice_many(
     candidates: &[String],
     min_similarity: Option<f64>,
 ) -> Vec<f64> {
-    let ref_chars: Vec<char> = reference.chars().collect();
-    let ref_len = ref_chars.len();
-    let ref_count = ref_len.saturating_sub(1);
-
-    let mut ref_bigrams: HashMap<(char, char), usize> = HashMap::new();
-    for i in 0..ref_count {
-        *ref_bigrams
-            .entry((ref_chars[i], ref_chars[i + 1]))
-            .or_insert(0) += 1;
-    }
+    // Same definition as `sorensen_dice` (strsim): whitespace is stripped,
+    // identical strings score 1.0, strings shorter than two bytes score 0.0,
+    // and the denominator counts bigrams by byte length. Only the reference
+    // side is precomputed here.
+    let ref_str: String = reference.chars().filter(|c| !c.is_whitespace()).collect();
+    let ref_bigrams = bigram_counts(&ref_str);
 
     candidates
         .iter()
         .map(|c| {
-            let c_chars: Vec<char> = c.chars().collect();
-            let c_len = c_chars.len();
-            let c_count = c_len.saturating_sub(1);
-
-            let score = if ref_len + c_len == 0 {
+            let c_str: String = c.chars().filter(|ch| !ch.is_whitespace()).collect();
+            let score = if ref_str == c_str {
                 1.0
-            } else if ref_count + c_count == 0 {
-                if ref_len == c_len { 1.0 } else { 0.0 }
+            } else if ref_str.len() < 2 || c_str.len() < 2 {
+                0.0
             } else {
-                let mut c_bigrams: HashMap<(char, char), usize> = HashMap::new();
-                for i in 0..c_count {
-                    *c_bigrams.entry((c_chars[i], c_chars[i + 1])).or_insert(0) += 1;
-                }
-                let mut intersection = 0_usize;
-                for (bigram, count) in &ref_bigrams {
-                    intersection += count.min(c_bigrams.get(bigram).unwrap_or(&0));
-                }
-                (2 * intersection) as f64 / (ref_count + c_count) as f64
+                let c_bigrams = bigram_counts(&c_str);
+                let intersection: usize = ref_bigrams
+                    .iter()
+                    .map(|(bigram, count)| count.min(c_bigrams.get(bigram).unwrap_or(&0)))
+                    .sum();
+                (2 * intersection) as f64 / (ref_str.len() + c_str.len() - 2) as f64
             };
 
             match min_similarity {
@@ -296,6 +286,18 @@ pub fn sorensen_dice_many(
             }
         })
         .collect()
+}
+
+fn bigrams(s: &str) -> impl Iterator<Item = (char, char)> + '_ {
+    s.chars().zip(s.chars().skip(1))
+}
+
+fn bigram_counts(s: &str) -> HashMap<(char, char), usize> {
+    let mut counts = HashMap::new();
+    for bigram in bigrams(s) {
+        *counts.entry(bigram).or_insert(0) += 1;
+    }
+    counts
 }
 
 // ─── Normalized Levenshtein ──────────────────────────────────────────────────
