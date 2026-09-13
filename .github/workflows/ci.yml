@@ -46,6 +46,53 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Decide how much of the build matrix a run needs. Pushes to develop always
+  # build every target. Pull requests only build the targets the test jobs
+  # consume unless they touch the Rust sources, the Cargo manifests or this
+  # workflow, which keeps dependency-only PRs cheap.
+  plan:
+    name: Plan
+    runs-on: ubuntu-latest
+    outputs:
+      build-matrix: ${{ steps.plan.outputs.build-matrix }}
+    steps:
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          full='[
+            {"host":"macos-latest","target":"x86_64-apple-darwin"},
+            {"host":"macos-latest","target":"aarch64-apple-darwin"},
+            {"host":"ubuntu-latest","target":"x86_64-unknown-linux-gnu"},
+            {"host":"ubuntu-latest","target":"x86_64-unknown-linux-musl"},
+            {"host":"ubuntu-latest","target":"aarch64-unknown-linux-gnu"},
+            {"host":"ubuntu-latest","target":"aarch64-unknown-linux-musl"},
+            {"host":"windows-latest","target":"x86_64-pc-windows-msvc"},
+            {"host":"windows-latest","target":"aarch64-pc-windows-msvc"},
+            {"host":"ubuntu-latest","target":"wasm32-wasip1-threads"}
+          ]'
+          reduced='[
+            {"host":"macos-latest","target":"aarch64-apple-darwin"},
+            {"host":"ubuntu-latest","target":"x86_64-unknown-linux-gnu"},
+            {"host":"windows-latest","target":"x86_64-pc-windows-msvc"},
+            {"host":"ubuntu-latest","target":"wasm32-wasip1-threads"}
+          ]'
+          matrix="$full"
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            files=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --paginate --jq '.[].filename')
+            labels=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.labels[].name')
+            # Add the "ci-full" label to a PR to force every target.
+            if ! grep -qx 'ci-full' <<< "$labels" \
+              && ! grep -Eq '^(crates/|Cargo\.toml$|Cargo\.lock$|rust-toolchain\.toml$|deny\.toml$|scripts/|\.github/workflows/ci\.yml$)' <<< "$files"; then
+              matrix="$reduced"
+            fi
+          fi
+          echo "Selected build targets:"
+          jq -r '.[].target' <<< "$matrix"
+          echo "build-matrix=$(jq -c . <<< "$matrix")" >> "$GITHUB_OUTPUT"
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
@@ -105,29 +152,12 @@ jobs:
 
   build:
     name: Build - ${{ matrix.settings.target }}
+    needs: plan
     runs-on: ${{ matrix.settings.host }}
     strategy:
       fail-fast: false
       matrix:
-        settings:
-          - host: macos-latest
-            target: x86_64-apple-darwin
-          - host: macos-latest
-            target: aarch64-apple-darwin
-          - host: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-          - host: ubuntu-latest
-            target: x86_64-unknown-linux-musl
-          - host: ubuntu-latest
-            target: aarch64-unknown-linux-gnu
-          - host: ubuntu-latest
-            target: aarch64-unknown-linux-musl
-          - host: windows-latest
-            target: x86_64-pc-windows-msvc
-          - host: windows-latest
-            target: aarch64-pc-windows-msvc
-          - host: ubuntu-latest
-            target: wasm32-wasip1-threads
+        settings: ${{ fromJSON(needs.plan.outputs.build-matrix) }}
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -208,15 +238,24 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
+      # Every supported Node line runs on Linux; macOS and Windows only need
+      # the current LTS since they exist to exercise the native binary loader.
       matrix:
-        node: [22, 24, 26]
-        os: [ubuntu-latest, macos-latest, windows-latest]
         include:
           - os: ubuntu-latest
+            node: 22
+            artifact: bindings-x86_64-unknown-linux-gnu
+          - os: ubuntu-latest
+            node: 24
+            artifact: bindings-x86_64-unknown-linux-gnu
+          - os: ubuntu-latest
+            node: 26
             artifact: bindings-x86_64-unknown-linux-gnu
           - os: macos-latest
+            node: 24
             artifact: bindings-aarch64-apple-darwin
           - os: windows-latest
+            node: 24
             artifact: bindings-x86_64-pc-windows-msvc
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
