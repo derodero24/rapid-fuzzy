@@ -47,16 +47,16 @@ console.log(results[0].item); // 'TypeScript'
 
 | | fuzzysort | rapid-fuzzy |
 |---|---|---|
-| Perfect match | `0` | `1.0` |
-| No match | `-Infinity` | `0.0` |
-| Scale | Negative integers (closer to 0 = better) | 0.0–1.0 (higher = better) |
-| Default threshold | `-Infinity` (include all) | None (include all) |
+| Perfect match | `1` | `1.0` |
+| No match | not returned | not returned |
+| Scale | 0–1 (higher = better) | 0.0–1.0 (higher = better) |
+| Default threshold | `0.5` (fuzzysort 4; `0` in 3.x) | None (include all) |
 
 ```typescript
-// fuzzysort: threshold is negative, closer to 0 = stricter
-fuzzysort.go('query', items, { threshold: -1000 });
+// fuzzysort 4: threshold is 0-1, higher = stricter, and defaults to 0.5
+fuzzysort.go('query', items, { threshold: 0.3 });
 
-// rapid-fuzzy: minScore is 0-1, higher = stricter
+// rapid-fuzzy: minScore is 0-1, higher = stricter, and defaults to 0 (include all)
 search('query', items, { minScore: 0.3 });
 ```
 
@@ -68,7 +68,7 @@ search('query', items, { minScore: 0.3 });
 // fuzzysort
 const results = fuzzysort.go('query', items);
 results[0].target; // matched string
-results[0].score;  // negative integer
+results[0].score;  // 0–1
 
 // rapid-fuzzy
 const results = search('query', items);
@@ -90,8 +90,8 @@ const results = search('query', items, { maxResults: 5 });
 ### Score threshold
 
 ```typescript
-// fuzzysort — threshold is a negative integer
-fuzzysort.go('query', items, { threshold: -500 });
+// fuzzysort — threshold is 0-1 (default 0.5 since fuzzysort 4)
+fuzzysort.go('query', items, { threshold: 0.5 });
 
 // rapid-fuzzy — minScore is 0-1 where higher = stricter
 search('query', items, { minScore: 0.5 });

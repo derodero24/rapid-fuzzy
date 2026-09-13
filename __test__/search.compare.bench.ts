@@ -145,7 +145,8 @@ const fuseSmall = new Fuse(smallItems, { threshold: 0.4 });
 const fuseMedium = new Fuse(mediumItems, { threshold: 0.4 });
 const fuseLarge = new Fuse(largeItems, { threshold: 0.4 });
 
-// fuzzysort (prepared targets)
+// fuzzysort (prepared targets). v4 defaults to threshold 0.5, which drops weak
+// matches before scoring; threshold 0 keeps every match like the other libraries.
 const fuzzysortMediumPrepared = mediumItems.map((item) => fuzzysort.prepare(item));
 const fuzzysortLargePrepared = largeItems.map((item) => fuzzysort.prepare(item));
 const fuzzysortXlargePrepared = xlargeItems.map((item) => fuzzysort.prepare(item));
@@ -199,7 +200,7 @@ describe('Fuzzy Search — Small 20 (vs competitors)', () => {
   });
 
   bench('fuzzysort', () => {
-    fuzzysort.go('aple', smallItems, { limit: 5 });
+    fuzzysort.go('aple', smallItems, { limit: 5, threshold: 0 });
   });
 
   bench('uFuzzy', () => {
@@ -229,7 +230,7 @@ describe('Fuzzy Search — Medium 1K (vs competitors)', () => {
   });
 
   bench('fuzzysort', () => {
-    fuzzysort.go('utils config', fuzzysortMediumPrepared, { limit: 10 });
+    fuzzysort.go('utils config', fuzzysortMediumPrepared, { limit: 10, threshold: 0 });
   });
 
   bench('uFuzzy', () => {
@@ -259,7 +260,7 @@ describe('Fuzzy Search — Large 10K (vs competitors)', () => {
   });
 
   bench('fuzzysort', () => {
-    fuzzysort.go('handler middleware', fuzzysortLargePrepared, { limit: 10 });
+    fuzzysort.go('handler middleware', fuzzysortLargePrepared, { limit: 10, threshold: 0 });
   });
 
   bench('uFuzzy', () => {
@@ -277,7 +278,7 @@ describe('Fuzzy Search — Large 10K (vs competitors)', () => {
 
 describe('Fuzzy Search — Extra Large 50K (vs competitors)', () => {
   bench('fuzzysort', () => {
-    fuzzysort.go('handler middleware', fuzzysortXlargePrepared, { limit: 10 });
+    fuzzysort.go('handler middleware', fuzzysortXlargePrepared, { limit: 10, threshold: 0 });
   });
 
   bench('uFuzzy', () => {
@@ -295,7 +296,7 @@ describe('Fuzzy Search — Extra Large 50K (vs competitors)', () => {
 
 describe('Fuzzy Search — Huge 100K (vs competitors)', () => {
   bench('fuzzysort', () => {
-    fuzzysort.go('handler middleware', fuzzysortHugePrepared, { limit: 10 });
+    fuzzysort.go('handler middleware', fuzzysortHugePrepared, { limit: 10, threshold: 0 });
   });
 
   bench('uFuzzy', () => {
