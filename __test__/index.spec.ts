@@ -1498,6 +1498,44 @@ describe('extended query syntax', () => {
   });
 });
 
+describe('index prefilters vs standalone search (diacritics)', () => {
+  // The char-mask and bigram prefilters used to compare raw characters while
+  // nucleo folds diacritics, so the indexes dropped matches search() returned.
+  const accented = ['café', 'naïve', 'über', 'Ärger', 'plain'];
+
+  it('FuzzyIndex returns the same matches as search()', () => {
+    const index = new FuzzyIndex(accented);
+    for (const query of ['cafe', 'naive', 'uber', 'arger', 'café']) {
+      expect(index.search(query).map((r) => r.item)).toEqual(
+        search(query, accented).map((r) => r.item),
+      );
+      expect(index.closest(query)).toBe(closest(query, accented));
+    }
+    index.destroy();
+  });
+
+  it('KeyedFuzzyIndex returns the same matches as searchKeys()', () => {
+    const keyed = new KeyedFuzzyIndex([accented], [1]);
+    expect(keyed.search('cafe').map((r) => r.index)).toEqual(
+      searchKeys('cafe', [accented], [1]).map((r) => r.index),
+    );
+    keyed.destroy();
+  });
+
+  it('bigram prefilter (5000+ items) keeps folded matches', () => {
+    // Half the items match so the bigram candidate set is selective (the
+    // index skips the prefilter when more than 80% of items share the bigrams).
+    const items = Array.from({ length: 6002 }, (_, i) =>
+      i % 2 === 0 ? `café numero ${i}` : `lorem ipsum ${i}`,
+    );
+    const index = new FuzzyIndex(items);
+    const expected = search('cafe', items).map((r) => r.item);
+    expect(expected.length).toBe(3001);
+    expect(index.search('cafe').map((r) => r.item)).toEqual(expected);
+    index.destroy();
+  });
+});
+
 describe('FuzzyIndex', () => {
   const items = ['apple', 'banana', 'grape', 'orange', 'pineapple', 'mango'];
 

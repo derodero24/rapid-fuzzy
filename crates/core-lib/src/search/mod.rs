@@ -11,7 +11,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 
 use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
-use nucleo_matcher::{Config, Matcher, Utf32String};
+use nucleo_matcher::{Config, Matcher, Utf32String, chars};
 
 /// Classification of how a query matched an item.
 ///
@@ -127,10 +127,13 @@ thread_local! {
 /// Compute a character-presence bitmask for quick pre-filtering.
 ///
 /// Bit layout: 0–25 = a–z (case-insensitive), 26–35 = 0–9.
-/// Characters outside this range are ignored (conservative — no false negatives).
+/// Characters are folded with nucleo's own normalization first so that, like
+/// the matcher, `café` sets the same bits as `cafe`. Characters outside the
+/// range are ignored (conservative — no false negatives).
 pub fn compute_char_mask(s: &str) -> u64 {
     let mut mask = 0u64;
     for c in s.chars() {
+        let c = chars::normalize(c);
         let bit = match c {
             'a'..='z' => Some(c as u32 - 'a' as u32),
             'A'..='Z' => Some(c as u32 - 'A' as u32),
@@ -162,9 +165,12 @@ pub fn compute_query_mask(query: &str) -> u64 {
 
 /// Encode a character into a u8 bucket for bigram key construction.
 ///
-/// ASCII letters are case-folded to 0–25, digits to 26–35.
-/// Non-ASCII characters are hashed into the 36–255 range.
+/// Characters are folded with nucleo's normalization first (so `é` lands in
+/// the `e` bucket, matching how the matcher compares them), then ASCII
+/// letters are case-folded to 0–25, digits to 26–35, and anything else is
+/// hashed into the 36–255 range.
 pub(crate) fn char_bucket(c: char) -> u8 {
+    let c = chars::normalize(c);
     match c {
         'a'..='z' => (c as u32 - 'a' as u32) as u8,
         'A'..='Z' => (c as u32 - 'A' as u32) as u8,

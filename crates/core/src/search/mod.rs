@@ -220,6 +220,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_prefilters_fold_diacritics_like_the_matcher() {
+        // nucleo matches "cafe" against "café" (Normalization::Smart), so the
+        // char-mask and bigram prefilters must not reject folded characters.
+        assert_eq!(compute_char_mask("café"), compute_char_mask("cafe"));
+        assert_eq!(compute_char_mask("Ärger"), compute_char_mask("arger"));
+        assert_eq!(bigram_key('é', 'x'), bigram_key('e', 'x'));
+        assert_eq!(extract_bigrams("naïve"), extract_bigrams("naive"));
+    }
+
+    #[test]
     fn test_search_basic() {
         let items = vec![
             "TypeScript".to_string(),
