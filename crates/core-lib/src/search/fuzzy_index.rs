@@ -24,10 +24,12 @@ pub struct FuzzyIndexCore {
     char_masks: Vec<u64>,
     bigram_index: BigramIndex,
     matcher: RefCell<Matcher>,
-    /// Incremental search cache: the query from the last search.
+    /// Incremental search cache: the query from the last cached search.
     last_query: RefCell<String>,
-    /// Incremental search cache: indices of all items that matched the last query.
+    /// Incremental search cache: indices of all items that matched the last cached query.
     last_matching_indices: RefCell<Vec<u32>>,
+    /// Incremental search cache: case mode the cached candidates were matched with.
+    last_case_matching: RefCell<CaseMatching>,
 }
 
 impl FuzzyIndexCore {
@@ -47,7 +49,50 @@ impl FuzzyIndexCore {
             matcher: RefCell::new(Matcher::new(Config::DEFAULT)),
             last_query: RefCell::new(String::new()),
             last_matching_indices: RefCell::new(Vec::new()),
+            last_case_matching: RefCell::new(CaseMatching::Smart),
         }
+    }
+
+    /// Candidates from the incremental cache, if the new query can reuse them.
+    ///
+    /// Conditions: the new query is a prefix extension of the cached query,
+    /// the cache has a non-empty candidate set, both queries use the same case
+    /// mode, and neither uses inverted terms (which break monotonicity).
+    fn cached_candidates(&self, query: &str, case_matching: CaseMatching) -> Option<Vec<u32>> {
+        let last_q = self.last_query.borrow();
+        let last_idx = self.last_matching_indices.borrow();
+        if !last_q.is_empty()
+            && !last_idx.is_empty()
+            && query.len() > last_q.len()
+            && query.starts_with(last_q.as_str())
+            && *self.last_case_matching.borrow() == case_matching
+            && !query.contains('!')
+            && !last_q.contains('!')
+        {
+            Some(last_idx.clone())
+        } else {
+            None
+        }
+    }
+
+    /// Store the matches of an unfiltered search for the next incremental query.
+    ///
+    /// A `min_score` threshold removes items that a longer query could still
+    /// match above the threshold, so thresholded searches (including
+    /// `closest`) leave the existing cache untouched instead of narrowing it.
+    fn update_cache(
+        &self,
+        query: &str,
+        min_score: Option<f64>,
+        case_matching: CaseMatching,
+        matching_indices: Vec<u32>,
+    ) {
+        if min_score.is_some_and(|score| score > 0.0) {
+            return;
+        }
+        *self.last_query.borrow_mut() = query.to_owned();
+        *self.last_matching_indices.borrow_mut() = matching_indices;
+        *self.last_case_matching.borrow_mut() = case_matching;
     }
 
     /// Return the number of items in the index.
@@ -69,25 +114,7 @@ impl FuzzyIndexCore {
         include_positions: bool,
         case_matching: CaseMatching,
     ) -> Vec<SearchResult> {
-        // Determine if we can narrow the search to cached matching indices.
-        // Conditions: new query is a prefix extension of the cached query,
-        // the cache has a non-empty candidate set, and neither query uses
-        // inverted terms (which break monotonicity).
-        let cache_candidates: Option<Vec<u32>> = {
-            let last_q = self.last_query.borrow();
-            let last_idx = self.last_matching_indices.borrow();
-            if !last_q.is_empty()
-                && !last_idx.is_empty()
-                && query.len() > last_q.len()
-                && query.starts_with(last_q.as_str())
-                && !query.contains('!')
-                && !last_q.contains('!')
-            {
-                Some(last_idx.clone())
-            } else {
-                None
-            }
-        };
+        let cache_candidates = self.cached_candidates(query, case_matching);
 
         // Get bigram candidates (only for large datasets).
         let bigram_candidates = if self.items.len() >= BIGRAM_THRESHOLD {
@@ -122,9 +149,12 @@ impl FuzzyIndexCore {
             case_matching,
         );
 
-        // Update incremental cache.
-        *self.last_query.borrow_mut() = query.to_owned();
-        *self.last_matching_indices.borrow_mut() = outcome.all_matching_indices;
+        self.update_cache(
+            query,
+            min_score,
+            case_matching,
+            outcome.all_matching_indices,
+        );
 
         outcome.results
     }
@@ -138,21 +168,7 @@ impl FuzzyIndexCore {
         include_positions: bool,
         case_matching: CaseMatching,
     ) -> Vec<IndexSearchResult> {
-        let cache_candidates: Option<Vec<u32>> = {
-            let last_q = self.last_query.borrow();
-            let last_idx = self.last_matching_indices.borrow();
-            if !last_q.is_empty()
-                && !last_idx.is_empty()
-                && query.len() > last_q.len()
-                && query.starts_with(last_q.as_str())
-                && !query.contains('!')
-                && !last_q.contains('!')
-            {
-                Some(last_idx.clone())
-            } else {
-                None
-            }
-        };
+        let cache_candidates = self.cached_candidates(query, case_matching);
 
         let bigram_candidates = if self.items.len() >= BIGRAM_THRESHOLD {
             let query_bigrams = extract_query_bigrams(query);
@@ -185,9 +201,12 @@ impl FuzzyIndexCore {
             case_matching,
         );
 
-        // Update incremental cache.
-        *self.last_query.borrow_mut() = query.to_owned();
-        *self.last_matching_indices.borrow_mut() = outcome.all_matching_indices;
+        self.update_cache(
+            query,
+            min_score,
+            case_matching,
+            outcome.all_matching_indices,
+        );
 
         outcome.results
     }

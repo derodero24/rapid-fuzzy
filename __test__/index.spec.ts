@@ -1644,6 +1644,49 @@ describe('FuzzyIndex', () => {
     });
   });
 
+  describe('incremental cache', () => {
+    // 300 items match 'ab' loosely; only 'abc' and 'abd' score above 0.9.
+    const cacheItems = Array.from({ length: 300 }, (_, i) => `axxxxxbc${i}`).concat(['abc', 'abd']);
+
+    it('should not reuse candidates narrowed by closest() with a threshold', () => {
+      const index = new FuzzyIndex(cacheItems);
+      expect(index.closest('ab', 0.9)).toBe('abc');
+      expect(index.search('abc').length).toBe(new FuzzyIndex(cacheItems).search('abc').length);
+      index.destroy();
+    });
+
+    it('should not reuse candidates narrowed by a minScore search', () => {
+      const index = new FuzzyIndex(cacheItems);
+      index.search('ab', { minScore: 0.9 });
+      expect(index.search('abc').length).toBe(301);
+      expect(index.searchIndices('abcd').length).toBe(
+        new FuzzyIndex(cacheItems).search('abcd').length,
+      );
+      index.destroy();
+    });
+
+    it('should not reuse candidates matched with a different case mode', () => {
+      const index = new FuzzyIndex(['ABC', 'abc', 'xyz']);
+      expect(index.search('AB', { isCaseSensitive: true }).map((r) => r.item)).toEqual(['ABC']);
+      // Smart case: an all-lowercase query is case-insensitive again.
+      expect(
+        index
+          .search('abc')
+          .map((r) => r.item)
+          .sort(),
+      ).toEqual(['ABC', 'abc']);
+      index.destroy();
+    });
+
+    it('should still narrow prefix-extended queries after an unfiltered search', () => {
+      const index = new FuzzyIndex(cacheItems);
+      const expected = new FuzzyIndex(cacheItems).search('abc');
+      index.search('ab');
+      expect(index.search('abc')).toEqual(expected);
+      index.destroy();
+    });
+  });
+
   describe('closest', () => {
     it('should return the best match', () => {
       const index = new FuzzyIndex(items);
