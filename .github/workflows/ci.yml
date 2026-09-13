@@ -50,7 +50,8 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # A label event whose jobs are all skipped must not cancel a run in progress.
+  cancel-in-progress: ${{ github.event.action != 'labeled' }}
 
 jobs:
   # Decide how much of the build matrix a run needs. Pushes to develop always
