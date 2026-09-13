@@ -10,7 +10,7 @@
   
   - It now declares exact `@emnapi/core` / `@emnapi/runtime` dependencies matching the runtime the WASM binary was built against, instead of relying on peer resolution.
   - It ships its own type definitions (`rapid-fuzzy.wasi.d.cts`).
-  - It no longer carries a `cpu: ["wasm32"]` restriction, so package managers can install it as the fallback on platforms without a prebuilt native binary.
+  - It no longer carries a `cpu: ["wasm32"]` restriction, so it can be installed on any platform. It is not an optional dependency of `rapid-fuzzy`: on platforms without a prebuilt native binary, install `rapid-fuzzy-wasm32-wasi` explicitly and the loader falls back to it.
   - Its `engines.node` range follows the WASI API requirements (`>=22.13.0 <23.0.0-0 || >=23.5.0`).
   
   The platform package manifests also pick up the current package description, keywords, and bug tracker URL.
