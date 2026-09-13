@@ -23,6 +23,7 @@ import {
   jaroWinklerBatch,
   jaroWinklerMany,
   jaroWinklerManyF64,
+  KeyedFuzzyIndex,
   levenshtein,
   levenshteinBatch,
   levenshteinMany,
@@ -1474,6 +1475,38 @@ describe('extended query syntax', () => {
         expect(r.score).toBeGreaterThanOrEqual(0.5);
       }
     });
+  });
+});
+
+describe('index prefilters vs standalone search (diacritics)', () => {
+  // The char-mask and bigram prefilters used to compare raw characters while
+  // nucleo folds diacritics, so the indexes dropped matches search() returned.
+  const accented = ['café', 'naïve', 'über', 'Ärger', 'plain'];
+
+  it('FuzzyIndex returns the same matches as search()', () => {
+    const index = new FuzzyIndex(accented);
+    for (const query of ['cafe', 'naive', 'uber', 'arger', 'café']) {
+      expect(index.search(query).map((r) => r.item)).toEqual(
+        search(query, accented).map((r) => r.item),
+      );
+      expect(index.closest(query)).toBe(closest(query, accented));
+    }
+    index.destroy();
+  });
+
+  it('KeyedFuzzyIndex returns the same matches as searchKeys()', () => {
+    const keyed = new KeyedFuzzyIndex([accented], [1]);
+    expect(keyed.search('cafe').map((r) => r.index)).toEqual(
+      searchKeys('cafe', [accented], [1]).map((r) => r.index),
+    );
+    keyed.destroy();
+  });
+
+  it('bigram prefilter (5000+ items) keeps folded matches', () => {
+    const items = Array.from({ length: 6001 }, (_, i) => `café numero ${i}`);
+    const index = new FuzzyIndex(items);
+    expect(index.search('cafe').length).toBe(search('cafe', items).length);
+    index.destroy();
   });
 });
 
