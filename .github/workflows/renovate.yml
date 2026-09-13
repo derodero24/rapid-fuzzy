@@ -16,6 +16,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: renovatebot/github-action@37beffda261423addd537c33f2d126df7f6ffbab # v46.2.6
         with:
           token: ${{ secrets.RENOVATE_TOKEN }}
