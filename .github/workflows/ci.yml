@@ -17,6 +17,8 @@ on:
       - 'playwright.config.ts'
       - '.github/workflows/ci.yml'
       - 'deny.toml'
+      - 'rust-toolchain.toml'
+      - 'scripts/**'
       - 'vitest.config.mts'
       - 'codecov.yml'
   pull_request:
@@ -35,11 +37,14 @@ on:
       - 'playwright.config.ts'
       - '.github/workflows/ci.yml'
       - 'deny.toml'
+      - 'rust-toolchain.toml'
+      - 'scripts/**'
       - 'vitest.config.mts'
       - 'codecov.yml'
 
 permissions:
   contents: read
+  pull-requests: read # the plan job reads the PR's changed files and labels
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
