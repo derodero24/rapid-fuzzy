@@ -1403,6 +1403,25 @@ mod tests {
         }
 
         #[test]
+        fn weighted_ratio_raw_component_uses_normalized_strings() {
+            // The single function computed its plain ratio on the original strings
+            // while the many variant normalized first; both now take the better
+            // of the two, so they agree and never drop below the plain ratio.
+            let single = weighted_ratio("aby cb ".to_string(), " céA".to_string());
+            let many =
+                weighted_ratio_many("aby cb ".to_string(), vec![" céA".to_string()], None)[0];
+            assert!(
+                (single - many).abs() < f64::EPSILON,
+                "single={single} many={many}"
+            );
+            assert!(
+                (weighted_ratio("Hello World".to_string(), "hello   world".to_string()) - 1.0)
+                    .abs()
+                    < f64::EPSILON
+            );
+        }
+
+        #[test]
         fn weighted_ratio_many_matches_impl() {
             let reference = "New York Mets".to_string();
             let candidates = test_candidates();
@@ -1569,6 +1588,13 @@ mod tests {
             fn jaro_winkler_unicode_bounded(ref a in any::<String>(), ref b in any::<String>()) {
                 let score = jaro_winkler(a.clone(), b.clone());
                 prop_assert!(score >= 0.0 && score <= 1.0, "score {} out of [0, 1]", score);
+            }
+
+            #[test]
+            fn weighted_ratio_many_matches_single(ref a in "[a-zA-Zé ]{0,12}", ref b in "[a-zA-Zé ]{0,12}") {
+                let many = weighted_ratio_many(a.clone(), vec![b.clone()], None);
+                let single = weighted_ratio(a.clone(), b.clone());
+                prop_assert!((many[0] - single).abs() < f64::EPSILON, "many={} single={}", many[0], single);
             }
 
             #[test]

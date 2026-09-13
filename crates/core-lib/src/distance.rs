@@ -537,14 +537,18 @@ pub fn partial_ratio_from_normalized(norm_a: &str, norm_b: &str) -> f64 {
 }
 
 pub fn weighted_ratio_impl(a: &str, b: &str) -> f64 {
-    let raw = rapid_lev::normalized_similarity(a.chars(), b.chars());
+    // The plain ratio is taken on both the original and the normalized
+    // (lower-cased, whitespace collapsed) strings; `weighted_ratio_many`
+    // computes the same two so the variants always agree.
+    let norm_a = normalize_str(a);
+    let norm_b = normalize_str(b);
+    let raw = rapid_lev::normalized_similarity(a.chars(), b.chars()).max(
+        rapid_lev::normalized_similarity(norm_a.chars(), norm_b.chars()),
+    );
     if raw == 1.0 {
         return 1.0;
     }
     let sort = token_sort_ratio_impl(a, b);
-
-    let norm_a = normalize_str(a);
-    let norm_b = normalize_str(b);
     let set = token_set_ratio_from_normalized(&norm_a, &norm_b);
     let partial = partial_ratio_from_normalized(&norm_a, &norm_b);
 
@@ -758,12 +762,15 @@ pub fn weighted_ratio_many(
     let sorted_ref = sorted_tokens(reference).join(" ");
     let tokens_ref: BTreeSet<String> = norm_ref.split_whitespace().map(String::from).collect();
     let ref_scorer = rapid_lev::BatchComparator::new(norm_ref.chars());
+    let raw_ref_scorer = rapid_lev::BatchComparator::new(reference.chars());
 
     candidates
         .iter()
         .map(|c| {
             let norm_c = normalize_str(c);
-            let raw = ref_scorer.normalized_similarity(norm_c.chars());
+            let raw = raw_ref_scorer
+                .normalized_similarity(c.chars())
+                .max(ref_scorer.normalized_similarity(norm_c.chars()));
             if raw == 1.0 {
                 return 1.0;
             }
