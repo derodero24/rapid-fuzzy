@@ -173,11 +173,13 @@ jobs:
         if: matrix.settings.target == 'wasm32-wasip1-threads'
         run: pnpm run build --target wasm32-wasip1-threads
 
+      - name: Install binaryen
+        if: matrix.settings.target == 'wasm32-wasip1-threads'
+        run: bash scripts/install-binaryen.sh
+
       - name: Optimize WASM with wasm-opt
         if: matrix.settings.target == 'wasm32-wasip1-threads'
-        run: |
-          sudo apt-get update && sudo apt-get install -y binaryen
-          pnpm run optimize:wasm
+        run: pnpm run optimize:wasm
 
       - name: Upload artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -295,6 +297,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Install wasm-pack
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      - name: Install binaryen
+        run: bash scripts/install-binaryen.sh
       - name: Build wasm-bindgen
         run: pnpm run build:wasm-bindgen
       - name: Upload wasm-bindgen artifact
