@@ -1665,6 +1665,57 @@ describe('FuzzyIndex', () => {
     });
   });
 
+  describe('incremental cache', () => {
+    // 300 items match 'ab' loosely; only 'abc' and 'abd' score above 0.9.
+    const cacheItems = Array.from({ length: 300 }, (_, i) => `axxxxxbc${i}`).concat(['abc', 'abd']);
+
+    it('should not reuse candidates narrowed by closest() with a threshold', () => {
+      const index = new FuzzyIndex(cacheItems);
+      expect(index.closest('ab', 0.9)).toBe('abc');
+      expect(index.search('abc').length).toBe(new FuzzyIndex(cacheItems).search('abc').length);
+      index.destroy();
+    });
+
+    it('should not reuse candidates narrowed by a minScore search', () => {
+      const index = new FuzzyIndex(cacheItems);
+      index.search('ab', { minScore: 0.9 });
+      expect(index.search('abc').length).toBe(301);
+      index.destroy();
+    });
+
+    it('should not reuse narrowed candidates on the searchIndices path either', () => {
+      const index = new FuzzyIndex(cacheItems);
+      index.searchIndices('ab', { minScore: 0.9 });
+      expect(index.searchIndices('abc').length).toBe(301);
+      index.search('ab', { minScore: 0.9 });
+      expect(index.searchIndices('abc').length).toBe(301);
+      index.destroy();
+    });
+
+    it('should not reuse candidates matched with a different case mode', () => {
+      // 'ab' -> 'abc' is a prefix extension, so the cache would be consulted;
+      // the case-sensitive pass matched only 'abc' (fewer than half the items,
+      // so it was cached), and smart case must widen back to 'ABC' as well.
+      const index = new FuzzyIndex(['ABC', 'abc', 'xyz', 'x1', 'x2', 'x3']);
+      expect(index.search('ab', { isCaseSensitive: true }).map((r) => r.item)).toEqual(['abc']);
+      expect(
+        index
+          .search('abc')
+          .map((r) => r.item)
+          .sort(),
+      ).toEqual(['ABC', 'abc']);
+      index.destroy();
+    });
+
+    it('should still narrow prefix-extended queries after an unfiltered search', () => {
+      const index = new FuzzyIndex(cacheItems);
+      const expected = new FuzzyIndex(cacheItems).search('abc');
+      index.search('ab');
+      expect(index.search('abc')).toEqual(expected);
+      index.destroy();
+    });
+  });
+
   describe('closest', () => {
     it('should return the best match', () => {
       const index = new FuzzyIndex(items);
