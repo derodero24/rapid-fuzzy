@@ -23,6 +23,8 @@ on:
       - 'codecov.yml'
   pull_request:
     branches: [develop]
+    # "labeled" lets the ci-full label re-run the plan job on an open PR.
+    types: [opened, synchronize, reopened, labeled]
     paths:
       - 'crates/**'
       - '__test__/**'
