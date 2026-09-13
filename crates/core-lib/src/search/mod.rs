@@ -101,7 +101,12 @@ pub fn classify_match(positions: &[u32], item_char_count: usize) -> MatchType {
 pub fn compute_max_score(query: &str, pattern: &Pattern, matcher: &mut Matcher) -> f64 {
     let mut buf = Vec::new();
     let atoms = nucleo_matcher::Utf32Str::new(query, &mut buf);
-    pattern.score(atoms, matcher).unwrap_or(1) as f64
+    // A pattern without atoms scores 0 against everything; clamp to 1 so the
+    // normalization never divides by zero (0 / 0 would become NaN and pass
+    // every threshold as 1.0).
+    pattern
+        .score(atoms, matcher)
+        .map_or(1.0, |score| score.max(1) as f64)
 }
 
 /// Convert the `is_case_sensitive` flag into a `CaseMatching` variant.
@@ -390,7 +395,7 @@ pub fn search_over_items(
     include_positions: bool,
     case_matching: CaseMatching,
 ) -> Vec<SearchResult> {
-    if query.is_empty() || items.is_empty() {
+    if query.trim().is_empty() || items.is_empty() {
         return Vec::new();
     }
 
@@ -489,7 +494,7 @@ pub fn search_over_precomputed(
     let items = ctx.items;
     let utf32_items = ctx.utf32_items;
     let matcher_cell = ctx.matcher;
-    if query.is_empty() || items.is_empty() {
+    if query.trim().is_empty() || items.is_empty() {
         return PrecomputedSearchResult {
             results: Vec::new(),
             all_matching_indices: Vec::new(),
@@ -610,7 +615,7 @@ pub fn search_over_precomputed_indices(
     let items = ctx.items;
     let utf32_items = ctx.utf32_items;
     let matcher_cell = ctx.matcher;
-    if query.is_empty() || items.is_empty() {
+    if query.trim().is_empty() || items.is_empty() {
         return PrecomputedIndexSearchResult {
             results: Vec::new(),
             all_matching_indices: Vec::new(),
