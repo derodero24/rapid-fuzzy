@@ -8,10 +8,17 @@ publish = false
 
 [dev-dependencies]
 criterion = { version = "5.0.0", package = "codspeed-criterion-compat" }
+rapid-fuzzy-core = { path = "../core-lib" }
 strsim = { workspace = true }
 rapidfuzz = { workspace = true }
 nucleo-matcher = { workspace = true }
 
+# rapid-fuzzy-core itself: index build/search, keyed search, `*_many`.
+[[bench]]
+name = "core"
+harness = false
+
+# Baselines: the third-party crates the core builds on.
 [[bench]]
 name = "distance"
 harness = false
