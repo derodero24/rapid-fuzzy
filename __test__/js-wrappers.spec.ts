@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { highlight } from '../highlight.js';
-import { FuzzyIndex, KeyedFuzzyIndex } from '../index.js';
+import { FuzzyIndex, KeyedFuzzyIndex, MatchType } from '../index.js';
 import { FuzzyObjectIndex, searchObjects } from '../objects.js';
 
 interface Fruit {
@@ -399,6 +399,67 @@ describe('destroy() leaves a usable, empty index', () => {
     index.destroy();
     index.add('banana');
     expect(index.size).toBe(1);
+  });
+});
+
+describe('maxResults number shorthand', () => {
+  const keyed = (): KeyedFuzzyIndex => new KeyedFuzzyIndex([['a', 'ab', 'abc']], [1]);
+  const objects = (): FuzzyObjectIndex<Fruit> =>
+    new FuzzyObjectIndex([{ n: 'a' }, { n: 'ab' }, { n: 'abc' }], { keys: ['n'] });
+
+  it('is accepted by KeyedFuzzyIndex.search()', () => {
+    expect(keyed().search('a')).toHaveLength(3);
+    expect(keyed().search('a', 2)).toHaveLength(2);
+    expect(keyed().search('a', 0)).toHaveLength(0);
+  });
+
+  it('is accepted by FuzzyObjectIndex.search()', () => {
+    expect(objects().search('a', 2)).toHaveLength(2);
+    expect(objects().search('a', null)).toHaveLength(3);
+    expect(objects().search('a', undefined)).toHaveLength(3);
+  });
+
+  it('rejects other primitives', () => {
+    expect(() => keyed().search('a', unsafe<number>('x'))).toThrow();
+    expect(() => objects().search('a', unsafe<number>('x'))).toThrow(TypeError);
+    expect(() => objects().search('a', unsafe<number>(true))).toThrow(TypeError);
+  });
+
+  it('is rejected by searchObjects(), whose options carry the keys', () => {
+    expect(() => searchObjects('a', fruits, unsafe<{ keys: string[] }>(5))).toThrow(TypeError);
+  });
+});
+
+describe('KeyedFuzzyIndex.addMany() is atomic', () => {
+  it('adds nothing when one row has the wrong number of values', () => {
+    const index = new KeyedFuzzyIndex([['apple'], ['red']], [1, 1]);
+    expect(() => index.addMany([['banana', 'yellow'], ['cherry']])).toThrow(/item 1/);
+    expect(index.size).toBe(1);
+    expect(index.search('banana')).toEqual([]);
+  });
+});
+
+describe('FuzzyIndex.fromAsync() argument errors', () => {
+  it.each([
+    ['a non-string item', ['a', 1]],
+    ['undefined', undefined],
+    ['a string', 'abc'],
+  ])('returns a rejected Promise for %s instead of throwing', async (_label, items) => {
+    let result: Promise<FuzzyIndex> | undefined;
+    expect(() => {
+      result = FuzzyIndex.fromAsync(unsafe<string[]>(items));
+    }).not.toThrow();
+    expect(result).toBeInstanceOf(Promise);
+    await expect(result).rejects.toThrow();
+  });
+});
+
+describe('MatchType runtime object', () => {
+  it('holds the string values used in results', () => {
+    expect(MatchType.Exact).toBe('Exact');
+    expect(MatchType.Prefix).toBe('Prefix');
+    expect(MatchType.Contains).toBe('Contains');
+    expect(MatchType.Fuzzy).toBe('Fuzzy');
   });
 });
 

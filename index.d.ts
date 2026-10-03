@@ -19,6 +19,9 @@ export declare class FuzzyIndex {
    *
    * For large datasets this keeps the JavaScript event loop unblocked during
    * index construction. The synchronous constructor is fine for small datasets.
+   *
+   * Invalid input (such as an array containing a non-string) rejects the
+   * returned Promise instead of throwing synchronously.
    */
   static fromAsync(items: Array<string>): Promise<FuzzyIndex>
   /** Return the number of items in the index. */
@@ -106,8 +109,11 @@ export declare class KeyedFuzzyIndex {
    * Search the index for items matching the query.
    *
    * Returns results sorted by combined weighted score (best match first).
+   *
+   * The second argument accepts either a number (maxResults shorthand) or a
+   * SearchOptions object, like `FuzzyIndex.search()`.
    */
-  search(query: string, options?: SearchOptions | undefined | null): Array<KeySearchResult>
+  search(query: string, options?: number | SearchOptions | undefined | null): Array<KeySearchResult>
   /**
    * Find the index of the closest matching item.
    *
@@ -128,7 +134,8 @@ export declare class KeyedFuzzyIndex {
    * Add multiple items to the index at once.
    *
    * Each element of `items_key_values` is an array of key values for one item.
-   * Throws if any element has the wrong number of key values.
+   * Throws if any element has the wrong number of key values; every element
+   * is checked first, so on error no item is added.
    */
   addMany(itemsKeyValues: Array<Array<string>>): void
   /**
@@ -137,7 +144,12 @@ export declare class KeyedFuzzyIndex {
    * Uses swap-remove for O(1) performance. Returns false if out of bounds.
    */
   remove(index: number): boolean
-  /** Free the internal data. After calling this, the index is empty. */
+  /**
+   * Free the internal data. After calling this, the index is empty.
+   *
+   * The key configuration is kept, so the index stays usable: it behaves
+   * as an empty index and `add()` / `addMany()` work as before.
+   */
   destroy(): void
   /**
    * Serialize the index to a compact binary format.
@@ -359,7 +371,7 @@ export declare function levenshteinMany(reference: string, candidates: Array<str
  * - **Contains**: all positions consecutive (a substring match), not starting at 0.
  * - **Fuzzy**: positions have gaps (character-level fuzzy match).
  */
-export declare const enum MatchType {
+export declare enum MatchType {
   Exact = 'Exact',
   Prefix = 'Prefix',
   Contains = 'Contains',

@@ -1,5 +1,7 @@
+use napi::Either;
 use napi::bindgen_prelude::Buffer;
 use napi_derive::napi;
+use nucleo_matcher::pattern::CaseMatching;
 use rapid_fuzzy_core::search::KeyedFuzzyIndexCore;
 use rapid_fuzzy_core::search::serialization::{
     KEYED_INDEX_MAGIC, deserialize_keyed, serialize_keyed,
@@ -31,9 +33,7 @@ impl KeyedFuzzyIndex {
     /// All inner arrays must have the same length (the number of items).
     #[napi(constructor)]
     pub fn new(key_texts: Vec<Vec<String>>, weights: Vec<f64>) -> napi::Result<Self> {
-        KeyedFuzzyIndexCore::new(key_texts, weights)
-            .map(|core| Self { core })
-            .map_err(napi::Error::from_reason)
+        Self::new_impl(key_texts, weights).map_err(napi::Error::from_reason)
     }
 
     fn new_impl(key_texts: Vec<Vec<String>>, weights: Vec<f64>) -> Result<Self, String> {
@@ -49,21 +49,24 @@ impl KeyedFuzzyIndex {
     /// Search the index for items matching the query.
     ///
     /// Returns results sorted by combined weighted score (best match first).
+    ///
+    /// The second argument accepts either a number (maxResults shorthand) or a
+    /// SearchOptions object, like `FuzzyIndex.search()`.
     #[napi]
-    pub fn search(&self, query: String, options: Option<SearchOptions>) -> Vec<KeySearchResult> {
-        let (max_results, min_score, case_matching, return_all_on_empty) = match &options {
-            Some(opts) => (
+    pub fn search(
+        &self,
+        query: String,
+        options: Option<Either<u32, SearchOptions>>,
+    ) -> Vec<KeySearchResult> {
+        let (max_results, min_score, case_matching, return_all_on_empty) = match options {
+            Some(Either::A(max)) => (Some(max), None, CaseMatching::Smart, false),
+            Some(Either::B(opts)) => (
                 opts.max_results,
                 opts.min_score,
                 resolve_case_matching(opts.is_case_sensitive),
                 opts.return_all_on_empty.unwrap_or(false),
             ),
-            None => (
-                None,
-                None,
-                nucleo_matcher::pattern::CaseMatching::Smart,
-                false,
-            ),
+            None => (None, None, CaseMatching::Smart, false),
         };
 
         self.core
@@ -87,13 +90,9 @@ impl KeyedFuzzyIndex {
     /// Use the returned index to look up the item in your own data array.
     #[napi]
     pub fn closest(&self, query: String, min_score: Option<f64>) -> Option<u32> {
-        let results = self.core.search(
-            &query,
-            Some(1),
-            min_score,
-            nucleo_matcher::pattern::CaseMatching::Smart,
-            false,
-        );
+        let results = self
+            .core
+            .search(&query, Some(1), min_score, CaseMatching::Smart, false);
         results.into_iter().next().map(|r| r.index)
     }
 
@@ -109,15 +108,13 @@ impl KeyedFuzzyIndex {
     /// Add multiple items to the index at once.
     ///
     /// Each element of `items_key_values` is an array of key values for one item.
-    /// Throws if any element has the wrong number of key values.
+    /// Throws if any element has the wrong number of key values; every element
+    /// is checked first, so on error no item is added.
     #[napi]
     pub fn add_many(&mut self, items_key_values: Vec<Vec<String>>) -> napi::Result<()> {
-        for key_values in items_key_values {
-            self.core
-                .add(key_values)
-                .map_err(napi::Error::from_reason)?;
-        }
-        Ok(())
+        self.core
+            .add_many(items_key_values)
+            .map_err(napi::Error::from_reason)
     }
 
     /// Remove the item at the given index.
@@ -129,6 +126,9 @@ impl KeyedFuzzyIndex {
     }
 
     /// Free the internal data. After calling this, the index is empty.
+    ///
+    /// The key configuration is kept, so the index stays usable: it behaves
+    /// as an empty index and `add()` / `addMany()` work as before.
     #[napi]
     pub fn destroy(&mut self) {
         self.core.destroy();
@@ -284,13 +284,13 @@ mod tests {
         let index = make_index();
         let results = index.search(
             "john".to_string(),
-            Some(SearchOptions {
+            Some(Either::B(SearchOptions {
                 max_results: None,
                 min_score: Some(0.9),
                 include_positions: None,
                 is_case_sensitive: None,
                 return_all_on_empty: None,
-            }),
+            })),
         );
         for r in &results {
             assert!(r.score >= 0.9);
@@ -302,13 +302,13 @@ mod tests {
         let index = make_index();
         let results = index.search(
             "o".to_string(),
-            Some(SearchOptions {
+            Some(Either::B(SearchOptions {
                 max_results: Some(1),
                 min_score: None,
                 include_positions: None,
                 is_case_sensitive: None,
                 return_all_on_empty: None,
-            }),
+            })),
         );
         assert!(results.len() <= 1);
     }
@@ -431,13 +431,13 @@ mod tests {
         .unwrap();
         let results = index.search(
             "apple".to_string(),
-            Some(SearchOptions {
+            Some(Either::B(SearchOptions {
                 max_results: None,
                 min_score: Some(0.9),
                 include_positions: None,
                 is_case_sensitive: None,
                 return_all_on_empty: None,
-            }),
+            })),
         );
         // "xyz" should not appear since it can't reach 0.9 on any key
         for r in &results {
