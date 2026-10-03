@@ -770,3 +770,17 @@ module.exports.weightedRatioManyF64 = (r, c, s) => new Float64Array(nativeBindin
 //   hammingManyU32 -> 0xffffffff (4294967295), normalizedHammingManyF64 -> NaN.
 module.exports.hammingManyU32 = (r, c, d) => Uint32Array.from(nativeBinding.hammingMany(r, c, d), (v) => (v == null ? 0xffffffff : v));
 module.exports.normalizedHammingManyF64 = (r, c, s) => Float64Array.from(nativeBinding.normalizedHammingMany(r, c, s), (v) => (v == null ? Number.NaN : v));
+
+// --- JS wrappers (appended by scripts/patch-binding.js) ---
+// searchObjects / FuzzyObjectIndex live in objects.js, which requires this module:
+// resolve them on first access to avoid a require cycle. Assigning replaces the getter.
+for (const name of ['searchObjects', 'FuzzyObjectIndex']) {
+  Object.defineProperty(module.exports, name, {
+    enumerable: true,
+    configurable: true,
+    get: () => require('./objects.js')[name],
+    set: (value) => {
+      Object.defineProperty(module.exports, name, { value, writable: true, enumerable: true, configurable: true });
+    },
+  });
+}

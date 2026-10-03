@@ -1,8 +1,15 @@
+import { spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
+import path from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import { highlight } from '../highlight.js';
 import { FuzzyIndex, KeyedFuzzyIndex, MatchType } from '../index.js';
 import { FuzzyObjectIndex, searchObjects } from '../objects.js';
+
+const nodeRequire = createRequire(__filename);
+const ROOT = path.resolve(__dirname, '..');
 
 interface Fruit {
   n: string;
@@ -436,6 +443,31 @@ describe('KeyedFuzzyIndex.addMany() is atomic', () => {
     expect(() => index.addMany([['banana', 'yellow'], ['cherry']])).toThrow(/item 1/);
     expect(index.size).toBe(1);
     expect(index.search('banana')).toEqual([]);
+  });
+});
+
+describe('CommonJS entry point', () => {
+  it('exposes searchObjects and FuzzyObjectIndex', () => {
+    const cjs = nodeRequire('../index.js') as Record<string, unknown>;
+    const objectsModule = nodeRequire('../objects.js') as Record<string, unknown>;
+    expect(cjs.searchObjects).toBe(objectsModule.searchObjects);
+    expect(cjs.FuzzyObjectIndex).toBe(objectsModule.FuzzyObjectIndex);
+    expect(Object.keys(cjs)).toEqual(expect.arrayContaining(['searchObjects', 'FuzzyObjectIndex']));
+  });
+
+  it.each([
+    ['index.js first', "require('./index.js'); require('./objects.js');"],
+    ['objects.js first', "require('./objects.js'); require('./index.js');"],
+  ])('works in a fresh process when loading %s', (_label, preload) => {
+    const script = `${preload}
+      const rf = require('./index.js');
+      const { searchObjects, FuzzyObjectIndex } = require('./objects.js');
+      if (rf.searchObjects !== searchObjects || rf.FuzzyObjectIndex !== FuzzyObjectIndex) process.exit(2);
+      const hit = rf.searchObjects('ban', [{ n: 'apple' }, { n: 'banana' }], { keys: ['n'] });
+      if (hit[0].item.n !== 'banana') process.exit(3);`;
+    const child = spawnSync(process.execPath, ['-e', script], { cwd: ROOT, encoding: 'utf8' });
+    expect(child.stderr).toBe('');
+    expect(child.status).toBe(0);
   });
 });
 
