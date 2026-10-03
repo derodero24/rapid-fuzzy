@@ -1,6 +1,9 @@
+mod typed_array;
+
 use napi_derive::napi;
 use rapid_fuzzy_core::distance as core_dist;
 use rapid_fuzzy_core::distance::DistanceError;
+use typed_array::TypedArrayResult;
 
 /// Malformed `*Batch` pairs and `NaN` thresholds are argument errors.
 fn invalid_arg(err: DistanceError) -> napi::Error {
@@ -492,6 +495,182 @@ pub fn weighted_ratio_many(
     min_similarity: Option<f64>,
 ) -> napi::Result<Vec<f64>> {
     core_dist::weighted_ratio_many(&reference, &candidates, min_similarity).map_err(invalid_arg)
+}
+
+// ─── Typed-array variants ────────────────────────────────────────────────────
+//
+// Same results as the `*Many` functions above, written straight into a
+// `Uint32Array` / `Float64Array` instead of a JS array with one number per
+// candidate, which keeps large candidate sets cheaper for the GC.
+
+/// Like `levenshteinMany`, but returns the distances in a `Uint32Array`.
+#[napi(js_name = "levenshteinManyU32", ts_return_type = "Uint32Array")]
+pub fn levenshtein_many_u32(
+    reference: String,
+    candidates: Vec<String>,
+    max_distance: Option<u32>,
+) -> TypedArrayResult<u32> {
+    TypedArrayResult(core_dist::levenshtein_many(
+        &reference,
+        &candidates,
+        max_distance,
+    ))
+}
+
+/// Like `damerauLevenshteinMany`, but returns the distances in a `Uint32Array`.
+#[napi(js_name = "damerauLevenshteinManyU32", ts_return_type = "Uint32Array")]
+pub fn damerau_levenshtein_many_u32(
+    reference: String,
+    candidates: Vec<String>,
+    max_distance: Option<u32>,
+) -> TypedArrayResult<u32> {
+    TypedArrayResult(core_dist::damerau_levenshtein_many(
+        &reference,
+        &candidates,
+        max_distance,
+    ))
+}
+
+/// Like `indelMany`, but returns the distances in a `Uint32Array`.
+#[napi(js_name = "indelManyU32", ts_return_type = "Uint32Array")]
+pub fn indel_many_u32(
+    reference: String,
+    candidates: Vec<String>,
+    max_distance: Option<u32>,
+) -> TypedArrayResult<u32> {
+    TypedArrayResult(core_dist::indel_many(&reference, &candidates, max_distance))
+}
+
+/// Like `hammingMany`, but returns the distances in a `Uint32Array`.
+///
+/// Slots that `hammingMany` returns as `null` (length mismatch, or filtered out
+/// by `maxDistance`) become the sentinel `0xffffffff` (4294967295), since a
+/// Uint32Array cannot hold `null`. Check for it with `value === 0xffffffff`
+/// before treating a slot as a real distance.
+#[napi(js_name = "hammingManyU32", ts_return_type = "Uint32Array")]
+pub fn hamming_many_u32(
+    reference: String,
+    candidates: Vec<String>,
+    max_distance: Option<u32>,
+) -> TypedArrayResult<u32> {
+    let distances = core_dist::hamming_many(&reference, &candidates, max_distance);
+    TypedArrayResult(
+        distances
+            .into_iter()
+            .map(|d| d.unwrap_or(u32::MAX))
+            .collect(),
+    )
+}
+
+/// Like `normalizedHammingMany`, but returns the scores in a `Float64Array`.
+///
+/// Slots that `normalizedHammingMany` returns as `null` (length mismatch, or
+/// filtered out by `minSimilarity`) become `NaN`, since a Float64Array cannot
+/// hold `null`. Check for it with `Number.isNaN(value)`.
+#[napi(js_name = "normalizedHammingManyF64", ts_return_type = "Float64Array")]
+pub fn normalized_hamming_many_f64(
+    reference: String,
+    candidates: Vec<String>,
+    min_similarity: Option<f64>,
+) -> napi::Result<TypedArrayResult<f64>> {
+    let scores = core_dist::normalized_hamming_many(&reference, &candidates, min_similarity)
+        .map_err(invalid_arg)?;
+    Ok(TypedArrayResult(
+        scores.into_iter().map(|s| s.unwrap_or(f64::NAN)).collect(),
+    ))
+}
+
+/// Like `jaroMany`, but returns the scores in a `Float64Array`.
+#[napi(js_name = "jaroManyF64", ts_return_type = "Float64Array")]
+pub fn jaro_many_f64(
+    reference: String,
+    candidates: Vec<String>,
+    min_similarity: Option<f64>,
+) -> napi::Result<TypedArrayResult<f64>> {
+    jaro_many(reference, candidates, min_similarity).map(TypedArrayResult)
+}
+
+/// Like `jaroWinklerMany`, but returns the scores in a `Float64Array`.
+#[napi(js_name = "jaroWinklerManyF64", ts_return_type = "Float64Array")]
+pub fn jaro_winkler_many_f64(
+    reference: String,
+    candidates: Vec<String>,
+    min_similarity: Option<f64>,
+) -> napi::Result<TypedArrayResult<f64>> {
+    jaro_winkler_many(reference, candidates, min_similarity).map(TypedArrayResult)
+}
+
+/// Like `sorensenDiceMany`, but returns the scores in a `Float64Array`.
+#[napi(js_name = "sorensenDiceManyF64", ts_return_type = "Float64Array")]
+pub fn sorensen_dice_many_f64(
+    reference: String,
+    candidates: Vec<String>,
+    min_similarity: Option<f64>,
+) -> napi::Result<TypedArrayResult<f64>> {
+    sorensen_dice_many(reference, candidates, min_similarity).map(TypedArrayResult)
+}
+
+/// Like `normalizedLevenshteinMany`, but returns the scores in a `Float64Array`.
+#[napi(
+    js_name = "normalizedLevenshteinManyF64",
+    ts_return_type = "Float64Array"
+)]
+pub fn normalized_levenshtein_many_f64(
+    reference: String,
+    candidates: Vec<String>,
+    min_similarity: Option<f64>,
+) -> napi::Result<TypedArrayResult<f64>> {
+    normalized_levenshtein_many(reference, candidates, min_similarity).map(TypedArrayResult)
+}
+
+/// Like `normalizedIndelMany`, but returns the scores in a `Float64Array`.
+#[napi(js_name = "normalizedIndelManyF64", ts_return_type = "Float64Array")]
+pub fn normalized_indel_many_f64(
+    reference: String,
+    candidates: Vec<String>,
+    min_similarity: Option<f64>,
+) -> napi::Result<TypedArrayResult<f64>> {
+    normalized_indel_many(reference, candidates, min_similarity).map(TypedArrayResult)
+}
+
+/// Like `tokenSortRatioMany`, but returns the scores in a `Float64Array`.
+#[napi(js_name = "tokenSortRatioManyF64", ts_return_type = "Float64Array")]
+pub fn token_sort_ratio_many_f64(
+    reference: String,
+    candidates: Vec<String>,
+    min_similarity: Option<f64>,
+) -> napi::Result<TypedArrayResult<f64>> {
+    token_sort_ratio_many(reference, candidates, min_similarity).map(TypedArrayResult)
+}
+
+/// Like `tokenSetRatioMany`, but returns the scores in a `Float64Array`.
+#[napi(js_name = "tokenSetRatioManyF64", ts_return_type = "Float64Array")]
+pub fn token_set_ratio_many_f64(
+    reference: String,
+    candidates: Vec<String>,
+    min_similarity: Option<f64>,
+) -> napi::Result<TypedArrayResult<f64>> {
+    token_set_ratio_many(reference, candidates, min_similarity).map(TypedArrayResult)
+}
+
+/// Like `partialRatioMany`, but returns the scores in a `Float64Array`.
+#[napi(js_name = "partialRatioManyF64", ts_return_type = "Float64Array")]
+pub fn partial_ratio_many_f64(
+    reference: String,
+    candidates: Vec<String>,
+    min_similarity: Option<f64>,
+) -> napi::Result<TypedArrayResult<f64>> {
+    partial_ratio_many(reference, candidates, min_similarity).map(TypedArrayResult)
+}
+
+/// Like `weightedRatioMany`, but returns the scores in a `Float64Array`.
+#[napi(js_name = "weightedRatioManyF64", ts_return_type = "Float64Array")]
+pub fn weighted_ratio_many_f64(
+    reference: String,
+    candidates: Vec<String>,
+    min_similarity: Option<f64>,
+) -> napi::Result<TypedArrayResult<f64>> {
+    weighted_ratio_many(reference, candidates, min_similarity).map(TypedArrayResult)
 }
 
 #[cfg(test)]

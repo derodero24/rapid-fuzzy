@@ -186,6 +186,9 @@ export declare function damerauLevenshteinBatch(pairs: Array<Array<string>>): Ar
  */
 export declare function damerauLevenshteinMany(reference: string, candidates: Array<string>, maxDistance?: number | undefined | null): Array<number>
 
+/** Like `damerauLevenshteinMany`, but returns the distances in a `Uint32Array`. */
+export declare function damerauLevenshteinManyU32(reference: string, candidates: Array<string>, maxDistance?: number | undefined | null): Uint32Array
+
 /**
  * Compute the Hamming distance between two strings.
  *
@@ -214,6 +217,16 @@ export declare function hammingBatch(pairs: Array<Array<string>>): Array<number 
  * will also return `null` (enabling early termination for better performance).
  */
 export declare function hammingMany(reference: string, candidates: Array<string>, maxDistance?: number | undefined | null): Array<number | undefined | null>
+
+/**
+ * Like `hammingMany`, but returns the distances in a `Uint32Array`.
+ *
+ * Slots that `hammingMany` returns as `null` (length mismatch, or filtered out
+ * by `maxDistance`) become the sentinel `0xffffffff` (4294967295), since a
+ * Uint32Array cannot hold `null`. Check for it with `value === 0xffffffff`
+ * before treating a slot as a real distance.
+ */
+export declare function hammingManyU32(reference: string, candidates: Array<string>, maxDistance?: number | undefined | null): Uint32Array
 
 /**
  * Compute the Indel distance between two strings.
@@ -245,6 +258,9 @@ export declare function indelBatch(pairs: Array<Array<string>>): Array<number>
  * for better performance).
  */
 export declare function indelMany(reference: string, candidates: Array<string>, maxDistance?: number | undefined | null): Array<number>
+
+/** Like `indelMany`, but returns the distances in a `Uint32Array`. */
+export declare function indelManyU32(reference: string, candidates: Array<string>, maxDistance?: number | undefined | null): Uint32Array
 
 /**
  * A lightweight search result containing only index and score (no item string).
@@ -296,6 +312,9 @@ export declare function jaroBatch(pairs: Array<Array<string>>): Array<number>
  */
 export declare function jaroMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number>
 
+/** Like `jaroMany`, but returns the scores in a `Float64Array`. */
+export declare function jaroManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array
+
 /**
  * Compute the Jaro-Winkler similarity between two strings.
  *
@@ -322,6 +341,9 @@ export declare function jaroWinklerBatch(pairs: Array<Array<string>>): Array<num
  * equal to it is kept. Throws an `InvalidArg` error if `min_similarity` is `NaN`.
  */
 export declare function jaroWinklerMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number>
+
+/** Like `jaroWinklerMany`, but returns the scores in a `Float64Array`. */
+export declare function jaroWinklerManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array
 
 /** A single result from multi-key fuzzy search. */
 export interface KeySearchResult {
@@ -363,6 +385,9 @@ export declare function levenshteinBatch(pairs: Array<Array<string>>): Array<num
  * for better performance).
  */
 export declare function levenshteinMany(reference: string, candidates: Array<string>, maxDistance?: number | undefined | null): Array<number>
+
+/** Like `levenshteinMany`, but returns the distances in a `Uint32Array`. */
+export declare function levenshteinManyU32(reference: string, candidates: Array<string>, maxDistance?: number | undefined | null): Uint32Array
 
 /**
  * Classification of how a query matched an item.
@@ -410,6 +435,15 @@ export declare function normalizedHammingBatch(pairs: Array<Array<string>>): Arr
 export declare function normalizedHammingMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number | undefined | null>
 
 /**
+ * Like `normalizedHammingMany`, but returns the scores in a `Float64Array`.
+ *
+ * Slots that `normalizedHammingMany` returns as `null` (length mismatch, or
+ * filtered out by `minSimilarity`) become `NaN`, since a Float64Array cannot
+ * hold `null`. Check for it with `Number.isNaN(value)`.
+ */
+export declare function normalizedHammingManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array
+
+/**
  * Compute the normalized Indel similarity between two strings.
  *
  * Returns a value between 0.0 (completely different) and 1.0 (identical).
@@ -434,6 +468,9 @@ export declare function normalizedIndelBatch(pairs: Array<Array<string>>): Array
  * equal to it is kept. Throws an `InvalidArg` error if `min_similarity` is `NaN`.
  */
 export declare function normalizedIndelMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number>
+
+/** Like `normalizedIndelMany`, but returns the scores in a `Float64Array`. */
+export declare function normalizedIndelManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array
 
 /**
  * Compute the normalized Levenshtein similarity between two strings.
@@ -460,6 +497,9 @@ export declare function normalizedLevenshteinBatch(pairs: Array<Array<string>>):
  * equal to it is kept. Throws an `InvalidArg` error if `min_similarity` is `NaN`.
  */
 export declare function normalizedLevenshteinMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number>
+
+/** Like `normalizedLevenshteinMany`, but returns the scores in a `Float64Array`. */
+export declare function normalizedLevenshteinManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array
 
 /**
  * Compute the partial ratio between two strings.
@@ -488,6 +528,9 @@ export declare function partialRatioBatch(pairs: Array<Array<string>>): Array<nu
  * a score equal to it is kept. Throws an `InvalidArg` error if `min_similarity` is `NaN`.
  */
 export declare function partialRatioMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number>
+
+/** Like `partialRatioMany`, but returns the scores in a `Float64Array`. */
+export declare function partialRatioManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array
 
 /**
  * Perform fuzzy search over a list of strings.
@@ -582,6 +625,9 @@ export declare function sorensenDiceBatch(pairs: Array<Array<string>>): Array<nu
  */
 export declare function sorensenDiceMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number>
 
+/** Like `sorensenDiceMany`, but returns the scores in a `Float64Array`. */
+export declare function sorensenDiceManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array
+
 /**
  * Compute the token set ratio between two strings.
  *
@@ -609,6 +655,9 @@ export declare function tokenSetRatioBatch(pairs: Array<Array<string>>): Array<n
  * a score equal to it is kept. Throws an `InvalidArg` error if `min_similarity` is `NaN`.
  */
 export declare function tokenSetRatioMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number>
+
+/** Like `tokenSetRatioMany`, but returns the scores in a `Float64Array`. */
+export declare function tokenSetRatioManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array
 
 /**
  * Compute the token sort ratio between two strings.
@@ -638,6 +687,9 @@ export declare function tokenSortRatioBatch(pairs: Array<Array<string>>): Array<
  */
 export declare function tokenSortRatioMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number>
 
+/** Like `tokenSortRatioMany`, but returns the scores in a `Float64Array`. */
+export declare function tokenSortRatioManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array
+
 /**
  * Compute the weighted ratio between two strings.
  *
@@ -666,31 +718,8 @@ export declare function weightedRatioBatch(pairs: Array<Array<string>>): Array<n
  */
 export declare function weightedRatioMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number>
 
+/** Like `weightedRatioMany`, but returns the scores in a `Float64Array`. */
+export declare function weightedRatioManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array
+
 // --- JS utilities (appended by scripts/patch-binding.js) ---
 export { highlight, highlightRanges, HighlightRange } from './highlight';
-/** TypedArray variants — identical to the `*Many` counterparts but return a typed array instead of `Array<number>`, reducing GC pressure for large candidate sets. */
-export declare function levenshteinManyU32(reference: string, candidates: Array<string>, maxDistance?: number | undefined | null): Uint32Array;
-export declare function damerauLevenshteinManyU32(reference: string, candidates: Array<string>, maxDistance?: number | undefined | null): Uint32Array;
-export declare function indelManyU32(reference: string, candidates: Array<string>, maxDistance?: number | undefined | null): Uint32Array;
-export declare function jaroManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array;
-export declare function jaroWinklerManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array;
-export declare function sorensenDiceManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array;
-export declare function normalizedLevenshteinManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array;
-export declare function normalizedIndelManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array;
-export declare function tokenSortRatioManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array;
-export declare function tokenSetRatioManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array;
-export declare function partialRatioManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array;
-export declare function weightedRatioManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array;
-/**
- * TypedArray variant of `hammingMany`. Slots that `hammingMany` returns as `null`
- * (length mismatch, or filtered out by `maxDistance`) become the sentinel `0xffffffff`
- * (4294967295), since a Uint32Array cannot hold `null`. Check for it with
- * `value === 0xffffffff` before treating a slot as a real distance.
- */
-export declare function hammingManyU32(reference: string, candidates: Array<string>, maxDistance?: number | undefined | null): Uint32Array;
-/**
- * TypedArray variant of `normalizedHammingMany`. Slots that `normalizedHammingMany`
- * returns as `null` (length mismatch, or filtered out by `minSimilarity`) become `NaN`,
- * since a Float64Array cannot hold `null`. Check for it with `Number.isNaN(value)`.
- */
-export declare function normalizedHammingManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array;

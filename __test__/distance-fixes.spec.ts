@@ -448,6 +448,27 @@ describe('distance differential (single = Batch = Many = typed array)', () => {
     expect(hammingManyU32('abc', ['abd'])).toBeInstanceOf(Uint32Array);
     expect(normalizedHammingManyF64('abc', ['abd'])).toBeInstanceOf(Float64Array);
   });
+
+  it('the typed arrays can be transferred (e.g. to a worker) without copying', () => {
+    const arrays: (Uint32Array | Float64Array)[] = [
+      ...SIMILARITY_FAMILIES.map((f) => f.manyF64('kitten', ['sitting', 'kitten'])),
+      ...DISTANCE_FAMILIES.map((f) => f.manyU32('kitten', ['sitting', 'kitten'])),
+      hammingManyU32('abc', ['abd', 'ab']),
+      normalizedHammingManyF64('abc', ['abd', 'ab']),
+      levenshteinManyU32('kitten', []),
+    ];
+    for (const array of arrays) {
+      const values = Array.from(array);
+      const { buffer } = array;
+      // A plain (not shared, not external) ArrayBuffer is what makes it transferable.
+      expect(buffer).toBeInstanceOf(ArrayBuffer);
+      if (!(buffer instanceof ArrayBuffer)) continue;
+      const moved = structuredClone(array, { transfer: [buffer] });
+      expect(Array.from(moved)).toEqual(values);
+      // The original was moved, not copied: its buffer is now detached.
+      expect(array.byteLength).toBe(0);
+    }
+  });
 });
 
 // ─── sorensenDice counts characters, not UTF-8 bytes ────────────────────────
