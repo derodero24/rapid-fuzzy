@@ -43,27 +43,16 @@ export class FuzzyIndex {
      * Find the closest matching string in the index.
      *
      * Returns the best match, or null if no match is found.
+     * If `minScore` is provided, returns null when the best match scores below the threshold.
      * @param {string} query
-     * @param {number | null} [min_score]
-     * @returns {string | undefined}
+     * @param {number | null} [minScore]
+     * @returns {string | null}
      */
-    closest(query, min_score) {
-        try {
-            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
-            const ptr0 = passStringToWasm0(query, wasm.__wbindgen_export, wasm.__wbindgen_export2);
-            const len0 = WASM_VECTOR_LEN;
-            wasm.fuzzyindex_closest(retptr, this.__wbg_ptr, ptr0, len0, !isLikeNone(min_score), isLikeNone(min_score) ? 0 : min_score);
-            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
-            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
-            let v2;
-            if (r0 !== 0) {
-                v2 = getStringFromWasm0(r0, r1);
-                wasm.__wbindgen_export4(r0, r1 * 1, 1);
-            }
-            return v2;
-        } finally {
-            wasm.__wbindgen_add_to_stack_pointer(16);
-        }
+    closest(query, minScore) {
+        const ptr0 = passStringToWasm0(query, wasm.__wbindgen_export, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.fuzzyindex_closest(this.__wbg_ptr, ptr0, len0, !isLikeNone(minScore), isLikeNone(minScore) ? 0 : minScore);
+        return takeObject(ret);
     }
     /**
      * Reconstruct a FuzzyIndex from a previously serialized Uint8Array.
@@ -118,29 +107,54 @@ export class FuzzyIndex {
     }
     /**
      * Search the index, returning only indices and scores (no item strings).
+     *
+     * The second argument accepts either a number (maxResults) or a SearchOptions object.
      * @param {string} query
-     * @param {SearchOptions | null} [options]
-     * @returns {any}
+     * @param {number | SearchOptions | null} [options]
+     * @returns {IndexSearchResult[]}
      */
     searchIndices(query, options) {
-        const ptr0 = passStringToWasm0(query, wasm.__wbindgen_export, wasm.__wbindgen_export2);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.fuzzyindex_searchIndices(this.__wbg_ptr, ptr0, len0, isLikeNone(options) ? 0 : addHeapObject(options));
-        return takeObject(ret);
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            const ptr0 = passStringToWasm0(query, wasm.__wbindgen_export, wasm.__wbindgen_export2);
+            const len0 = WASM_VECTOR_LEN;
+            wasm.fuzzyindex_searchIndices(retptr, this.__wbg_ptr, ptr0, len0, isLikeNone(options) ? 0 : addHeapObject(options));
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+            if (r2) {
+                throw takeObject(r1);
+            }
+            return takeObject(r0);
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
     }
     /**
      * Search the index for items matching the query.
      *
-     * Returns matches sorted by score (best match first) as a JS Array.
+     * Returns matches sorted by score (best match first).
+     * The second argument accepts either a number (maxResults) or a SearchOptions object.
      * @param {string} query
-     * @param {SearchOptions | null} [options]
-     * @returns {any}
+     * @param {number | SearchOptions | null} [options]
+     * @returns {SearchResult[]}
      */
     search(query, options) {
-        const ptr0 = passStringToWasm0(query, wasm.__wbindgen_export, wasm.__wbindgen_export2);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.fuzzyindex_search(this.__wbg_ptr, ptr0, len0, isLikeNone(options) ? 0 : addHeapObject(options));
-        return takeObject(ret);
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            const ptr0 = passStringToWasm0(query, wasm.__wbindgen_export, wasm.__wbindgen_export2);
+            const len0 = WASM_VECTOR_LEN;
+            wasm.fuzzyindex_search(retptr, this.__wbg_ptr, ptr0, len0, isLikeNone(options) ? 0 : addHeapObject(options));
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+            if (r2) {
+                throw takeObject(r1);
+            }
+            return takeObject(r0);
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
     }
     /**
      * Serialize the index to a compact binary format (Uint8Array).
@@ -195,14 +209,14 @@ export class KeyedFuzzyIndex {
     /**
      * Add multiple items to the index at once.
      *
-     * `items_key_values` is a JS Array where each element is an Array of strings
-     * (one per key). Throws if any element has the wrong number of key values.
-     * @param {any} items_key_values
+     * Each element of `itemsKeyValues` is an array of key values for one item.
+     * Throws if any element has the wrong number of key values.
+     * @param {string[][]} itemsKeyValues
      */
-    addMany(items_key_values) {
+    addMany(itemsKeyValues) {
         try {
             const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
-            wasm.keyedfuzzyindex_addMany(retptr, this.__wbg_ptr, addHeapObject(items_key_values));
+            wasm.keyedfuzzyindex_addMany(retptr, this.__wbg_ptr, addHeapObject(itemsKeyValues));
             var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
             var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
             if (r1) {
@@ -215,13 +229,14 @@ export class KeyedFuzzyIndex {
     /**
      * Add a single item to the index.
      *
-     * `key_values` must be a JS Array of strings with one value per key.
-     * @param {any} key_values
+     * `keyValues` must have the same length as the number of keys.
+     * Throws if the length does not match.
+     * @param {string[]} keyValues
      */
-    add(key_values) {
+    add(keyValues) {
         try {
             const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
-            wasm.keyedfuzzyindex_add(retptr, this.__wbg_ptr, addHeapObject(key_values));
+            wasm.keyedfuzzyindex_add(retptr, this.__wbg_ptr, addHeapObject(keyValues));
             var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
             var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
             if (r1) {
@@ -233,15 +248,18 @@ export class KeyedFuzzyIndex {
     }
     /**
      * Find the index of the closest matching item.
+     *
+     * Returns the index of the best match, or null if no match is found.
+     * If `minScore` is provided, returns null when the best match scores below the threshold.
      * @param {string} query
-     * @param {number | null} [min_score]
-     * @returns {number | undefined}
+     * @param {number | null} [minScore]
+     * @returns {number | null}
      */
-    closest(query, min_score) {
+    closest(query, minScore) {
         const ptr0 = passStringToWasm0(query, wasm.__wbindgen_export, wasm.__wbindgen_export2);
         const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.keyedfuzzyindex_closest(this.__wbg_ptr, ptr0, len0, !isLikeNone(min_score), isLikeNone(min_score) ? 0 : min_score);
-        return ret === Number.MAX_SAFE_INTEGER ? undefined : ret;
+        const ret = wasm.keyedfuzzyindex_closest(this.__wbg_ptr, ptr0, len0, !isLikeNone(minScore), isLikeNone(minScore) ? 0 : minScore);
+        return takeObject(ret);
     }
     /**
      * Reconstruct a KeyedFuzzyIndex from a previously serialized Uint8Array.
@@ -274,18 +292,18 @@ export class KeyedFuzzyIndex {
     /**
      * Create a new KeyedFuzzyIndex.
      *
-     * `key_texts` is a JS Array of Arrays of strings (one inner array per key,
-     * each inner array has one string per item).
-     * `weights` is a JS Array of numbers.
-     * @param {any} key_texts
-     * @param {Float64Array} weights
+     * `keyTexts[k]` is an array of strings for key `k`, one per item.
+     * All inner arrays must have the same length (the number of items).
+     * `weights` holds one finite, non-negative weight per key.
+     * @param {string[][]} keyTexts
+     * @param {ArrayLike<number>} weights
      */
-    constructor(key_texts, weights) {
+    constructor(keyTexts, weights) {
         try {
             const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
             const ptr0 = passArrayF64ToWasm0(weights, wasm.__wbindgen_export);
             const len0 = WASM_VECTOR_LEN;
-            wasm.keyedfuzzyindex_new(retptr, addHeapObject(key_texts), ptr0, len0);
+            wasm.keyedfuzzyindex_new(retptr, addHeapObject(keyTexts), ptr0, len0);
             var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
             var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
             var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
@@ -313,16 +331,27 @@ export class KeyedFuzzyIndex {
     /**
      * Search the index for items matching the query.
      *
-     * Returns results sorted by combined weighted score as a JS Array.
+     * Returns results sorted by combined weighted score (best match first).
      * @param {string} query
      * @param {SearchOptions | null} [options]
-     * @returns {any}
+     * @returns {KeySearchResult[]}
      */
     search(query, options) {
-        const ptr0 = passStringToWasm0(query, wasm.__wbindgen_export, wasm.__wbindgen_export2);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.keyedfuzzyindex_search(this.__wbg_ptr, ptr0, len0, isLikeNone(options) ? 0 : addHeapObject(options));
-        return takeObject(ret);
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            const ptr0 = passStringToWasm0(query, wasm.__wbindgen_export, wasm.__wbindgen_export2);
+            const len0 = WASM_VECTOR_LEN;
+            wasm.keyedfuzzyindex_search(retptr, this.__wbg_ptr, ptr0, len0, isLikeNone(options) ? 0 : addHeapObject(options));
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+            if (r2) {
+                throw takeObject(r1);
+            }
+            return takeObject(r0);
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
     }
     /**
      * Serialize the index to a compact binary format (Uint8Array).
@@ -356,33 +385,26 @@ if (Symbol.dispose) KeyedFuzzyIndex.prototype[Symbol.dispose] = KeyedFuzzyIndex.
  * Find the closest matching string from a list.
  *
  * Returns the best match, or null if no match is found.
+ * If `minScore` is provided, returns null when the best match scores below the threshold.
  * @param {string} query
  * @param {string[]} items
- * @param {number | null} [min_score]
- * @returns {string | undefined}
+ * @param {number | null} [minScore]
+ * @returns {string | null}
  */
-export function closest(query, items, min_score) {
-    try {
-        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
-        const ptr0 = passStringToWasm0(query, wasm.__wbindgen_export, wasm.__wbindgen_export2);
-        const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passArrayJsValueToWasm0(items, wasm.__wbindgen_export);
-        const len1 = WASM_VECTOR_LEN;
-        wasm.closest(retptr, ptr0, len0, ptr1, len1, !isLikeNone(min_score), isLikeNone(min_score) ? 0 : min_score);
-        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
-        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
-        let v3;
-        if (r0 !== 0) {
-            v3 = getStringFromWasm0(r0, r1);
-            wasm.__wbindgen_export4(r0, r1 * 1, 1);
-        }
-        return v3;
-    } finally {
-        wasm.__wbindgen_add_to_stack_pointer(16);
-    }
+export function closest(query, items, minScore) {
+    const ptr0 = passStringToWasm0(query, wasm.__wbindgen_export, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArrayJsValueToWasm0(items, wasm.__wbindgen_export);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.closest(ptr0, len0, ptr1, len1, !isLikeNone(minScore), isLikeNone(minScore) ? 0 : minScore);
+    return takeObject(ret);
 }
 
 /**
+ * Compute the Damerau-Levenshtein distance between two strings.
+ *
+ * Like Levenshtein, but also considers transpositions of two adjacent
+ * characters as a single edit.
  * @param {string} a
  * @param {string} b
  * @returns {number}
@@ -397,7 +419,10 @@ export function damerauLevenshtein(a, b) {
 }
 
 /**
- * @param {any} pairs
+ * Compute the Damerau-Levenshtein distance for multiple pairs of strings in a single call.
+ *
+ * Returns an array of distances in the same order as the input pairs.
+ * @param {string[][]} pairs
  * @returns {Uint32Array}
  */
 export function damerauLevenshteinBatch(pairs) {
@@ -406,6 +431,11 @@ export function damerauLevenshteinBatch(pairs) {
         wasm.damerauLevenshteinBatch(retptr, addHeapObject(pairs));
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        if (r3) {
+            throw takeObject(r2);
+        }
         var v1 = getArrayU32FromWasm0(r0, r1).slice();
         wasm.__wbindgen_export4(r0, r1 * 4, 4);
         return v1;
@@ -415,19 +445,24 @@ export function damerauLevenshteinBatch(pairs) {
 }
 
 /**
+ * Compute the Damerau-Levenshtein distance from one reference string to many candidates.
+ *
+ * Returns an array of distances, one per candidate, in the same order as the input.
+ * If `maxDistance` is provided, candidates with distance exceeding the threshold
+ * will return `maxDistance + 1` (enabling early termination for better performance).
  * @param {string} reference
  * @param {string[]} candidates
- * @param {number | null} [max_distance]
+ * @param {number | null} [maxDistance]
  * @returns {Uint32Array}
  */
-export function damerauLevenshteinMany(reference, candidates, max_distance) {
+export function damerauLevenshteinMany(reference, candidates, maxDistance) {
     try {
         const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
         const ptr0 = passStringToWasm0(reference, wasm.__wbindgen_export, wasm.__wbindgen_export2);
         const len0 = WASM_VECTOR_LEN;
         const ptr1 = passArrayJsValueToWasm0(candidates, wasm.__wbindgen_export);
         const len1 = WASM_VECTOR_LEN;
-        wasm.damerauLevenshteinMany(retptr, ptr0, len0, ptr1, len1, isLikeNone(max_distance) ? Number.MAX_SAFE_INTEGER : (max_distance) >>> 0);
+        wasm.damerauLevenshteinMany(retptr, ptr0, len0, ptr1, len1, isLikeNone(maxDistance) ? Number.MAX_SAFE_INTEGER : (maxDistance) >>> 0);
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
         var v3 = getArrayU32FromWasm0(r0, r1).slice();
@@ -439,9 +474,14 @@ export function damerauLevenshteinMany(reference, candidates, max_distance) {
 }
 
 /**
+ * Compute the Hamming distance between two strings.
+ *
+ * The Hamming distance counts the number of positions at which the corresponding
+ * characters differ. It is only defined for strings of equal length.
+ * Returns `null` if the strings have different lengths.
  * @param {string} a
  * @param {string} b
- * @returns {any}
+ * @returns {number | null}
  */
 export function hamming(a, b) {
     const ptr0 = passStringToWasm0(a, wasm.__wbindgen_export, wasm.__wbindgen_export2);
@@ -453,30 +493,60 @@ export function hamming(a, b) {
 }
 
 /**
- * @param {any} pairs
- * @returns {any}
+ * Compute the Hamming distance for multiple pairs of strings in a single call.
+ *
+ * Returns an array of distances in the same order as the input pairs.
+ * Each pair must be an array of exactly two strings `[a, b]`.
+ * Returns `null` for pairs with different lengths.
+ * @param {string[][]} pairs
+ * @returns {(number | null)[]}
  */
 export function hammingBatch(pairs) {
-    const ret = wasm.hammingBatch(addHeapObject(pairs));
-    return takeObject(ret);
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        wasm.hammingBatch(retptr, addHeapObject(pairs));
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        if (r2) {
+            throw takeObject(r1);
+        }
+        return takeObject(r0);
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
 }
 
 /**
+ * Compute the Hamming distance from one reference string to many candidates.
+ *
+ * Returns an array of distances, one per candidate, in the same order as the input.
+ * Returns `null` for candidates with a different length than the reference.
+ * If `maxDistance` is provided, candidates with distance exceeding the threshold
+ * will also return `null` (enabling early termination for better performance).
  * @param {string} reference
  * @param {string[]} candidates
- * @param {number | null} [max_distance]
- * @returns {any}
+ * @param {number | null} [maxDistance]
+ * @returns {(number | null)[]}
  */
-export function hammingMany(reference, candidates, max_distance) {
+export function hammingMany(reference, candidates, maxDistance) {
     const ptr0 = passStringToWasm0(reference, wasm.__wbindgen_export, wasm.__wbindgen_export2);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passArrayJsValueToWasm0(candidates, wasm.__wbindgen_export);
     const len1 = WASM_VECTOR_LEN;
-    const ret = wasm.hammingMany(ptr0, len0, ptr1, len1, isLikeNone(max_distance) ? Number.MAX_SAFE_INTEGER : (max_distance) >>> 0);
+    const ret = wasm.hammingMany(ptr0, len0, ptr1, len1, isLikeNone(maxDistance) ? Number.MAX_SAFE_INTEGER : (maxDistance) >>> 0);
     return takeObject(ret);
 }
 
 /**
+ * Compute the Indel distance between two strings.
+ *
+ * The Indel distance counts the minimum number of insertions and deletions
+ * (no substitutions) required to transform one string into the other.
+ * It equals `len(a) + len(b) - 2 * LCS_length(a, b)`.
+ *
+ * Useful when substitutions are semantically two operations (one deletion +
+ * one insertion), such as in DNA sequence alignment.
  * @param {string} a
  * @param {string} b
  * @returns {number}
@@ -491,7 +561,11 @@ export function indel(a, b) {
 }
 
 /**
- * @param {any} pairs
+ * Compute the Indel distance for multiple pairs of strings in a single call.
+ *
+ * Returns an array of distances in the same order as the input pairs.
+ * Each pair must be an array of exactly two strings `[a, b]`.
+ * @param {string[][]} pairs
  * @returns {Uint32Array}
  */
 export function indelBatch(pairs) {
@@ -500,6 +574,11 @@ export function indelBatch(pairs) {
         wasm.indelBatch(retptr, addHeapObject(pairs));
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        if (r3) {
+            throw takeObject(r2);
+        }
         var v1 = getArrayU32FromWasm0(r0, r1).slice();
         wasm.__wbindgen_export4(r0, r1 * 4, 4);
         return v1;
@@ -509,19 +588,24 @@ export function indelBatch(pairs) {
 }
 
 /**
+ * Compute the Indel distance from one reference string to many candidates.
+ *
+ * Returns an array of distances, one per candidate, in the same order as the input.
+ * If `maxDistance` is provided, candidates with distance exceeding the threshold
+ * will return `maxDistance + 1` (enabling early termination for better performance).
  * @param {string} reference
  * @param {string[]} candidates
- * @param {number | null} [max_distance]
+ * @param {number | null} [maxDistance]
  * @returns {Uint32Array}
  */
-export function indelMany(reference, candidates, max_distance) {
+export function indelMany(reference, candidates, maxDistance) {
     try {
         const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
         const ptr0 = passStringToWasm0(reference, wasm.__wbindgen_export, wasm.__wbindgen_export2);
         const len0 = WASM_VECTOR_LEN;
         const ptr1 = passArrayJsValueToWasm0(candidates, wasm.__wbindgen_export);
         const len1 = WASM_VECTOR_LEN;
-        wasm.indelMany(retptr, ptr0, len0, ptr1, len1, isLikeNone(max_distance) ? Number.MAX_SAFE_INTEGER : (max_distance) >>> 0);
+        wasm.indelMany(retptr, ptr0, len0, ptr1, len1, isLikeNone(maxDistance) ? Number.MAX_SAFE_INTEGER : (maxDistance) >>> 0);
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
         var v3 = getArrayU32FromWasm0(r0, r1).slice();
@@ -533,6 +617,9 @@ export function indelMany(reference, candidates, max_distance) {
 }
 
 /**
+ * Compute the Jaro similarity between two strings.
+ *
+ * Returns a value between 0.0 (completely different) and 1.0 (identical).
  * @param {string} a
  * @param {string} b
  * @returns {number}
@@ -547,7 +634,10 @@ export function jaro(a, b) {
 }
 
 /**
- * @param {any} pairs
+ * Compute the Jaro similarity for multiple pairs of strings in a single call.
+ *
+ * Returns an array of similarity scores in the same order as the input pairs.
+ * @param {string[][]} pairs
  * @returns {Float64Array}
  */
 export function jaroBatch(pairs) {
@@ -556,6 +646,11 @@ export function jaroBatch(pairs) {
         wasm.jaroBatch(retptr, addHeapObject(pairs));
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        if (r3) {
+            throw takeObject(r2);
+        }
         var v1 = getArrayF64FromWasm0(r0, r1).slice();
         wasm.__wbindgen_export4(r0, r1 * 8, 8);
         return v1;
@@ -565,19 +660,24 @@ export function jaroBatch(pairs) {
 }
 
 /**
+ * Compute the Jaro similarity from one reference string to many candidates.
+ *
+ * Returns an array of similarity scores, one per candidate, in the same order as the input.
+ * If `minSimilarity` is provided, candidates with similarity below the threshold
+ * will return `0.0` (enabling early termination for better performance).
  * @param {string} reference
  * @param {string[]} candidates
- * @param {number | null} [score_cutoff]
+ * @param {number | null} [minSimilarity]
  * @returns {Float64Array}
  */
-export function jaroMany(reference, candidates, score_cutoff) {
+export function jaroMany(reference, candidates, minSimilarity) {
     try {
         const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
         const ptr0 = passStringToWasm0(reference, wasm.__wbindgen_export, wasm.__wbindgen_export2);
         const len0 = WASM_VECTOR_LEN;
         const ptr1 = passArrayJsValueToWasm0(candidates, wasm.__wbindgen_export);
         const len1 = WASM_VECTOR_LEN;
-        wasm.jaroMany(retptr, ptr0, len0, ptr1, len1, !isLikeNone(score_cutoff), isLikeNone(score_cutoff) ? 0 : score_cutoff);
+        wasm.jaroMany(retptr, ptr0, len0, ptr1, len1, !isLikeNone(minSimilarity), isLikeNone(minSimilarity) ? 0 : minSimilarity);
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
         var v3 = getArrayF64FromWasm0(r0, r1).slice();
@@ -589,6 +689,10 @@ export function jaroMany(reference, candidates, score_cutoff) {
 }
 
 /**
+ * Compute the Jaro-Winkler similarity between two strings.
+ *
+ * A modification of Jaro that gives more weight to common prefixes.
+ * Returns a value between 0.0 and 1.0.
  * @param {string} a
  * @param {string} b
  * @returns {number}
@@ -603,7 +707,10 @@ export function jaroWinkler(a, b) {
 }
 
 /**
- * @param {any} pairs
+ * Compute the Jaro-Winkler similarity for multiple pairs of strings in a single call.
+ *
+ * Returns an array of similarity scores in the same order as the input pairs.
+ * @param {string[][]} pairs
  * @returns {Float64Array}
  */
 export function jaroWinklerBatch(pairs) {
@@ -612,6 +719,11 @@ export function jaroWinklerBatch(pairs) {
         wasm.jaroWinklerBatch(retptr, addHeapObject(pairs));
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        if (r3) {
+            throw takeObject(r2);
+        }
         var v1 = getArrayF64FromWasm0(r0, r1).slice();
         wasm.__wbindgen_export4(r0, r1 * 8, 8);
         return v1;
@@ -621,19 +733,24 @@ export function jaroWinklerBatch(pairs) {
 }
 
 /**
+ * Compute the Jaro-Winkler similarity from one reference string to many candidates.
+ *
+ * Returns an array of similarity scores, one per candidate, in the same order as the input.
+ * If `minSimilarity` is provided, candidates with similarity below the threshold
+ * will return `0.0` (enabling early termination for better performance).
  * @param {string} reference
  * @param {string[]} candidates
- * @param {number | null} [score_cutoff]
+ * @param {number | null} [minSimilarity]
  * @returns {Float64Array}
  */
-export function jaroWinklerMany(reference, candidates, score_cutoff) {
+export function jaroWinklerMany(reference, candidates, minSimilarity) {
     try {
         const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
         const ptr0 = passStringToWasm0(reference, wasm.__wbindgen_export, wasm.__wbindgen_export2);
         const len0 = WASM_VECTOR_LEN;
         const ptr1 = passArrayJsValueToWasm0(candidates, wasm.__wbindgen_export);
         const len1 = WASM_VECTOR_LEN;
-        wasm.jaroWinklerMany(retptr, ptr0, len0, ptr1, len1, !isLikeNone(score_cutoff), isLikeNone(score_cutoff) ? 0 : score_cutoff);
+        wasm.jaroWinklerMany(retptr, ptr0, len0, ptr1, len1, !isLikeNone(minSimilarity), isLikeNone(minSimilarity) ? 0 : minSimilarity);
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
         var v3 = getArrayF64FromWasm0(r0, r1).slice();
@@ -645,6 +762,11 @@ export function jaroWinklerMany(reference, candidates, score_cutoff) {
 }
 
 /**
+ * Compute the Levenshtein distance between two strings.
+ *
+ * The Levenshtein distance is the minimum number of single-character edits
+ * (insertions, deletions, or substitutions) required to change one string
+ * into the other.
  * @param {string} a
  * @param {string} b
  * @returns {number}
@@ -659,7 +781,11 @@ export function levenshtein(a, b) {
 }
 
 /**
- * @param {any} pairs
+ * Compute the Levenshtein distance for multiple pairs of strings in a single call.
+ *
+ * Returns an array of distances in the same order as the input pairs.
+ * Each pair must be an array of exactly two strings `[a, b]`.
+ * @param {string[][]} pairs
  * @returns {Uint32Array}
  */
 export function levenshteinBatch(pairs) {
@@ -668,6 +794,11 @@ export function levenshteinBatch(pairs) {
         wasm.levenshteinBatch(retptr, addHeapObject(pairs));
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        if (r3) {
+            throw takeObject(r2);
+        }
         var v1 = getArrayU32FromWasm0(r0, r1).slice();
         wasm.__wbindgen_export4(r0, r1 * 4, 4);
         return v1;
@@ -677,19 +808,24 @@ export function levenshteinBatch(pairs) {
 }
 
 /**
+ * Compute the Levenshtein distance from one reference string to many candidates.
+ *
+ * Returns an array of distances, one per candidate, in the same order as the input.
+ * If `maxDistance` is provided, candidates with distance exceeding the threshold
+ * will return `maxDistance + 1` (enabling early termination for better performance).
  * @param {string} reference
  * @param {string[]} candidates
- * @param {number | null} [max_distance]
+ * @param {number | null} [maxDistance]
  * @returns {Uint32Array}
  */
-export function levenshteinMany(reference, candidates, max_distance) {
+export function levenshteinMany(reference, candidates, maxDistance) {
     try {
         const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
         const ptr0 = passStringToWasm0(reference, wasm.__wbindgen_export, wasm.__wbindgen_export2);
         const len0 = WASM_VECTOR_LEN;
         const ptr1 = passArrayJsValueToWasm0(candidates, wasm.__wbindgen_export);
         const len1 = WASM_VECTOR_LEN;
-        wasm.levenshteinMany(retptr, ptr0, len0, ptr1, len1, isLikeNone(max_distance) ? Number.MAX_SAFE_INTEGER : (max_distance) >>> 0);
+        wasm.levenshteinMany(retptr, ptr0, len0, ptr1, len1, isLikeNone(maxDistance) ? Number.MAX_SAFE_INTEGER : (maxDistance) >>> 0);
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
         var v3 = getArrayU32FromWasm0(r0, r1).slice();
@@ -701,9 +837,13 @@ export function levenshteinMany(reference, candidates, max_distance) {
 }
 
 /**
+ * Compute the normalized Hamming similarity between two strings.
+ *
+ * Returns `null` if the strings have different lengths.
+ * Returns a value between 0.0 (no matching characters) and 1.0 (identical).
  * @param {string} a
  * @param {string} b
- * @returns {any}
+ * @returns {number | null}
  */
 export function normalizedHamming(a, b) {
     const ptr0 = passStringToWasm0(a, wasm.__wbindgen_export, wasm.__wbindgen_export2);
@@ -715,30 +855,54 @@ export function normalizedHamming(a, b) {
 }
 
 /**
- * @param {any} pairs
- * @returns {any}
+ * Compute the normalized Hamming similarity for multiple pairs of strings in a single call.
+ *
+ * Returns an array of scores in the same order as the input pairs.
+ * Returns `null` for pairs with different lengths.
+ * @param {string[][]} pairs
+ * @returns {(number | null)[]}
  */
 export function normalizedHammingBatch(pairs) {
-    const ret = wasm.normalizedHammingBatch(addHeapObject(pairs));
-    return takeObject(ret);
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        wasm.normalizedHammingBatch(retptr, addHeapObject(pairs));
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        if (r2) {
+            throw takeObject(r1);
+        }
+        return takeObject(r0);
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
 }
 
 /**
+ * Compute the normalized Hamming similarity from one reference string to many candidates.
+ *
+ * Returns an array of scores, one per candidate, in the same order as the input.
+ * Returns `null` for candidates with a different length than the reference.
+ * If `minSimilarity` is provided, candidates with similarity below the threshold
+ * will also return `null` (enabling early termination for better performance).
  * @param {string} reference
  * @param {string[]} candidates
- * @param {number | null} [score_cutoff]
- * @returns {any}
+ * @param {number | null} [minSimilarity]
+ * @returns {(number | null)[]}
  */
-export function normalizedHammingMany(reference, candidates, score_cutoff) {
+export function normalizedHammingMany(reference, candidates, minSimilarity) {
     const ptr0 = passStringToWasm0(reference, wasm.__wbindgen_export, wasm.__wbindgen_export2);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passArrayJsValueToWasm0(candidates, wasm.__wbindgen_export);
     const len1 = WASM_VECTOR_LEN;
-    const ret = wasm.normalizedHammingMany(ptr0, len0, ptr1, len1, !isLikeNone(score_cutoff), isLikeNone(score_cutoff) ? 0 : score_cutoff);
+    const ret = wasm.normalizedHammingMany(ptr0, len0, ptr1, len1, !isLikeNone(minSimilarity), isLikeNone(minSimilarity) ? 0 : minSimilarity);
     return takeObject(ret);
 }
 
 /**
+ * Compute the normalized Indel similarity between two strings.
+ *
+ * Returns a value between 0.0 (completely different) and 1.0 (identical).
  * @param {string} a
  * @param {string} b
  * @returns {number}
@@ -753,7 +917,10 @@ export function normalizedIndel(a, b) {
 }
 
 /**
- * @param {any} pairs
+ * Compute the normalized Indel similarity for multiple pairs of strings in a single call.
+ *
+ * Returns an array of similarity scores in the same order as the input pairs.
+ * @param {string[][]} pairs
  * @returns {Float64Array}
  */
 export function normalizedIndelBatch(pairs) {
@@ -762,6 +929,11 @@ export function normalizedIndelBatch(pairs) {
         wasm.normalizedIndelBatch(retptr, addHeapObject(pairs));
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        if (r3) {
+            throw takeObject(r2);
+        }
         var v1 = getArrayF64FromWasm0(r0, r1).slice();
         wasm.__wbindgen_export4(r0, r1 * 8, 8);
         return v1;
@@ -771,19 +943,24 @@ export function normalizedIndelBatch(pairs) {
 }
 
 /**
+ * Compute the normalized Indel similarity from one reference string to many candidates.
+ *
+ * Returns an array of similarity scores, one per candidate, in the same order as the input.
+ * If `minSimilarity` is provided, candidates with similarity below the threshold
+ * will return `0.0` (enabling early termination for better performance).
  * @param {string} reference
  * @param {string[]} candidates
- * @param {number | null} [score_cutoff]
+ * @param {number | null} [minSimilarity]
  * @returns {Float64Array}
  */
-export function normalizedIndelMany(reference, candidates, score_cutoff) {
+export function normalizedIndelMany(reference, candidates, minSimilarity) {
     try {
         const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
         const ptr0 = passStringToWasm0(reference, wasm.__wbindgen_export, wasm.__wbindgen_export2);
         const len0 = WASM_VECTOR_LEN;
         const ptr1 = passArrayJsValueToWasm0(candidates, wasm.__wbindgen_export);
         const len1 = WASM_VECTOR_LEN;
-        wasm.normalizedIndelMany(retptr, ptr0, len0, ptr1, len1, !isLikeNone(score_cutoff), isLikeNone(score_cutoff) ? 0 : score_cutoff);
+        wasm.normalizedIndelMany(retptr, ptr0, len0, ptr1, len1, !isLikeNone(minSimilarity), isLikeNone(minSimilarity) ? 0 : minSimilarity);
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
         var v3 = getArrayF64FromWasm0(r0, r1).slice();
@@ -795,6 +972,9 @@ export function normalizedIndelMany(reference, candidates, score_cutoff) {
 }
 
 /**
+ * Compute the normalized Levenshtein similarity between two strings.
+ *
+ * Returns a value between 0.0 (completely different) and 1.0 (identical).
  * @param {string} a
  * @param {string} b
  * @returns {number}
@@ -809,7 +989,10 @@ export function normalizedLevenshtein(a, b) {
 }
 
 /**
- * @param {any} pairs
+ * Compute the normalized Levenshtein similarity for multiple pairs of strings in a single call.
+ *
+ * Returns an array of similarity scores in the same order as the input pairs.
+ * @param {string[][]} pairs
  * @returns {Float64Array}
  */
 export function normalizedLevenshteinBatch(pairs) {
@@ -818,6 +1001,11 @@ export function normalizedLevenshteinBatch(pairs) {
         wasm.normalizedLevenshteinBatch(retptr, addHeapObject(pairs));
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        if (r3) {
+            throw takeObject(r2);
+        }
         var v1 = getArrayF64FromWasm0(r0, r1).slice();
         wasm.__wbindgen_export4(r0, r1 * 8, 8);
         return v1;
@@ -827,19 +1015,24 @@ export function normalizedLevenshteinBatch(pairs) {
 }
 
 /**
+ * Compute the normalized Levenshtein similarity from one reference string to many candidates.
+ *
+ * Returns an array of similarity scores, one per candidate, in the same order as the input.
+ * If `minSimilarity` is provided, candidates with similarity below the threshold
+ * will return `0.0` (enabling early termination for better performance).
  * @param {string} reference
  * @param {string[]} candidates
- * @param {number | null} [score_cutoff]
+ * @param {number | null} [minSimilarity]
  * @returns {Float64Array}
  */
-export function normalizedLevenshteinMany(reference, candidates, score_cutoff) {
+export function normalizedLevenshteinMany(reference, candidates, minSimilarity) {
     try {
         const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
         const ptr0 = passStringToWasm0(reference, wasm.__wbindgen_export, wasm.__wbindgen_export2);
         const len0 = WASM_VECTOR_LEN;
         const ptr1 = passArrayJsValueToWasm0(candidates, wasm.__wbindgen_export);
         const len1 = WASM_VECTOR_LEN;
-        wasm.normalizedLevenshteinMany(retptr, ptr0, len0, ptr1, len1, !isLikeNone(score_cutoff), isLikeNone(score_cutoff) ? 0 : score_cutoff);
+        wasm.normalizedLevenshteinMany(retptr, ptr0, len0, ptr1, len1, !isLikeNone(minSimilarity), isLikeNone(minSimilarity) ? 0 : minSimilarity);
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
         var v3 = getArrayF64FromWasm0(r0, r1).slice();
@@ -851,6 +1044,12 @@ export function normalizedLevenshteinMany(reference, candidates, score_cutoff) {
 }
 
 /**
+ * Compute the partial ratio between two strings.
+ *
+ * Finds the best matching substring of the shorter string within the longer string
+ * using a sliding window approach. Returns the highest normalized Levenshtein
+ * similarity across all windows. Useful for matching when one string is a
+ * substring or abbreviation of the other. Returns a value between 0.0 and 1.0.
  * @param {string} a
  * @param {string} b
  * @returns {number}
@@ -865,7 +1064,10 @@ export function partialRatio(a, b) {
 }
 
 /**
- * @param {any} pairs
+ * Compute the partial ratio for multiple pairs of strings in a single call.
+ *
+ * Returns an array of similarity scores in the same order as the input pairs.
+ * @param {string[][]} pairs
  * @returns {Float64Array}
  */
 export function partialRatioBatch(pairs) {
@@ -874,6 +1076,11 @@ export function partialRatioBatch(pairs) {
         wasm.partialRatioBatch(retptr, addHeapObject(pairs));
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        if (r3) {
+            throw takeObject(r2);
+        }
         var v1 = getArrayF64FromWasm0(r0, r1).slice();
         wasm.__wbindgen_export4(r0, r1 * 8, 8);
         return v1;
@@ -883,19 +1090,23 @@ export function partialRatioBatch(pairs) {
 }
 
 /**
+ * Compute the partial ratio from one reference string to many candidates.
+ *
+ * Returns an array of similarity scores, one per candidate, in the same order as the input.
+ * If `minSimilarity` is provided, candidates scoring below the threshold return `0.0`.
  * @param {string} reference
  * @param {string[]} candidates
- * @param {number | null} [score_cutoff]
+ * @param {number | null} [minSimilarity]
  * @returns {Float64Array}
  */
-export function partialRatioMany(reference, candidates, score_cutoff) {
+export function partialRatioMany(reference, candidates, minSimilarity) {
     try {
         const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
         const ptr0 = passStringToWasm0(reference, wasm.__wbindgen_export, wasm.__wbindgen_export2);
         const len0 = WASM_VECTOR_LEN;
         const ptr1 = passArrayJsValueToWasm0(candidates, wasm.__wbindgen_export);
         const len1 = WASM_VECTOR_LEN;
-        wasm.partialRatioMany(retptr, ptr0, len0, ptr1, len1, !isLikeNone(score_cutoff), isLikeNone(score_cutoff) ? 0 : score_cutoff);
+        wasm.partialRatioMany(retptr, ptr0, len0, ptr1, len1, !isLikeNone(minSimilarity), isLikeNone(minSimilarity) ? 0 : minSimilarity);
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
         var v3 = getArrayF64FromWasm0(r0, r1).slice();
@@ -911,44 +1122,72 @@ export function partialRatioMany(reference, candidates, score_cutoff) {
  *
  * Returns matches sorted by score (best match first).
  * Scores are normalized to a 0.0-1.0 range where 1.0 is a perfect match.
+ *
+ * The third argument accepts either a number (maxResults for backward
+ * compatibility) or a SearchOptions object.
  * @param {string} query
  * @param {string[]} items
- * @param {SearchOptions | null} [options]
- * @returns {any}
+ * @param {number | SearchOptions | null} [options]
+ * @returns {SearchResult[]}
  */
 export function search(query, items, options) {
-    const ptr0 = passStringToWasm0(query, wasm.__wbindgen_export, wasm.__wbindgen_export2);
-    const len0 = WASM_VECTOR_LEN;
-    const ptr1 = passArrayJsValueToWasm0(items, wasm.__wbindgen_export);
-    const len1 = WASM_VECTOR_LEN;
-    const ret = wasm.search(ptr0, len0, ptr1, len1, isLikeNone(options) ? 0 : addHeapObject(options));
-    return takeObject(ret);
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passStringToWasm0(query, wasm.__wbindgen_export, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArrayJsValueToWasm0(items, wasm.__wbindgen_export);
+        const len1 = WASM_VECTOR_LEN;
+        wasm.search(retptr, ptr0, len0, ptr1, len1, isLikeNone(options) ? 0 : addHeapObject(options));
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        if (r2) {
+            throw takeObject(r1);
+        }
+        return takeObject(r0);
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
 }
 
 /**
  * Perform fuzzy search across multiple text keys with weights.
  *
- * `key_texts` is a JS Array of Arrays of strings (one inner array per key,
- * each inner array has one string per item).
- * `weights` is a JS Array of numbers specifying the relative importance of each key.
+ * `keyTexts[k]` is an array of strings for key `k`, one per item.
+ * `weights` specifies the relative importance of each key.
  *
- * Returns results sorted by combined weighted score as a JS Array.
+ * Returns results sorted by combined weighted score (best match first).
  * @param {string} query
- * @param {any} key_texts
- * @param {Float64Array} weights
+ * @param {string[][]} keyTexts
+ * @param {ArrayLike<number>} weights
  * @param {SearchOptions | null} [options]
- * @returns {any}
+ * @returns {KeySearchResult[]}
  */
-export function searchKeys(query, key_texts, weights, options) {
-    const ptr0 = passStringToWasm0(query, wasm.__wbindgen_export, wasm.__wbindgen_export2);
-    const len0 = WASM_VECTOR_LEN;
-    const ptr1 = passArrayF64ToWasm0(weights, wasm.__wbindgen_export);
-    const len1 = WASM_VECTOR_LEN;
-    const ret = wasm.searchKeys(ptr0, len0, addHeapObject(key_texts), ptr1, len1, isLikeNone(options) ? 0 : addHeapObject(options));
-    return takeObject(ret);
+export function searchKeys(query, keyTexts, weights, options) {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passStringToWasm0(query, wasm.__wbindgen_export, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArrayF64ToWasm0(weights, wasm.__wbindgen_export);
+        const len1 = WASM_VECTOR_LEN;
+        wasm.searchKeys(retptr, ptr0, len0, addHeapObject(keyTexts), ptr1, len1, isLikeNone(options) ? 0 : addHeapObject(options));
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        if (r2) {
+            throw takeObject(r1);
+        }
+        return takeObject(r0);
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
 }
 
 /**
+ * Compute the Sorensen-Dice coefficient between two strings.
+ *
+ * Uses bigrams (pairs of consecutive characters) to measure similarity.
+ * Returns a value between 0.0 and 1.0.
  * @param {string} a
  * @param {string} b
  * @returns {number}
@@ -963,7 +1202,10 @@ export function sorensenDice(a, b) {
 }
 
 /**
- * @param {any} pairs
+ * Compute the Sorensen-Dice coefficient for multiple pairs of strings in a single call.
+ *
+ * Returns an array of similarity scores in the same order as the input pairs.
+ * @param {string[][]} pairs
  * @returns {Float64Array}
  */
 export function sorensenDiceBatch(pairs) {
@@ -972,6 +1214,11 @@ export function sorensenDiceBatch(pairs) {
         wasm.sorensenDiceBatch(retptr, addHeapObject(pairs));
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        if (r3) {
+            throw takeObject(r2);
+        }
         var v1 = getArrayF64FromWasm0(r0, r1).slice();
         wasm.__wbindgen_export4(r0, r1 * 8, 8);
         return v1;
@@ -981,19 +1228,24 @@ export function sorensenDiceBatch(pairs) {
 }
 
 /**
+ * Compute the Sorensen-Dice coefficient from one reference string to many candidates.
+ *
+ * Returns an array of similarity scores, one per candidate, in the same order as the input.
+ * If `minSimilarity` is provided, candidates scoring below the threshold return `0.0`.
+ * Reference bigrams are pre-computed once and reused for all candidates.
  * @param {string} reference
  * @param {string[]} candidates
- * @param {number | null} [score_cutoff]
+ * @param {number | null} [minSimilarity]
  * @returns {Float64Array}
  */
-export function sorensenDiceMany(reference, candidates, score_cutoff) {
+export function sorensenDiceMany(reference, candidates, minSimilarity) {
     try {
         const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
         const ptr0 = passStringToWasm0(reference, wasm.__wbindgen_export, wasm.__wbindgen_export2);
         const len0 = WASM_VECTOR_LEN;
         const ptr1 = passArrayJsValueToWasm0(candidates, wasm.__wbindgen_export);
         const len1 = WASM_VECTOR_LEN;
-        wasm.sorensenDiceMany(retptr, ptr0, len0, ptr1, len1, !isLikeNone(score_cutoff), isLikeNone(score_cutoff) ? 0 : score_cutoff);
+        wasm.sorensenDiceMany(retptr, ptr0, len0, ptr1, len1, !isLikeNone(minSimilarity), isLikeNone(minSimilarity) ? 0 : minSimilarity);
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
         var v3 = getArrayF64FromWasm0(r0, r1).slice();
@@ -1005,6 +1257,12 @@ export function sorensenDiceMany(reference, candidates, score_cutoff) {
 }
 
 /**
+ * Compute the token set ratio between two strings.
+ *
+ * Compares the intersection and differences of token sets from both strings.
+ * Returns the maximum similarity among comparisons of the intersection with
+ * each remainder. Highly effective for strings with shared tokens but
+ * different lengths. Returns a value between 0.0 and 1.0.
  * @param {string} a
  * @param {string} b
  * @returns {number}
@@ -1019,7 +1277,10 @@ export function tokenSetRatio(a, b) {
 }
 
 /**
- * @param {any} pairs
+ * Compute the token set ratio for multiple pairs of strings in a single call.
+ *
+ * Returns an array of similarity scores in the same order as the input pairs.
+ * @param {string[][]} pairs
  * @returns {Float64Array}
  */
 export function tokenSetRatioBatch(pairs) {
@@ -1028,6 +1289,11 @@ export function tokenSetRatioBatch(pairs) {
         wasm.tokenSetRatioBatch(retptr, addHeapObject(pairs));
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        if (r3) {
+            throw takeObject(r2);
+        }
         var v1 = getArrayF64FromWasm0(r0, r1).slice();
         wasm.__wbindgen_export4(r0, r1 * 8, 8);
         return v1;
@@ -1037,19 +1303,23 @@ export function tokenSetRatioBatch(pairs) {
 }
 
 /**
+ * Compute the token set ratio from one reference string to many candidates.
+ *
+ * Returns an array of similarity scores, one per candidate, in the same order as the input.
+ * If `minSimilarity` is provided, candidates scoring below the threshold return `0.0`.
  * @param {string} reference
  * @param {string[]} candidates
- * @param {number | null} [score_cutoff]
+ * @param {number | null} [minSimilarity]
  * @returns {Float64Array}
  */
-export function tokenSetRatioMany(reference, candidates, score_cutoff) {
+export function tokenSetRatioMany(reference, candidates, minSimilarity) {
     try {
         const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
         const ptr0 = passStringToWasm0(reference, wasm.__wbindgen_export, wasm.__wbindgen_export2);
         const len0 = WASM_VECTOR_LEN;
         const ptr1 = passArrayJsValueToWasm0(candidates, wasm.__wbindgen_export);
         const len1 = WASM_VECTOR_LEN;
-        wasm.tokenSetRatioMany(retptr, ptr0, len0, ptr1, len1, !isLikeNone(score_cutoff), isLikeNone(score_cutoff) ? 0 : score_cutoff);
+        wasm.tokenSetRatioMany(retptr, ptr0, len0, ptr1, len1, !isLikeNone(minSimilarity), isLikeNone(minSimilarity) ? 0 : minSimilarity);
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
         var v3 = getArrayF64FromWasm0(r0, r1).slice();
@@ -1061,6 +1331,12 @@ export function tokenSetRatioMany(reference, candidates, score_cutoff) {
 }
 
 /**
+ * Compute the token sort ratio between two strings.
+ *
+ * Splits both strings into tokens, sorts them alphabetically, then computes
+ * the normalized Levenshtein similarity. This makes the comparison
+ * order-independent, ideal for matching names or addresses where word order varies.
+ * Returns a value between 0.0 (completely different) and 1.0 (identical after sorting).
  * @param {string} a
  * @param {string} b
  * @returns {number}
@@ -1075,7 +1351,10 @@ export function tokenSortRatio(a, b) {
 }
 
 /**
- * @param {any} pairs
+ * Compute the token sort ratio for multiple pairs of strings in a single call.
+ *
+ * Returns an array of similarity scores in the same order as the input pairs.
+ * @param {string[][]} pairs
  * @returns {Float64Array}
  */
 export function tokenSortRatioBatch(pairs) {
@@ -1084,6 +1363,11 @@ export function tokenSortRatioBatch(pairs) {
         wasm.tokenSortRatioBatch(retptr, addHeapObject(pairs));
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        if (r3) {
+            throw takeObject(r2);
+        }
         var v1 = getArrayF64FromWasm0(r0, r1).slice();
         wasm.__wbindgen_export4(r0, r1 * 8, 8);
         return v1;
@@ -1093,19 +1377,23 @@ export function tokenSortRatioBatch(pairs) {
 }
 
 /**
+ * Compute the token sort ratio from one reference string to many candidates.
+ *
+ * Returns an array of similarity scores, one per candidate, in the same order as the input.
+ * If `minSimilarity` is provided, candidates scoring below the threshold return `0.0`.
  * @param {string} reference
  * @param {string[]} candidates
- * @param {number | null} [score_cutoff]
+ * @param {number | null} [minSimilarity]
  * @returns {Float64Array}
  */
-export function tokenSortRatioMany(reference, candidates, score_cutoff) {
+export function tokenSortRatioMany(reference, candidates, minSimilarity) {
     try {
         const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
         const ptr0 = passStringToWasm0(reference, wasm.__wbindgen_export, wasm.__wbindgen_export2);
         const len0 = WASM_VECTOR_LEN;
         const ptr1 = passArrayJsValueToWasm0(candidates, wasm.__wbindgen_export);
         const len1 = WASM_VECTOR_LEN;
-        wasm.tokenSortRatioMany(retptr, ptr0, len0, ptr1, len1, !isLikeNone(score_cutoff), isLikeNone(score_cutoff) ? 0 : score_cutoff);
+        wasm.tokenSortRatioMany(retptr, ptr0, len0, ptr1, len1, !isLikeNone(minSimilarity), isLikeNone(minSimilarity) ? 0 : minSimilarity);
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
         var v3 = getArrayF64FromWasm0(r0, r1).slice();
@@ -1117,6 +1405,12 @@ export function tokenSortRatioMany(reference, candidates, score_cutoff) {
 }
 
 /**
+ * Compute the weighted ratio between two strings.
+ *
+ * Returns the maximum score across normalized Levenshtein, token sort ratio,
+ * token set ratio, and partial ratio. This provides a single "best effort"
+ * similarity score that automatically selects the most appropriate algorithm.
+ * Returns a value between 0.0 and 1.0.
  * @param {string} a
  * @param {string} b
  * @returns {number}
@@ -1131,7 +1425,10 @@ export function weightedRatio(a, b) {
 }
 
 /**
- * @param {any} pairs
+ * Compute the weighted ratio for multiple pairs of strings in a single call.
+ *
+ * Returns an array of similarity scores in the same order as the input pairs.
+ * @param {string[][]} pairs
  * @returns {Float64Array}
  */
 export function weightedRatioBatch(pairs) {
@@ -1140,6 +1437,11 @@ export function weightedRatioBatch(pairs) {
         wasm.weightedRatioBatch(retptr, addHeapObject(pairs));
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        if (r3) {
+            throw takeObject(r2);
+        }
         var v1 = getArrayF64FromWasm0(r0, r1).slice();
         wasm.__wbindgen_export4(r0, r1 * 8, 8);
         return v1;
@@ -1149,19 +1451,23 @@ export function weightedRatioBatch(pairs) {
 }
 
 /**
+ * Compute the weighted ratio from one reference string to many candidates.
+ *
+ * Returns an array of similarity scores, one per candidate, in the same order as the input.
+ * If `minSimilarity` is provided, candidates scoring below the threshold return `0.0`.
  * @param {string} reference
  * @param {string[]} candidates
- * @param {number | null} [score_cutoff]
+ * @param {number | null} [minSimilarity]
  * @returns {Float64Array}
  */
-export function weightedRatioMany(reference, candidates, score_cutoff) {
+export function weightedRatioMany(reference, candidates, minSimilarity) {
     try {
         const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
         const ptr0 = passStringToWasm0(reference, wasm.__wbindgen_export, wasm.__wbindgen_export2);
         const len0 = WASM_VECTOR_LEN;
         const ptr1 = passArrayJsValueToWasm0(candidates, wasm.__wbindgen_export);
         const len1 = WASM_VECTOR_LEN;
-        wasm.weightedRatioMany(retptr, ptr0, len0, ptr1, len1, !isLikeNone(score_cutoff), isLikeNone(score_cutoff) ? 0 : score_cutoff);
+        wasm.weightedRatioMany(retptr, ptr0, len0, ptr1, len1, !isLikeNone(minSimilarity), isLikeNone(minSimilarity) ? 0 : minSimilarity);
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
         var v3 = getArrayF64FromWasm0(r0, r1).slice();
@@ -1300,6 +1606,14 @@ export function __wbg_new_1da3429bc3c4541c(arg0) {
     const ret = new Uint8Array(getObject(arg0));
     return addHeapObject(ret);
 }
+export function __wbg_new_9ca27d4bce9deee9(arg0, arg1) {
+    const ret = new TypeError(getStringFromWasm0(arg0, arg1));
+    return addHeapObject(ret);
+}
+export function __wbg_new_a32a1ab6c6655abe(arg0, arg1) {
+    const ret = new Error(getStringFromWasm0(arg0, arg1));
+    return addHeapObject(ret);
+}
 export function __wbg_new_bebc3f4757acf305() {
     const ret = new Object();
     return addHeapObject(ret);
@@ -1318,6 +1632,10 @@ export function __wbg_next_f31ecb8646d2c605() { return handleError(function (arg
 }, arguments); }
 export function __wbg_prototypesetcall_ae9f5e7459250748(arg0, arg1, arg2) {
     Uint8Array.prototype.set.call(getArrayU8FromWasm0(arg0, arg1), getObject(arg2));
+}
+export function __wbg_push_bfdf956ba476f65b(arg0, arg1) {
+    const ret = getObject(arg0).push(getObject(arg1));
+    return ret;
 }
 export function __wbg_set_13d25b81ab403f5e(arg0, arg1, arg2) {
     getObject(arg0)[arg1 >>> 0] = takeObject(arg2);

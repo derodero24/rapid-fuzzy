@@ -5,7 +5,8 @@ use rapid_fuzzy_core::search::serialization::{
 };
 use wasm_bindgen::prelude::*;
 
-use super::{IndexSearchResult, SearchOptions, SearchResult, resolve_case_matching, to_js};
+use super::{IndexSearchResult, SearchOptions, SearchResult, resolve_case_matching};
+use crate::convert::{error, or_null, to_js};
 
 /// A persistent fuzzy search index backed by Rust-side data.
 ///
@@ -34,9 +35,16 @@ impl FuzzyIndex {
 
     /// Search the index for items matching the query.
     ///
-    /// Returns matches sorted by score (best match first) as a JS Array.
-    pub fn search(&self, query: String, options: Option<SearchOptions>) -> JsValue {
-        let opts = options.unwrap_or_default();
+    /// Returns matches sorted by score (best match first).
+    /// The second argument accepts either a number (maxResults) or a SearchOptions object.
+    #[wasm_bindgen(unchecked_return_type = "SearchResult[]")]
+    pub fn search(
+        &self,
+        query: String,
+        #[wasm_bindgen(unchecked_optional_param_type = "number | SearchOptions | null")]
+        options: Option<JsValue>,
+    ) -> Result<JsValue, JsValue> {
+        let opts = SearchOptions::from_js_or_max_results(options)?;
         let (max_results, min_score, include_positions, case_matching, return_all_on_empty) = (
             opts.max_results,
             opts.min_score,
@@ -81,17 +89,33 @@ impl FuzzyIndex {
     /// Find the closest matching string in the index.
     ///
     /// Returns the best match, or null if no match is found.
-    pub fn closest(&self, query: String, min_score: Option<f64>) -> Option<String> {
+    /// If `minScore` is provided, returns null when the best match scores below the threshold.
+    #[wasm_bindgen(unchecked_return_type = "string | null")]
+    pub fn closest(
+        &self,
+        query: String,
+        #[wasm_bindgen(js_name = "minScore")] min_score: Option<f64>,
+    ) -> JsValue {
         let results = self
             .core
             .search_impl(&query, Some(1), min_score, false, CaseMatching::Smart);
-        results.into_iter().next().map(|r| r.item)
+        or_null(results.into_iter().next().map(|r| r.item))
     }
 
     /// Search the index, returning only indices and scores (no item strings).
-    #[wasm_bindgen(js_name = "searchIndices")]
-    pub fn search_indices(&self, query: String, options: Option<SearchOptions>) -> JsValue {
-        let opts = options.unwrap_or_default();
+    ///
+    /// The second argument accepts either a number (maxResults) or a SearchOptions object.
+    #[wasm_bindgen(
+        js_name = "searchIndices",
+        unchecked_return_type = "IndexSearchResult[]"
+    )]
+    pub fn search_indices(
+        &self,
+        query: String,
+        #[wasm_bindgen(unchecked_optional_param_type = "number | SearchOptions | null")]
+        options: Option<JsValue>,
+    ) -> Result<JsValue, JsValue> {
+        let opts = SearchOptions::from_js_or_max_results(options)?;
         let (max_results, min_score, include_positions, case_matching, return_all_on_empty) = (
             opts.max_results,
             opts.min_score,
@@ -160,8 +184,7 @@ impl FuzzyIndex {
 
     /// Reconstruct a FuzzyIndex from a previously serialized Uint8Array.
     pub fn deserialize(data: &[u8]) -> Result<FuzzyIndex, JsValue> {
-        let items =
-            deserialize_items(data, FUZZY_INDEX_WASM_MAGIC).map_err(|e| JsValue::from_str(&e))?;
+        let items = deserialize_items(data, FUZZY_INDEX_WASM_MAGIC).map_err(|e| error(&e))?;
         Ok(Self::new(items))
     }
 }

@@ -83,8 +83,8 @@ Deno.test('many - normalizedHammingMany', () => {
   const result = wasm.normalizedHammingMany('hello', ['hello', 'world', 'hi']);
   assertEquals(result.length, 3);
   assertEquals(result[0], 1.0);
-  // wasm-bindgen serializes None as undefined inside arrays (not null)
-  assertEquals(result[2], undefined);
+  // Length mismatches are null, as in the Node.js binding
+  assertEquals(result[2], null);
 });
 
 Deno.test('token - tokenSortRatio', () => {
@@ -114,8 +114,8 @@ Deno.test('closest - returns best match', () => {
   assertNotEquals(result, null);
 });
 
-Deno.test('closest - empty items returns undefined', () => {
-  assertEquals(wasm.closest('hello', []), undefined);
+Deno.test('closest - empty items returns null', () => {
+  assertEquals(wasm.closest('hello', []), null);
 });
 
 Deno.test('FuzzyIndex - lifecycle', () => {
