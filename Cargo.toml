@@ -4,7 +4,10 @@ resolver = "2"
 
 [workspace.package]
 edition = "2024"
-rust-version = "1.85"
+# Minimum supported Rust version. napi/napi-derive/napi-build 3.x and
+# libloading 0.9 require 1.88 (the code also uses let-chains, stable since
+# 1.88 in edition 2024). CI checks the workspace with exactly this toolchain.
+rust-version = "1.88"
 license = "MIT"
 repository = "https://github.com/derodero24/rapid-fuzzy"
 

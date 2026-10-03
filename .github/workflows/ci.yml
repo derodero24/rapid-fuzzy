@@ -159,6 +159,40 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       - run: cargo test --workspace --locked
 
+  msrv:
+    name: Rust MSRV
+    # Label events only matter for ci-full; other labels must not rerun CI.
+    if: ${{ github.event.action != 'labeled' || github.event.label.name == 'ci-full' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      # Check with exactly the toolchain declared as `rust-version` in the root
+      # Cargo.toml. RUSTUP_TOOLCHAIN overrides rust-toolchain.toml (which pins
+      # stable) for every later step, the cache key included.
+      - name: Read MSRV from Cargo.toml
+        id: msrv
+        run: |
+          msrv=$(sed -n 's/^rust-version = "\(.*\)"$/\1/p' Cargo.toml)
+          if [ -z "$msrv" ]; then
+            echo "::error::rust-version not found in Cargo.toml"
+            exit 1
+          fi
+          echo "MSRV: $msrv"
+          echo "version=$msrv" >> "$GITHUB_OUTPUT"
+          echo "RUSTUP_TOOLCHAIN=$msrv" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
+        with:
+          toolchain: ${{ steps.msrv.outputs.version }}
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          shared-key: msrv
+      - name: Check the workspace with the MSRV toolchain
+        run: |
+          rustc --version
+          cargo check --workspace --all-targets --locked
+
   build:
     name: Build - ${{ matrix.settings.target }}
     needs: plan
