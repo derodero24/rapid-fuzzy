@@ -196,8 +196,8 @@ pub fn jaro_winkler_many(
 
 /// Compute the Sorensen-Dice coefficient between two strings.
 ///
-/// Uses bigrams (pairs of consecutive characters) to measure similarity.
-/// Returns a value between 0.0 and 1.0.
+/// Uses bigrams (pairs of consecutive characters, ignoring whitespace) to
+/// measure similarity. Returns a value between 0.0 and 1.0.
 #[napi]
 pub fn sorensen_dice(a: String, b: String) -> f64 {
     core_dist::sorensen_dice(&a, &b)

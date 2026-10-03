@@ -1,5 +1,4 @@
 use std::collections::BTreeSet;
-use std::collections::HashMap;
 
 use rapidfuzz::distance::damerau_levenshtein as rapid_damerau;
 use rapidfuzz::distance::hamming as rapid_hamming;
@@ -243,12 +242,77 @@ pub fn jaro_winkler_many(
 
 // ─── Sorensen-Dice ───────────────────────────────────────────────────────────
 
+/// A string prepared for the Sorensen-Dice coefficient: its characters with
+/// whitespace removed, and its character bigrams packed into `u64`s and sorted
+/// so two profiles intersect with a single merge pass.
+///
+/// The buffers are reused when a profile is reloaded, so comparing one
+/// reference with many candidates allocates nothing per candidate.
+#[derive(Debug, Default)]
+struct DiceProfile {
+    chars: Vec<char>,
+    bigrams: Vec<u64>,
+}
+
+impl DiceProfile {
+    fn new(s: &str) -> Self {
+        let mut profile = Self::default();
+        profile.load(s);
+        profile
+    }
+
+    fn load(&mut self, s: &str) {
+        self.chars.clear();
+        self.chars.extend(s.chars().filter(|c| !c.is_whitespace()));
+        self.bigrams.clear();
+        self.bigrams.extend(
+            self.chars
+                .windows(2)
+                .map(|w| (u64::from(w[0]) << 32) | u64::from(w[1])),
+        );
+        self.bigrams.sort_unstable();
+    }
+
+    /// `2 * |shared bigrams| / (|bigrams(a)| + |bigrams(b)|)`, counted in
+    /// characters. Identical strings score `1.0`; otherwise a string with
+    /// fewer than two characters has no bigrams and scores `0.0`. This is
+    /// `strsim::sorensen_dice` with character instead of UTF-8 byte lengths,
+    /// so ASCII input scores exactly the same.
+    fn similarity(&self, other: &Self) -> f64 {
+        if self.chars == other.chars {
+            return 1.0;
+        }
+        if self.chars.len() < 2 || other.chars.len() < 2 {
+            return 0.0;
+        }
+        let shared = sorted_intersection_len(&self.bigrams, &other.bigrams);
+        (2 * shared) as f64 / (self.chars.len() + other.chars.len() - 2) as f64
+    }
+}
+
+/// Size of the multiset intersection of two sorted slices.
+fn sorted_intersection_len(a: &[u64], b: &[u64]) -> usize {
+    let (mut i, mut j, mut shared) = (0, 0, 0);
+    while i < a.len() && j < b.len() {
+        match a[i].cmp(&b[j]) {
+            std::cmp::Ordering::Less => i += 1,
+            std::cmp::Ordering::Greater => j += 1,
+            std::cmp::Ordering::Equal => {
+                shared += 1;
+                i += 1;
+                j += 1;
+            }
+        }
+    }
+    shared
+}
+
 pub fn sorensen_dice(a: &str, b: &str) -> f64 {
-    strsim::sorensen_dice(a, b)
+    DiceProfile::new(a).similarity(&DiceProfile::new(b))
 }
 
 pub fn sorensen_dice_batch(pairs: &[Vec<String>]) -> Vec<f64> {
-    batch_apply(pairs, strsim::sorensen_dice)
+    batch_apply(pairs, sorensen_dice)
 }
 
 pub fn sorensen_dice_many(
@@ -256,48 +320,19 @@ pub fn sorensen_dice_many(
     candidates: &[String],
     min_similarity: Option<f64>,
 ) -> Vec<f64> {
-    // Same definition as `sorensen_dice` (strsim): whitespace is stripped,
-    // identical strings score 1.0, strings shorter than two bytes score 0.0,
-    // and the denominator counts bigrams by byte length. Only the reference
-    // side is precomputed here.
-    let ref_str: String = reference.chars().filter(|c| !c.is_whitespace()).collect();
-    let ref_bigrams = bigram_counts(&ref_str);
-
+    let reference = DiceProfile::new(reference);
+    let mut candidate = DiceProfile::default();
     candidates
         .iter()
         .map(|c| {
-            let c_str: String = c.chars().filter(|ch| !ch.is_whitespace()).collect();
-            let score = if ref_str == c_str {
-                1.0
-            } else if ref_str.len() < 2 || c_str.len() < 2 {
-                0.0
-            } else {
-                let c_bigrams = bigram_counts(&c_str);
-                let intersection: usize = ref_bigrams
-                    .iter()
-                    .map(|(bigram, count)| count.min(c_bigrams.get(bigram).unwrap_or(&0)))
-                    .sum();
-                (2 * intersection) as f64 / (ref_str.len() + c_str.len() - 2) as f64
-            };
-
+            candidate.load(c);
+            let score = reference.similarity(&candidate);
             match min_similarity {
                 Some(cutoff) if score < cutoff => 0.0,
                 _ => score,
             }
         })
         .collect()
-}
-
-fn bigrams(s: &str) -> impl Iterator<Item = (char, char)> + '_ {
-    s.chars().zip(s.chars().skip(1))
-}
-
-fn bigram_counts(s: &str) -> HashMap<(char, char), usize> {
-    let mut counts = HashMap::new();
-    for bigram in bigrams(s) {
-        *counts.entry(bigram).or_insert(0) += 1;
-    }
-    counts
 }
 
 // ─── Normalized Levenshtein ──────────────────────────────────────────────────

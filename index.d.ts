@@ -532,8 +532,8 @@ export interface SearchResult {
 /**
  * Compute the Sorensen-Dice coefficient between two strings.
  *
- * Uses bigrams (pairs of consecutive characters) to measure similarity.
- * Returns a value between 0.0 and 1.0.
+ * Uses bigrams (pairs of consecutive characters, ignoring whitespace) to
+ * measure similarity. Returns a value between 0.0 and 1.0.
  */
 export declare function sorensenDice(a: string, b: string): number
 

@@ -10,5 +10,8 @@ crate-type = ["rlib"]
 
 [dependencies]
 nucleo-matcher = { workspace = true }
-strsim = { workspace = true }
 rapidfuzz = { workspace = true }
+
+[dev-dependencies]
+# Reference implementation for the Sorensen-Dice differential test.
+strsim = { workspace = true }

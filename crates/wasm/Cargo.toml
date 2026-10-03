@@ -16,8 +16,6 @@ serde = { version = "1", features = ["derive"] }
 serde-wasm-bindgen = "0.6"
 tsify = { version = "0.5", features = ["js"] }
 nucleo-matcher = { workspace = true }
-strsim = { workspace = true }
-rapidfuzz = { workspace = true }
 
 [package.metadata.wasm-pack.profile.release]
 wasm-opt = false
