@@ -8,12 +8,13 @@
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
-use rapid_fuzzy_core::search::FuzzyIndexCore;
 use rapid_fuzzy_core::search::serialization::{
     FUZZY_INDEX_ACCEPTED_MAGICS, FUZZY_INDEX_MAGIC, FUZZY_INDEX_WASM_MAGIC, KEYED_INDEX_MAGIC,
     SERIALIZE_VERSION, deserialize_fuzzy_index, deserialize_items, deserialize_keyed,
-    serialize_fuzzy_index, serialize_items, serialize_keyed,
+    deserialize_keyed_index, serialize_fuzzy_index, serialize_items, serialize_keyed,
+    serialize_keyed_index,
 };
+use rapid_fuzzy_core::search::{FuzzyIndexCore, KeyedFuzzyIndexCore};
 
 // ---------------------------------------------------------------------------
 // Allocation tracking
@@ -669,6 +670,114 @@ fn fuzz_fuzzy_index() {
                     serialize_fuzzy_index(&index),
                     with_current_fuzzy_magic(bytes)
                 );
+                true
+            }
+            Err(message) => {
+                assert!(
+                    message.starts_with("Invalid data: ")
+                        || message.starts_with("Unsupported format version: "),
+                    "{message}"
+                );
+                false
+            }
+        }
+    });
+    assert!(accepted > 0);
+}
+
+// ---------------------------------------------------------------------------
+// KeyedFuzzyIndex: index-level API used by the bindings
+// ---------------------------------------------------------------------------
+
+fn keyed_index(columns: &[&[&str]], weights: &[f64]) -> KeyedFuzzyIndexCore {
+    let key_texts = columns.iter().map(|col| strings(col)).collect();
+    KeyedFuzzyIndexCore::new(key_texts, weights.to_vec()).unwrap()
+}
+
+fn assert_same_keyed_state(a: &KeyedFuzzyIndexCore, b: &KeyedFuzzyIndexCore) {
+    assert_eq!(a.size(), b.size());
+    assert_eq!(a.key_texts(), b.key_texts());
+    let bits = |w: &[f64]| w.iter().map(|x| x.to_bits()).collect::<Vec<_>>();
+    assert_eq!(bits(a.weights()), bits(b.weights()));
+}
+
+#[test]
+fn keyed_index_roundtrips_every_state() {
+    let check = |index: &KeyedFuzzyIndexCore| {
+        let bytes = serialize_keyed_index(index);
+        let restored = deserialize_keyed_index(&bytes).unwrap();
+        assert_same_keyed_state(&restored, index);
+        assert_eq!(serialize_keyed_index(&restored), bytes);
+    };
+
+    let mut index = keyed_index(&[&["John", "Jane"], &["john@x", "jane@x"]], &[2.0, 1.0]);
+    check(&index);
+    index.add(strings(&["Bob", "bob@x"])).unwrap();
+    check(&index);
+    assert!(index.remove(0));
+    check(&index);
+    // Keys without items.
+    check(&keyed_index(&[&[], &[]], &[1.0, 0.0]));
+    // Zero-weight keys next to a positive one, and a negative zero.
+    check(&keyed_index(&[&["a"], &["b"], &["c"]], &[0.0, 1.0, -0.0]));
+    // A destroyed index used to serialize to bytes its own deserializer
+    // rejected ("Total weight must be greater than zero").
+    index.destroy();
+    check(&index);
+}
+
+#[test]
+fn destroyed_keyed_index_restores_as_destroyed() {
+    let mut index = keyed_index(&[&["a", "b"]], &[1.0]);
+    index.destroy();
+    let bytes = serialize_keyed_index(&index);
+    assert_eq!(bytes, keyed_payload(&[], &[]));
+
+    let mut restored = deserialize_keyed_index(&bytes).unwrap();
+    assert_eq!(restored.size(), 0);
+    assert!(restored.key_texts().is_empty());
+    assert!(restored.weights().is_empty());
+    // Behaves exactly like the destroyed original.
+    assert_eq!(
+        restored.add(strings(&["x"])).unwrap_err(),
+        index.add(strings(&["x"])).unwrap_err()
+    );
+}
+
+#[test]
+fn keyed_index_rejects_invalid_weights_precisely() {
+    let cases: [(&[f64], &str); 6] = [
+        (&[1.0, f64::NAN], "weight of key 1 is NaN"),
+        (&[f64::INFINITY], "weight of key 0 is inf"),
+        (&[f64::NEG_INFINITY, 1.0], "weight of key 0 is -inf"),
+        (&[1.0, 2.0, -1.0], "weight of key 2 is -1"),
+        (&[0.0], "total weight must be greater than zero"),
+        (&[0.0, -0.0], "total weight must be greater than zero"),
+    ];
+    for (weights, needle) in cases {
+        let columns: Vec<&[&str]> = weights.iter().map(|_| &["text"][..]).collect();
+        let bytes = keyed_payload(&columns, weights);
+        // The format-level parser returns weights as stored...
+        let (_, stored) = deserialize_keyed(&bytes, KEYED_INDEX_MAGIC).unwrap();
+        assert_eq!(stored.len(), weights.len());
+        // ...and the index-level one validates them like the constructor.
+        let message = expect_err(deserialize_keyed_index(&bytes).map(|i| i.size()), needle);
+        assert!(message.starts_with("Invalid data: "), "{message}");
+    }
+}
+
+#[test]
+fn fuzz_keyed_index() {
+    let (_, baseline) = largest_allocation_during(|| keyed_index(&[&[]], &[1.0]));
+    let accepted = fuzz(0x5EED_0004, &keyed_seeds(), |bytes| {
+        let (result, largest) = largest_allocation_during(|| deserialize_keyed_index(bytes));
+        assert!(
+            largest <= baseline + parse_allocation_budget(bytes.len()),
+            "requested {largest} bytes for {bytes:02x?}"
+        );
+        match result {
+            Ok(index) => {
+                assert_eq!(serialize_keyed_index(&index), bytes);
                 true
             }
             Err(message) => {

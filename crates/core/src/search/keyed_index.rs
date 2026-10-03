@@ -1,9 +1,7 @@
 use napi::bindgen_prelude::Buffer;
 use napi_derive::napi;
 use rapid_fuzzy_core::search::KeyedFuzzyIndexCore;
-use rapid_fuzzy_core::search::serialization::{
-    KEYED_INDEX_MAGIC, deserialize_keyed, serialize_keyed,
-};
+use rapid_fuzzy_core::search::serialization::{deserialize_keyed_index, serialize_keyed_index};
 
 use super::keys::KeySearchResult;
 use super::{SearchOptions, resolve_case_matching};
@@ -31,9 +29,7 @@ impl KeyedFuzzyIndex {
     /// All inner arrays must have the same length (the number of items).
     #[napi(constructor)]
     pub fn new(key_texts: Vec<Vec<String>>, weights: Vec<f64>) -> napi::Result<Self> {
-        KeyedFuzzyIndexCore::new(key_texts, weights)
-            .map(|core| Self { core })
-            .map_err(napi::Error::from_reason)
+        Self::new_impl(key_texts, weights).map_err(napi::Error::from_reason)
     }
 
     fn new_impl(key_texts: Vec<Vec<String>>, weights: Vec<f64>) -> Result<Self, String> {
@@ -154,16 +150,11 @@ impl KeyedFuzzyIndex {
 /// Non-napi helper methods.
 impl KeyedFuzzyIndex {
     fn serialize_impl(&self) -> Vec<u8> {
-        serialize_keyed(
-            self.core.key_texts(),
-            self.core.weights(),
-            KEYED_INDEX_MAGIC,
-        )
+        serialize_keyed_index(&self.core)
     }
 
     fn deserialize_impl(bytes: &[u8]) -> Result<Self, String> {
-        let (key_texts, weights) = deserialize_keyed(bytes, KEYED_INDEX_MAGIC)?;
-        Self::new_impl(key_texts, weights)
+        deserialize_keyed_index(bytes).map(|core| Self { core })
     }
 }
 

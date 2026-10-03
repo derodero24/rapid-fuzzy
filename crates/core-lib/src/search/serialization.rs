@@ -19,7 +19,7 @@
 
 use std::fmt;
 
-use super::FuzzyIndexCore;
+use super::{FuzzyIndexCore, KeyedFuzzyIndexCore};
 
 /// Magic bytes identifying a serialized `FuzzyIndex`.
 ///
@@ -70,6 +70,47 @@ pub fn serialize_fuzzy_index(index: &FuzzyIndexCore) -> Vec<u8> {
 /// Same as [`deserialize_items`], with any accepted magic allowed.
 pub fn deserialize_fuzzy_index(bytes: &[u8]) -> Result<FuzzyIndexCore, String> {
     parse_items(bytes, FUZZY_INDEX_ACCEPTED_MAGICS).map(FuzzyIndexCore::new)
+}
+
+/// Serialize a [`KeyedFuzzyIndexCore`] under [`KEYED_INDEX_MAGIC`].
+pub fn serialize_keyed_index(index: &KeyedFuzzyIndexCore) -> Vec<u8> {
+    serialize_keyed(index.key_texts(), index.weights(), KEYED_INDEX_MAGIC)
+}
+
+/// Rebuild a [`KeyedFuzzyIndexCore`] from bytes produced by [`serialize_keyed_index`].
+///
+/// Round-trips every state an index can be in, including a destroyed one.
+///
+/// # Errors
+///
+/// Everything [`deserialize_keyed`] rejects, plus weights the constructor
+/// would reject (negative, non-finite, or all zero).
+pub fn deserialize_keyed_index(bytes: &[u8]) -> Result<KeyedFuzzyIndexCore, String> {
+    let (key_texts, weights) = deserialize_keyed(bytes, KEYED_INDEX_MAGIC)?;
+
+    if key_texts.is_empty() {
+        // The constructor rejects zero keys, so the only index that
+        // serializes to zero keys is a destroyed one. Rebuild that state.
+        let mut index = KeyedFuzzyIndexCore::new(vec![Vec::new()], vec![1.0])?;
+        index.destroy();
+        return Ok(index);
+    }
+
+    // Same rules as `KeyedFuzzyIndexCore::new`, reported with the key index.
+    if let Some((key, weight)) = weights
+        .iter()
+        .enumerate()
+        .find(|(_, w)| !w.is_finite() || **w < 0.0)
+    {
+        return Err(format!(
+            "Invalid data: weight of key {key} is {weight}; weights must be finite non-negative numbers"
+        ));
+    }
+    if weights.iter().sum::<f64>() <= 0.0 {
+        return Err("Invalid data: total weight must be greater than zero".into());
+    }
+
+    KeyedFuzzyIndexCore::new(key_texts, weights).map_err(|e| format!("Invalid data: {e}"))
 }
 
 // ---------------------------------------------------------------------------
@@ -132,8 +173,8 @@ pub fn serialize_keyed(key_texts: &[Vec<String>], weights: &[f64], magic: &[u8; 
 
 /// Deserialize keyed-index data written by [`serialize_keyed`] under exactly `magic`.
 ///
-/// Returns `(key_texts, weights)`. Weights are returned as stored, without
-/// validation.
+/// Returns `(key_texts, weights)`. Weights are returned as stored; use
+/// [`deserialize_keyed_index`] to also validate them and build an index.
 ///
 /// # Errors
 ///
