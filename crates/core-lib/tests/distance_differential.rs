@@ -401,6 +401,56 @@ fn hamming_entry_points_agree() {
     }
 }
 
+/// `weighted_ratio` is the best of the plain ratio (of the original and of the
+/// normalized strings), token sort, token set and partial ratio; the partial
+/// ratio is pruned with the best of the others, which must not change it.
+#[test]
+fn weighted_ratio_is_the_best_component() {
+    for case in cases(0x5eed_0004, 600) {
+        let a = case.reference.as_str();
+        for b in &case.candidates {
+            let raw = d::normalized_levenshtein(a, b).max(d::normalized_levenshtein(
+                &d::normalize_str(a),
+                &d::normalize_str(b),
+            ));
+            let expected = raw
+                .max(d::token_sort_ratio(a, b))
+                .max(d::token_set_ratio(a, b))
+                .max(d::partial_ratio(a, b));
+            assert_bits(d::weighted_ratio(a, b), expected, || {
+                format!("weighted_ratio({a:?}, {b:?})")
+            });
+        }
+    }
+}
+
+/// The token-based ratios lower-case word by word (ASCII words without an
+/// allocation); that must equal plain `str::to_lowercase` per word, including
+/// context-sensitive cases such as a word-final Greek sigma.
+#[test]
+fn tokenization_matches_the_plain_definition() {
+    let alphabet: &[&str] = &[
+        "a", "B", "Σ", "σ", "ς", "ΣΑΣ", "İ", "ǅ", "ẞ", "É", "Ab", "x", " ", "\t", "\u{3000}",
+    ];
+    let lowercase_words =
+        |s: &str| -> Vec<String> { s.split_whitespace().map(str::to_lowercase).collect() };
+    let mut rng = Rng(0x5eed_0006);
+    for _ in 0..5_000 {
+        let a = random_string(&mut rng, alphabet, 8);
+        let b = random_string(&mut rng, alphabet, 8);
+        assert_eq!(d::normalize_str(&a), lowercase_words(&a).join(" "), "{a:?}");
+
+        let mut sorted_a = lowercase_words(&a);
+        sorted_a.sort();
+        let mut sorted_b = lowercase_words(&b);
+        sorted_b.sort();
+        let expected = d::normalized_levenshtein(&sorted_a.join(" "), &sorted_b.join(" "));
+        assert_bits(d::token_sort_ratio(&a, &b), expected, || {
+            format!("token_sort_ratio({a:?}, {b:?})")
+        });
+    }
+}
+
 // ─── Sorensen-Dice ───────────────────────────────────────────────────────────
 
 /// For ASCII input (one byte per character) the in-crate implementation must

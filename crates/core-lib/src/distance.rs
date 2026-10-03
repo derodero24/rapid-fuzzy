@@ -18,6 +18,7 @@
 //!   instead (`None` for normalized Hamming); a score equal to it is kept.
 //!   `NaN` is rejected with [`DistanceError::NanThreshold`].
 
+use std::borrow::Cow;
 use std::collections::BTreeSet;
 use std::fmt;
 
@@ -547,29 +548,43 @@ pub fn normalized_indel_many(
 
 // ─── Internal helpers for token-based algorithms ─────────────────────────────
 
+/// `word.to_lowercase()`, borrowing `word` when it is already lower-case ASCII
+/// (the common case, which then needs no allocation).
+fn lowercase_word(word: &str) -> Cow<'_, str> {
+    if !word.is_ascii() {
+        // Full Unicode lower-casing (e.g. a word-final `Σ` becomes `ς`).
+        Cow::Owned(word.to_lowercase())
+    } else if word.bytes().any(|b| b.is_ascii_uppercase()) {
+        Cow::Owned(word.to_ascii_lowercase())
+    } else {
+        Cow::Borrowed(word)
+    }
+}
+
+/// Lower-case `s` and collapse every whitespace run into a single space,
+/// dropping leading and trailing whitespace.
 pub fn normalize_str(s: &str) -> String {
-    let mut result = String::new();
+    let mut result = String::with_capacity(s.len());
     for word in s.split_whitespace() {
         if !result.is_empty() {
             result.push(' ');
         }
-        result.push_str(&word.to_lowercase());
+        result.push_str(&lowercase_word(word));
     }
     result
 }
 
-pub fn sorted_tokens(s: &str) -> Vec<String> {
-    let mut tokens: Vec<String> = s.split_whitespace().map(|w| w.to_lowercase()).collect();
-    tokens.sort();
-    tokens
+/// The lower-cased whitespace-separated tokens of `s`, sorted and joined by
+/// single spaces: the string token sort ratio compares.
+fn sorted_token_string(s: &str) -> String {
+    let mut tokens: Vec<Cow<'_, str>> = s.split_whitespace().map(lowercase_word).collect();
+    tokens.sort_unstable();
+    tokens.join(" ")
 }
 
 pub fn token_sort_ratio_impl(a: &str, b: &str) -> f64 {
-    let sorted_a = sorted_tokens(a).join(" ");
-    let sorted_b = sorted_tokens(b).join(" ");
-    if sorted_a.is_empty() && sorted_b.is_empty() {
-        return 1.0;
-    }
+    let sorted_a = sorted_token_string(a);
+    let sorted_b = sorted_token_string(b);
     rapid_lev::normalized_similarity(sorted_a.chars(), sorted_b.chars())
 }
 
@@ -648,7 +663,7 @@ pub fn partial_ratio_impl(a: &str, b: &str) -> f64 {
 /// Partial ratio of two strings already passed through [`normalize_str`].
 pub fn partial_ratio_from_normalized(norm_a: &str, norm_b: &str) -> f64 {
     // Every score is >= 0, so a floor of 0 always yields a score.
-    partial_ratio_at_least(norm_a, norm_b, 0.0).unwrap_or(0.0)
+    partial_ratio_at_least(norm_a, norm_b, 0.0, None).unwrap_or(0.0)
 }
 
 /// Partial ratio of two normalized strings if it is at least `floor`,
@@ -657,8 +672,14 @@ pub fn partial_ratio_from_normalized(norm_a: &str, norm_b: &str) -> f64 {
 /// The shorter string is compared with every window of the same length in the
 /// longer one and the best window wins. Each window is computed with the best
 /// score so far (or `floor`) as the cutoff, so a high `floor` lets rapidfuzz
-/// abandon windows early.
-fn partial_ratio_at_least(norm_a: &str, norm_b: &str, floor: f64) -> Option<f64> {
+/// abandon windows early. `cached_a`, if given, must be the comparator of
+/// `norm_a` and is reused when `norm_a` is the shorter string.
+fn partial_ratio_at_least(
+    norm_a: &str,
+    norm_b: &str,
+    floor: f64,
+    cached_a: Option<&rapid_lev::BatchComparator<char>>,
+) -> Option<f64> {
     if norm_a.is_empty() || norm_b.is_empty() {
         let score = if norm_a.is_empty() && norm_b.is_empty() {
             1.0
@@ -674,18 +695,27 @@ fn partial_ratio_at_least(norm_a: &str, norm_b: &str, floor: f64) -> Option<f64>
         let args = rapid_lev::Args::default().score_cutoff(floor);
         return rapid_lev::normalized_similarity_with_args(norm_a.chars(), norm_b.chars(), &args);
     }
-    let (shorter, longer, short_len) = if len_a < len_b {
-        (norm_a, norm_b, len_a)
+
+    let built;
+    let (scorer, longer, short_len) = if len_a < len_b {
+        let scorer = match cached_a {
+            Some(scorer) => scorer,
+            None => {
+                built = rapid_lev::BatchComparator::new(norm_a.chars());
+                &built
+            }
+        };
+        (scorer, norm_b, len_a)
     } else {
-        (norm_b, norm_a, len_b)
+        built = rapid_lev::BatchComparator::new(norm_b.chars());
+        (&built, norm_a, len_b)
     };
 
     let long_chars: Vec<char> = longer.chars().collect();
-    let scorer = rapid_lev::BatchComparator::new(shorter.chars());
     let mut best: Option<f64> = None;
     for window in long_chars.windows(short_len) {
         let cutoff = best.unwrap_or(floor);
-        if let Some(score) = lev_similarity_at_least(&scorer, window.iter().copied(), cutoff) {
+        if let Some(score) = lev_similarity_at_least(scorer, window.iter().copied(), cutoff) {
             best = Some(score);
             if score == 1.0 {
                 break;
@@ -719,11 +749,24 @@ pub fn weighted_ratio_impl(a: &str, b: &str) -> f64 {
     }
     let sort = token_sort_ratio_impl(a, b);
     let set = token_set_ratio_from_normalized(&norm_a, &norm_b);
-    let partial = partial_ratio_from_normalized(&norm_a, &norm_b);
+    best_with_partial(raw.max(sort).max(set), &norm_a, &norm_b, 0.0, None)
+}
 
-    [raw, sort, set, partial]
-        .into_iter()
-        .fold(0.0_f64, f64::max)
+/// `max(best, partial_ratio(norm_a, norm_b))`, skipping the (expensive)
+/// partial ratio when it cannot change the result: it is only computed down to
+/// `max(best, floor)`, and not at all once `best` is already `1.0`.
+fn best_with_partial(
+    best: f64,
+    norm_a: &str,
+    norm_b: &str,
+    floor: f64,
+    cached_a: Option<&rapid_lev::BatchComparator<char>>,
+) -> f64 {
+    if best == 1.0 {
+        return best;
+    }
+    partial_ratio_at_least(norm_a, norm_b, best.max(floor), cached_a)
+        .map_or(best, |partial| best.max(partial))
 }
 
 // ─── Token Sort Ratio ────────────────────────────────────────────────────────
@@ -741,15 +784,14 @@ pub fn token_sort_ratio_many(
     candidates: &[String],
     min_similarity: Option<f64>,
 ) -> Result<Vec<f64>, DistanceError> {
-    let sorted_ref = sorted_tokens(reference).join(" ");
-    similarity_many_with(candidates, min_similarity, |c, _| {
-        let sorted_c = sorted_tokens(c).join(" ");
-        if sorted_ref.is_empty() && sorted_c.is_empty() {
-            1.0
-        } else {
-            rapid_lev::normalized_similarity(sorted_ref.chars(), sorted_c.chars())
-        }
-    })
+    let sorted_ref = sorted_token_string(reference);
+    let scorer = rapid_lev::BatchComparator::new(sorted_ref.chars());
+    similarity_many(
+        candidates,
+        min_similarity,
+        |c| scorer.normalized_similarity(sorted_token_string(c).chars()),
+        |c, cutoff| lev_similarity_at_least(&scorer, sorted_token_string(c).chars(), cutoff),
+    )
 }
 
 // ─── Token Set Ratio ─────────────────────────────────────────────────────────
@@ -795,10 +837,11 @@ pub fn partial_ratio_many(
     min_similarity: Option<f64>,
 ) -> Result<Vec<f64>, DistanceError> {
     let norm_ref = normalize_str(reference);
+    let ref_scorer = rapid_lev::BatchComparator::new(norm_ref.chars());
     similarity_many_with(candidates, min_similarity, |c, threshold| {
         let norm_c = normalize_str(c);
         let floor = threshold.pruning_cutoff().unwrap_or(0.0);
-        partial_ratio_at_least(&norm_ref, &norm_c, floor).unwrap_or(0.0)
+        partial_ratio_at_least(&norm_ref, &norm_c, floor, Some(&ref_scorer)).unwrap_or(0.0)
     })
 }
 
@@ -818,15 +861,16 @@ pub fn weighted_ratio_many(
     min_similarity: Option<f64>,
 ) -> Result<Vec<f64>, DistanceError> {
     let norm_ref = normalize_str(reference);
-    let sorted_ref = sorted_tokens(reference).join(" ");
     let tokens_ref: BTreeSet<&str> = norm_ref.split_whitespace().collect();
     let ref_scorer = rapid_lev::BatchComparator::new(norm_ref.chars());
     let ref_is_normalized = norm_ref == reference;
     // Only needed when the original reference differs from the normalized one.
     let raw_ref_scorer =
         (!ref_is_normalized).then(|| rapid_lev::BatchComparator::new(reference.chars()));
+    let sorted_ref = sorted_token_string(reference);
+    let sort_scorer = rapid_lev::BatchComparator::new(sorted_ref.chars());
 
-    similarity_many_with(candidates, min_similarity, |c, _| {
+    similarity_many_with(candidates, min_similarity, |c, threshold| {
         let norm_c = normalize_str(c);
         let raw_normalized = ref_scorer.normalized_similarity(norm_c.chars());
         if raw_normalized == 1.0 {
@@ -843,22 +887,20 @@ pub fn weighted_ratio_many(
             return 1.0;
         }
 
-        let sorted_c = sorted_tokens(c).join(" ");
-        let sort = if sorted_ref.is_empty() && sorted_c.is_empty() {
-            1.0
-        } else {
-            rapid_lev::normalized_similarity(sorted_ref.chars(), sorted_c.chars())
-        };
+        let sort = sort_scorer.normalized_similarity(sorted_token_string(c).chars());
         let set = if norm_ref.is_empty() || norm_c.is_empty() {
             token_set_ratio_from_normalized(&norm_ref, &norm_c)
         } else {
             let tokens_c: BTreeSet<&str> = norm_c.split_whitespace().collect();
             token_set_ratio_from_tokens(&tokens_ref, &tokens_c)
         };
-        let partial = partial_ratio_from_normalized(&norm_ref, &norm_c);
-
-        [raw, sort, set, partial]
-            .into_iter()
-            .fold(0.0_f64, f64::max)
+        let floor = threshold.pruning_cutoff().unwrap_or(0.0);
+        best_with_partial(
+            raw.max(sort).max(set),
+            &norm_ref,
+            &norm_c,
+            floor,
+            Some(&ref_scorer),
+        )
     })
 }
