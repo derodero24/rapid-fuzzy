@@ -138,8 +138,11 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # The published package has no runtime dependencies, so `--prod` could
+      # never fail. Audit everything that runs in CI and on contributors'
+      # machines instead; pnpm-workspace.yaml overrides patch transitive ones.
       - name: Audit npm dependencies
-        run: pnpm audit --prod
+        run: pnpm audit --audit-level=high
       - name: Audit Rust dependencies
         uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2
 
