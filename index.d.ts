@@ -29,8 +29,12 @@ export declare class FuzzyIndex {
    * Returns matches sorted by score (best match first).
    * Scores are normalized to a 0.0-1.0 range where 1.0 is a perfect match.
    *
+   * Results are identical to `search(query, items, options)` over the same
+   * items, including the query syntax and whitespace rules.
+   *
    * The second argument accepts either a number (maxResults shorthand) or a
-   * SearchOptions object.
+   * SearchOptions object. `maxResults` must be a non-negative integer or
+   * `Infinity`.
    */
   search(query: string, options?: number | SearchOptions | undefined | null): Array<SearchResult>
   /**
@@ -48,7 +52,8 @@ export declare class FuzzyIndex {
    * String cloning overhead for each result.
    *
    * The second argument accepts either a number (maxResults shorthand) or a
-   * SearchOptions object.
+   * SearchOptions object. `maxResults` must be a non-negative integer or
+   * `Infinity`.
    */
   searchIndices(query: string, options?: number | SearchOptions | undefined | null): Array<IndexSearchResult>
   /** Add a single item to the index. */
@@ -471,8 +476,14 @@ export declare function partialRatioMany(reference: string, candidates: Array<st
  * Uses the nucleo algorithm (same as Helix editor), which is
  * significantly faster than fzf/skim for large datasets.
  *
+ * Terms are separated by any whitespace (including the ideographic space
+ * U+3000). A query without any search term (empty, whitespace-only or only
+ * syntax such as `^`) returns no results, and so does a query containing a
+ * single term longer than 2,520 characters, which cannot be scored.
+ *
  * The third argument accepts either a number (maxResults for backward
  * compatibility) or a SearchOptions object with maxResults and minScore.
+ * `maxResults` must be a non-negative integer or `Infinity`.
  */
 export declare function search(query: string, items: Array<string>, options?: number | SearchOptions | undefined | null): Array<SearchResult>
 
@@ -489,7 +500,10 @@ export declare function searchKeys(query: string, keyTexts: Array<Array<string>>
 
 /** Options for the search function. */
 export interface SearchOptions {
-  /** Maximum number of results to return. */
+  /**
+   * Maximum number of results to return: a non-negative integer, or
+   * `Infinity` for no limit. NaN, negative and fractional values throw.
+   */
   maxResults?: number
   /** Minimum normalized score (0.0-1.0) to include in results. */
   minScore?: number
@@ -501,7 +515,8 @@ export interface SearchOptions {
    */
   isCaseSensitive?: boolean
   /**
-   * If true, return all items when the query is empty (or whitespace-only).
+   * If true, return all items when the query has no search term: empty,
+   * whitespace-only, or only query syntax such as `^` or `!`.
    * Useful for filter-as-you-type UIs where the full list should appear
    * before the user starts typing. Default is false.
    */
