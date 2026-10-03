@@ -245,7 +245,7 @@ mod tests {
         for r in &results {
             assert!(r.score >= 0.0 && r.score <= 1.0);
             for &ks in &r.key_scores {
-                assert!(ks >= 0.0 && ks <= 1.0);
+                assert!((0.0..=1.0).contains(&ks));
             }
         }
     }

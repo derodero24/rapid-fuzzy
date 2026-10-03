@@ -141,8 +141,10 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-      - run: cargo fmt -- --check
-      - run: cargo clippy -- -W clippy::all
+      - run: cargo fmt --all -- --check
+      # Lint levels live in [workspace.lints] (root Cargo.toml); -D warnings
+      # turns every warning, rustc's included, into a failure.
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
   rust-test:
     name: Rust Test
@@ -155,7 +157,7 @@ jobs:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-      - run: cargo test
+      - run: cargo test --workspace --locked
 
   build:
     name: Build - ${{ matrix.settings.target }}

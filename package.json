@@ -136,7 +136,7 @@
     "bench:charts": "npx tsx scripts/generate-bench-charts.ts",
     "publint": "publint",
     "bench:rust": "cargo bench -p rapid-fuzzy-bench",
-    "verify": "pnpm run check && cargo clippy -- -W clippy::all && cargo test && pnpm run build && pnpm run typecheck && pnpm test",
+    "verify": "pnpm run check && cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace && pnpm run build && pnpm run typecheck && pnpm test",
     "clean": "rm -rf target coverage *.node *.wasm",
     "prepare": "lefthook install"
   },

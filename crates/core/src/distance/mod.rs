@@ -630,7 +630,7 @@ mod tests {
         let score = normalized_hamming("karolin".into(), "kathrin".into());
         assert!(score.is_some());
         let s = score.unwrap();
-        assert!(s >= 0.0 && s <= 1.0);
+        assert!((0.0..=1.0).contains(&s));
         // Different lengths return None
         assert_eq!(normalized_hamming("abc".into(), "ab".into()), None);
         assert_eq!(normalized_hamming("".into(), "a".into()), None);
@@ -652,7 +652,7 @@ mod tests {
         assert_eq!(normalized_indel("".into(), "".into()), 1.0);
         // Similarity is in [0, 1]
         let score = normalized_indel("abc".into(), "xyz".into());
-        assert!(score >= 0.0 && score <= 1.0);
+        assert!((0.0..=1.0).contains(&score));
         // Partially similar strings
         let score2 = normalized_indel("kitten".into(), "sitting".into());
         assert!(score2 > 0.0 && score2 < 1.0);
@@ -886,7 +886,7 @@ mod tests {
             #[test]
             fn normalized_levenshtein_bounded(a in ".*", b in ".*") {
                 let score = normalized_levenshtein(a, b);
-                prop_assert!(score >= 0.0 && score <= 1.0, "score {} out of [0, 1]", score);
+                prop_assert!((0.0..=1.0).contains(&score), "score {} out of [0, 1]", score);
             }
 
             #[test]
@@ -907,7 +907,7 @@ mod tests {
             #[test]
             fn jaro_bounded(a in ".*", b in ".*") {
                 let score = jaro(a, b);
-                prop_assert!(score >= 0.0 && score <= 1.0, "score {} out of [0, 1]", score);
+                prop_assert!((0.0..=1.0).contains(&score), "score {} out of [0, 1]", score);
             }
 
             #[test]
@@ -928,7 +928,7 @@ mod tests {
             #[test]
             fn jaro_winkler_bounded(a in ".*", b in ".*") {
                 let score = jaro_winkler(a, b);
-                prop_assert!(score >= 0.0 && score <= 1.0, "score {} out of [0, 1]", score);
+                prop_assert!((0.0..=1.0).contains(&score), "score {} out of [0, 1]", score);
             }
 
             #[test]
@@ -949,7 +949,7 @@ mod tests {
             #[test]
             fn sorensen_dice_bounded(a in ".*", b in ".*") {
                 let score = sorensen_dice(a, b);
-                prop_assert!(score >= 0.0 && score <= 1.0, "score {} out of [0, 1]", score);
+                prop_assert!((0.0..=1.0).contains(&score), "score {} out of [0, 1]", score);
             }
 
             #[test]
@@ -971,7 +971,7 @@ mod tests {
             #[test]
             fn token_sort_ratio_bounded(a in ".*", b in ".*") {
                 let score = token_sort_ratio(a, b);
-                prop_assert!(score >= 0.0 && score <= 1.0, "score {} out of [0, 1]", score);
+                prop_assert!((0.0..=1.0).contains(&score), "score {} out of [0, 1]", score);
             }
 
             #[test]
@@ -992,7 +992,7 @@ mod tests {
             #[test]
             fn token_set_ratio_bounded(a in ".*", b in ".*") {
                 let score = token_set_ratio(a, b);
-                prop_assert!(score >= 0.0 && score <= 1.0, "score {} out of [0, 1]", score);
+                prop_assert!((0.0..=1.0).contains(&score), "score {} out of [0, 1]", score);
             }
 
             #[test]
@@ -1006,7 +1006,7 @@ mod tests {
             #[test]
             fn partial_ratio_bounded(a in ".*", b in ".*") {
                 let score = partial_ratio(a, b);
-                prop_assert!(score >= 0.0 && score <= 1.0, "score {} out of [0, 1]", score);
+                prop_assert!((0.0..=1.0).contains(&score), "score {} out of [0, 1]", score);
             }
 
             #[test]
@@ -1020,7 +1020,7 @@ mod tests {
             #[test]
             fn weighted_ratio_bounded(a in ".*", b in ".*") {
                 let score = weighted_ratio(a, b);
-                prop_assert!(score >= 0.0 && score <= 1.0, "score {} out of [0, 1]", score);
+                prop_assert!((0.0..=1.0).contains(&score), "score {} out of [0, 1]", score);
             }
 
             #[test]
@@ -1600,19 +1600,19 @@ mod tests {
             #[test]
             fn normalized_levenshtein_unicode_bounded(ref a in any::<String>(), ref b in any::<String>()) {
                 let score = normalized_levenshtein(a.clone(), b.clone());
-                prop_assert!(score >= 0.0 && score <= 1.0, "score {} out of [0, 1]", score);
+                prop_assert!((0.0..=1.0).contains(&score), "score {} out of [0, 1]", score);
             }
 
             #[test]
             fn jaro_unicode_bounded(ref a in any::<String>(), ref b in any::<String>()) {
                 let score = jaro(a.clone(), b.clone());
-                prop_assert!(score >= 0.0 && score <= 1.0, "score {} out of [0, 1]", score);
+                prop_assert!((0.0..=1.0).contains(&score), "score {} out of [0, 1]", score);
             }
 
             #[test]
             fn jaro_winkler_unicode_bounded(ref a in any::<String>(), ref b in any::<String>()) {
                 let score = jaro_winkler(a.clone(), b.clone());
-                prop_assert!(score >= 0.0 && score <= 1.0, "score {} out of [0, 1]", score);
+                prop_assert!((0.0..=1.0).contains(&score), "score {} out of [0, 1]", score);
             }
 
             #[test]
@@ -1632,7 +1632,7 @@ mod tests {
             #[test]
             fn sorensen_dice_unicode_bounded(ref a in any::<String>(), ref b in any::<String>()) {
                 let score = sorensen_dice(a.clone(), b.clone());
-                prop_assert!(score >= 0.0 && score <= 1.0, "score {} out of [0, 1]", score);
+                prop_assert!((0.0..=1.0).contains(&score), "score {} out of [0, 1]", score);
             }
 
             #[test]
@@ -1647,7 +1647,7 @@ mod tests {
             #[test]
             fn token_sort_ratio_unicode_bounded(ref a in any::<String>(), ref b in any::<String>()) {
                 let score = token_sort_ratio(a.clone(), b.clone());
-                prop_assert!(score >= 0.0 && score <= 1.0, "score {} out of [0, 1]", score);
+                prop_assert!((0.0..=1.0).contains(&score), "score {} out of [0, 1]", score);
             }
 
             #[test]
@@ -1662,7 +1662,7 @@ mod tests {
             #[test]
             fn token_set_ratio_unicode_bounded(ref a in any::<String>(), ref b in any::<String>()) {
                 let score = token_set_ratio(a.clone(), b.clone());
-                prop_assert!(score >= 0.0 && score <= 1.0, "score {} out of [0, 1]", score);
+                prop_assert!((0.0..=1.0).contains(&score), "score {} out of [0, 1]", score);
             }
 
             // --- Partial Ratio Unicode properties ---
@@ -1670,7 +1670,7 @@ mod tests {
             #[test]
             fn partial_ratio_unicode_bounded(ref a in any::<String>(), ref b in any::<String>()) {
                 let score = partial_ratio(a.clone(), b.clone());
-                prop_assert!(score >= 0.0 && score <= 1.0, "score {} out of [0, 1]", score);
+                prop_assert!((0.0..=1.0).contains(&score), "score {} out of [0, 1]", score);
             }
 
             // --- Weighted Ratio Unicode properties ---
@@ -1678,7 +1678,7 @@ mod tests {
             #[test]
             fn weighted_ratio_unicode_bounded(ref a in any::<String>(), ref b in any::<String>()) {
                 let score = weighted_ratio(a.clone(), b.clone());
-                prop_assert!(score >= 0.0 && score <= 1.0, "score {} out of [0, 1]", score);
+                prop_assert!((0.0..=1.0).contains(&score), "score {} out of [0, 1]", score);
             }
         }
     }

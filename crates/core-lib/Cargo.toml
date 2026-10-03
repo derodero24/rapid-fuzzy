@@ -12,3 +12,6 @@ crate-type = ["rlib"]
 nucleo-matcher = { workspace = true }
 strsim = { workspace = true }
 rapidfuzz = { workspace = true }
+
+[lints]
+workspace = true
