@@ -12,6 +12,7 @@ export const fuzzyindex_addMany: (a: number, b: number, c: number) => void;
 export const fuzzyindex_closest: (a: number, b: number, c: number, d: number, e: number) => number;
 export const fuzzyindex_deserialize: (a: number, b: number, c: number) => void;
 export const fuzzyindex_destroy: (a: number) => void;
+export const fuzzyindex_fromAsync: (a: number, b: number) => number;
 export const fuzzyindex_new: (a: number, b: number) => number;
 export const fuzzyindex_remove: (a: number, b: number) => number;
 export const fuzzyindex_search: (a: number, b: number, c: number, d: number, e: number) => void;

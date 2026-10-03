@@ -66,6 +66,7 @@ export type DeclarationChecks = [
   Expect<Equal<ReturnType<Wasm.FuzzyIndex['search']>, SearchResult[]>>,
   Expect<Equal<ReturnType<Wasm.FuzzyIndex['searchIndices']>, IndexSearchResult[]>>,
   Expect<Equal<ReturnType<Wasm.FuzzyIndex['closest']>, string | null>>,
+  Expect<Equal<ReturnType<typeof Wasm.FuzzyIndex.fromAsync>, Promise<Wasm.FuzzyIndex>>>,
   Expect<Equal<ReturnType<Wasm.KeyedFuzzyIndex['search']>, KeySearchResult[]>>,
   Expect<Equal<ReturnType<Wasm.KeyedFuzzyIndex['closest']>, number | null>>,
   Expect<Equal<ReturnType<typeof Wasm.hamming>, number | null>>,

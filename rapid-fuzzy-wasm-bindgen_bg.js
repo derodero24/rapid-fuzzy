@@ -83,6 +83,21 @@ export class FuzzyIndex {
         wasm.fuzzyindex_destroy(this.__wbg_ptr);
     }
     /**
+     * Create a new FuzzyIndex, returning a Promise (parity with the Node.js binding).
+     *
+     * The WebAssembly build has no worker thread, so the index is built
+     * synchronously on the calling thread and the returned Promise is already
+     * resolved. Prefer the constructor when you do not need a Promise.
+     * @param {string[]} items
+     * @returns {Promise<FuzzyIndex>}
+     */
+    static fromAsync(items) {
+        const ptr0 = passArrayJsValueToWasm0(items, wasm.__wbindgen_export);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.fuzzyindex_fromAsync(ptr0, len0);
+        return takeObject(ret);
+    }
+    /**
      * Create a new FuzzyIndex from an array of strings.
      * @param {string[]} items
      */
@@ -1550,6 +1565,10 @@ export function __wbg_done_cffed884d87aa22e(arg0) {
     const ret = getObject(arg0).done;
     return ret;
 }
+export function __wbg_fuzzyindex_new(arg0) {
+    const ret = FuzzyIndex.__wrap(arg0);
+    return addHeapObject(ret);
+}
 export function __wbg_get_6cf5a4d4d8ad3c5a() { return handleError(function (arg0, arg1) {
     const ret = Reflect.get(getObject(arg0), getObject(arg1));
     return addHeapObject(ret);
@@ -1636,6 +1655,10 @@ export function __wbg_prototypesetcall_ae9f5e7459250748(arg0, arg1, arg2) {
 export function __wbg_push_bfdf956ba476f65b(arg0, arg1) {
     const ret = getObject(arg0).push(getObject(arg1));
     return ret;
+}
+export function __wbg_resolve_35ec7e0c6af4c82c(arg0) {
+    const ret = Promise.resolve(getObject(arg0));
+    return addHeapObject(ret);
 }
 export function __wbg_set_13d25b81ab403f5e(arg0, arg1, arg2) {
     getObject(arg0)[arg1 >>> 0] = takeObject(arg2);

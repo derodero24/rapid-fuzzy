@@ -33,6 +33,16 @@ impl FuzzyIndex {
         self.core.size()
     }
 
+    /// Create a new FuzzyIndex, returning a Promise (parity with the Node.js binding).
+    ///
+    /// The WebAssembly build has no worker thread, so the index is built
+    /// synchronously on the calling thread and the returned Promise is already
+    /// resolved. Prefer the constructor when you do not need a Promise.
+    #[wasm_bindgen(js_name = "fromAsync", unchecked_return_type = "Promise<FuzzyIndex>")]
+    pub fn from_async(items: Vec<String>) -> js_sys::Promise {
+        js_sys::Promise::resolve(&JsValue::from(Self::new(items)))
+    }
+
     /// Search the index for items matching the query.
     ///
     /// Returns matches sorted by score (best match first).

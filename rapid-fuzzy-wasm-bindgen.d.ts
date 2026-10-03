@@ -145,6 +145,14 @@ export class FuzzyIndex {
      */
     destroy(): void;
     /**
+     * Create a new FuzzyIndex, returning a Promise (parity with the Node.js binding).
+     *
+     * The WebAssembly build has no worker thread, so the index is built
+     * synchronously on the calling thread and the returned Promise is already
+     * resolved. Prefer the constructor when you do not need a Promise.
+     */
+    static fromAsync(items: string[]): Promise<FuzzyIndex>;
+    /**
      * Create a new FuzzyIndex from an array of strings.
      */
     constructor(items: string[]);
