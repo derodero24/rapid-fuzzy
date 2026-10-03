@@ -242,6 +242,9 @@ impl KeyedFuzzyIndexCore {
     }
 
     /// Add a single item to the index.
+    ///
+    /// `key_values` must hold one value per key; otherwise an error is
+    /// returned and the index is left unchanged.
     pub fn add(&mut self, key_values: Vec<String>) -> Result<(), String> {
         let num_keys = self.key_texts.len();
         if key_values.len() != num_keys {
@@ -250,12 +253,51 @@ impl KeyedFuzzyIndexCore {
                 key_values.len()
             ));
         }
+        self.push_row(key_values);
+        Ok(())
+    }
+
+    /// Add multiple items to the index at once.
+    ///
+    /// Every row is validated before any is added: if one row does not hold
+    /// exactly one value per key, an error naming it is returned and the
+    /// index is left unchanged.
+    pub fn add_many(&mut self, items_key_values: Vec<Vec<String>>) -> Result<(), String> {
+        let num_keys = self.key_texts.len();
+        if let Some((i, row)) = items_key_values
+            .iter()
+            .enumerate()
+            .find(|(_, row)| row.len() != num_keys)
+        {
+            return Err(format!(
+                "Expected {num_keys} key values for item {i}, got {}",
+                row.len()
+            ));
+        }
+        let additional = items_key_values.len();
+        for ((texts, utf32), masks) in self
+            .key_texts
+            .iter_mut()
+            .zip(self.utf32_keys.iter_mut())
+            .zip(self.key_char_masks.iter_mut())
+        {
+            texts.reserve(additional);
+            utf32.reserve(additional);
+            masks.reserve(additional);
+        }
+        for key_values in items_key_values {
+            self.push_row(key_values);
+        }
+        Ok(())
+    }
+
+    /// Append one row whose length has already been checked against the key count.
+    fn push_row(&mut self, key_values: Vec<String>) {
         for (k, value) in key_values.into_iter().enumerate() {
             self.utf32_keys[k].push(Utf32String::from(value.as_str()));
             self.key_char_masks[k].push(compute_char_mask(&value));
             self.key_texts[k].push(value);
         }
-        Ok(())
     }
 
     /// Remove the item at the given index.
@@ -280,12 +322,21 @@ impl KeyedFuzzyIndexCore {
         true
     }
 
-    /// Free the internal data. After calling this, the index is empty.
+    /// Free the item data. After calling this, the index is empty.
+    ///
+    /// The key configuration (number of keys and their weights) is kept, so
+    /// the index stays usable: items can be added again and it serializes
+    /// as a valid empty index.
     pub fn destroy(&mut self) {
-        self.key_texts = Vec::new();
-        self.utf32_keys = Vec::new();
-        self.key_char_masks = Vec::new();
-        self.weights = Vec::new();
-        self.total_weight = 0.0;
+        for ((texts, utf32), masks) in self
+            .key_texts
+            .iter_mut()
+            .zip(self.utf32_keys.iter_mut())
+            .zip(self.key_char_masks.iter_mut())
+        {
+            *texts = Vec::new();
+            *utf32 = Vec::new();
+            *masks = Vec::new();
+        }
     }
 }
