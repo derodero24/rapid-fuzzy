@@ -1,5 +1,8 @@
 import { expect, test } from '@playwright/test';
 
+// The page is a consumer app that imports the packed package through Vite
+// (see e2e/serve-browser-app.mjs); each project runs it from a production
+// build and from the dev server.
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
   // Wait for WASM to load (up to 30s)
@@ -14,10 +17,70 @@ test.beforeEach(async ({ page }) => {
 
 test.describe('exports', () => {
   test('all expected functions are exported', async ({ page }) => {
-    const allPresent = await page.evaluate(() => window.__results.allExportsPresent);
-    const missing = await page.evaluate(() => window.__results.missingExports);
-    expect(allPresent).toBe(true);
-    expect(missing).toEqual([]);
+    const exported = await page.evaluate(() => window.__results.exports);
+    const expected = [
+      'closest',
+      'search',
+      'searchKeys',
+      'FuzzyIndex',
+      'KeyedFuzzyIndex',
+      'MatchType',
+      'highlight',
+      'highlightRanges',
+      'searchObjects',
+      'FuzzyObjectIndex',
+      ...['levenshtein', 'normalizedLevenshtein', 'damerauLevenshtein', 'hamming', 'indel']
+        .concat(['normalizedIndel', 'normalizedHamming', 'jaro', 'jaroWinkler', 'sorensenDice'])
+        .concat(['tokenSortRatio', 'tokenSetRatio', 'partialRatio', 'weightedRatio'])
+        .flatMap((name) => [name, `${name}Batch`, `${name}Many`]),
+      ...['levenshtein', 'damerauLevenshtein', 'indel', 'hamming'].map((n) => `${n}ManyU32`),
+      ...['jaro', 'jaroWinkler', 'sorensenDice', 'normalizedLevenshtein', 'normalizedIndel']
+        .concat(['tokenSortRatio', 'tokenSetRatio', 'partialRatio', 'weightedRatio'])
+        .concat(['normalizedHamming'])
+        .map((n) => `${n}ManyF64`),
+    ];
+    expect(exported).toEqual(expected.sort());
+  });
+});
+
+test.describe('package entry points', () => {
+  test('the bundler serves the .wasm referenced by the browser entry', async ({ page }) => {
+    const requests = await page.evaluate(() => window.__results.wasmRequests);
+    expect(requests).toHaveLength(1);
+  });
+
+  test('MatchType and the TypedArray variants', async ({ page }) => {
+    const results = await page.evaluate(() => window.__results);
+    expect(results.matchType).toBe('Prefix');
+    expect(results.matchTypeEnum).toEqual({
+      Exact: 'Exact',
+      Prefix: 'Prefix',
+      Contains: 'Contains',
+      Fuzzy: 'Fuzzy',
+    });
+    expect(results.levenshteinManyU32).toEqual({ typed: true, values: [0, 4] });
+    expect(results.hammingManyU32).toEqual([0, 0xffffffff]);
+  });
+
+  test('highlight from the main entry and rapid-fuzzy/highlight', async ({ page }) => {
+    const results = await page.evaluate(() => window.__results);
+    expect(results.highlight).toBe('<b>f</b>uz<b>zy</b>');
+    expect(results.highlightSubpath).toBe('[f]uz[zy]');
+    expect(results.highlightRanges).toEqual([
+      { start: 0, end: 1, matched: true },
+      { start: 1, end: 3, matched: false },
+      { start: 3, end: 5, matched: true },
+    ]);
+  });
+
+  test('object search from rapid-fuzzy/objects', async ({ page }) => {
+    const results = await page.evaluate(() => window.__results);
+    expect(results.searchObjects).toEqual(['jane@example.com']);
+    expect(results.objectIndexSearch[0]).toBe('John Smith');
+    expect(results.objectIndexSearch).toContain('Johnny Cash');
+    expect(results.objectIndexClosest).toBe('Jane Doe');
+    expect(results.objectIndexSize).toBe(3);
+    expect(results.objectsFromMainEntry).toBe(true);
   });
 });
 

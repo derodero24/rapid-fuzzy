@@ -1,7 +1,18 @@
 import { assert, assertEquals, assertNotEquals } from 'jsr:@std/assert';
 
-// Use the wasm-bindgen bundler-target output which Deno supports natively.
-const wasm = await import('../rapid-fuzzy-wasm-bindgen.js');
+// The package imports itself by name: Deno resolves it through the "deno" export
+// condition to the WebAssembly build (browser.mjs), which reads the .wasm file
+// (--allow-read). `pnpm run test:deno` passes --no-check: Deno type-checks a
+// self-referenced package as local files, not with the npm resolution users get
+// for `npm:rapid-fuzzy` (whose declarations __test__/types/browser.types.ts covers).
+import * as wasm from 'rapid-fuzzy';
+import { highlight } from 'rapid-fuzzy/highlight';
+import { FuzzyObjectIndex } from 'rapid-fuzzy/objects';
+
+Deno.test('resolves the WebAssembly build', () => {
+  assert(import.meta.resolve('rapid-fuzzy').endsWith('/browser.mjs'));
+  assert(import.meta.resolve('rapid-fuzzy/objects').endsWith('/browser.mjs'));
+});
 
 Deno.test('distance - levenshtein', () => {
   assertEquals(wasm.levenshtein('hello', 'hello'), 0);
@@ -133,4 +144,16 @@ Deno.test('FuzzyIndex - lifecycle', () => {
 
   index.destroy();
   assertEquals(index.size, 0);
+});
+
+Deno.test('highlight - rapid-fuzzy/highlight', () => {
+  const [hit] = wasm.search('fzy', ['fuzzy'], { includePositions: true });
+  assert(hit !== undefined);
+  assertEquals(highlight(hit.item, hit.positions, '[', ']'), '[f]uz[zy]');
+});
+
+Deno.test('objects - FuzzyObjectIndex', () => {
+  const index = new FuzzyObjectIndex([{ name: 'Jane' }, { name: 'John' }], { keys: ['name'] });
+  assertEquals(index.search('jane')[0]?.item, { name: 'Jane' });
+  assertEquals(index.closest('jon'), { name: 'John' });
 });

@@ -1,14 +1,16 @@
 // Type-level tests for the generated wasm-bindgen declarations
-// (rapid-fuzzy-wasm-bindgen.d.ts). Checked by `pnpm run typecheck` under the
+// (rapid-fuzzy-wasm-bindgen.d.mts). Checked by `pnpm run typecheck` under the
 // repo's strict tsconfig; never executed.
-import type * as Wasm from '../../rapid-fuzzy-wasm-bindgen.js';
+import type * as Wasm from '../../rapid-fuzzy-wasm-bindgen.mjs' with {
+  'resolution-mode': 'import',
+};
 import type {
   IndexSearchResult,
   KeySearchResult,
   MatchType,
   SearchOptions,
   SearchResult,
-} from '../../rapid-fuzzy-wasm-bindgen.js';
+} from '../../rapid-fuzzy-wasm-bindgen.mjs' with { 'resolution-mode': 'import' };
 
 type Equal<X, Y> =
   (<T>() => T extends X ? 1 : 2) extends <T>() => T extends Y ? 1 : 2 ? true : false;
