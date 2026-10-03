@@ -11,11 +11,14 @@
     Search: <input id="query" type="search" placeholder="e.g. typscript" />
   </label>
   <ul id="results"></ul>
+  <p id="one-off"></p>
 
   <script type="module">
-    // Import directly from esm.sh — no npm install or bundler required.
-    // esm.sh resolves the `browser` export condition and serves the WASM build.
-    import { FuzzyIndex, search } from 'https://esm.sh/rapid-fuzzy';
+    // Import the browser build straight from jsDelivr: no npm install or bundler.
+    // browser.mjs is plain ES modules; it loads rapid-fuzzy-wasm-bindgen_bg.wasm
+    // from the same directory before the import resolves. Pin an exact version
+    // (e.g. rapid-fuzzy@2.2.0) in production.
+    import { FuzzyIndex, highlight, search } from 'https://cdn.jsdelivr.net/npm/rapid-fuzzy@2/browser.mjs';
 
     const items = ['TypeScript', 'JavaScript', 'Python', 'Rust', 'Go', 'TypeSpec'];
     const index = new FuzzyIndex(items);
@@ -25,7 +28,14 @@
 
     function render(query) {
       const matches = query ? index.search(query) : [];
-      list.innerHTML = matches.map((r) => `<li>${r.item} (${r.score.toFixed(2)})</li>`).join('');
+      // Build DOM nodes instead of HTML strings, so items are never parsed as HTML.
+      list.replaceChildren(
+        ...matches.map((r) => {
+          const li = document.createElement('li');
+          li.textContent = `${r.item} (${r.score.toFixed(2)})`;
+          return li;
+        }),
+      );
     }
 
     input.addEventListener('input', (e) => render(e.currentTarget.value));
@@ -34,11 +44,12 @@
     input.value = 'typscript';
     render('typscript');
 
-    // Also demonstrate standalone search (no index needed for one-off queries)
-    const oneOff = search('javas', items);
-    const firstResult = document.createElement('p');
-    firstResult.textContent = `search("javas") → ${oneOff.map((r) => r.item).join(', ')}`;
-    document.body.appendChild(firstResult);
+    // Standalone search (no index needed for one-off queries), with the matched
+    // characters marked by highlight()
+    const [best] = search('javas', items, { includePositions: true });
+    document.getElementById('one-off').textContent = best
+      ? `search("javas") → ${highlight(best.item, best.positions, '[', ']')}`
+      : 'search("javas") → no match';
 
     // Release Rust-side memory when the page is unloaded
     window.addEventListener('beforeunload', () => index.destroy());

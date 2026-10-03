@@ -51,8 +51,8 @@ pnpm add rapid-fuzzy
 ### Runtime-specific notes
 
 - **Node.js** (>=22): Uses native bindings via napi-rs for best performance. On a platform without a prebuilt binary, install the WASI fallback alongside the package (`npm install rapid-fuzzy rapid-fuzzy-wasm32-wasi`, requires Node 22.13+ or 23.5+); the loader picks it up automatically, or set `NAPI_RS_FORCE_WASI=true` to prefer it over the native binding.
-- **Bun**: Uses native napi-rs bindings. WASM fallback also works — see [Bun section](#bun) below.
-- **Browser / CDN / Cloudflare Workers / Deno**: Falls back to the wasm-bindgen WASM build (~195 KB raw). No `SharedArrayBuffer` or COOP/COEP headers required.
+- **Bun**: Uses native napi-rs bindings. The WASM build is available with `--conditions=browser` — see [Bun section](#bun) below.
+- **Browsers / CDN / Cloudflare Workers / Deno**: Use the wasm-bindgen WASM build (540 KB, ~200 KB gzipped), selected automatically through the package's `browser`, `workerd` and `deno` export conditions. No `SharedArrayBuffer` or COOP/COEP headers required.
 
 ### Framework Integration (SSR)
 
@@ -78,17 +78,28 @@ export default {
 };
 ```
 
-On the client side, rapid-fuzzy automatically falls back to WASM — no additional configuration needed.
+On the client side, bundlers pick the WASM build through the `browser` export condition — no additional configuration needed (tested with Next.js 16 client components, both Turbopack and webpack, and Vite 8). The Next.js / Vercel Edge runtime is not supported: use the default Node.js runtime for server code.
 
 ### Browser and Edge Runtime Usage
 
+The browser build (`rapid-fuzzy` resolved with the `browser` condition) instantiates the WebAssembly module with top-level `await` while it is imported, so the API is synchronous and ready to use once the `import` resolves — there is no `init()` to call. It exports the same functions as the Node.js entry, and `rapid-fuzzy/highlight` and `rapid-fuzzy/objects` work as well. The only differences: `FuzzyObjectIndex` has no `serialize()` / `deserialize()` (they exchange Node.js Buffers), and `FuzzyIndex.fromAsync()` builds the index synchronously. The WASM build is ES-module-only, so `require('rapid-fuzzy')` keeps loading the Node.js entry even where the `browser` condition is set (for example in Jest with `jest-environment-jsdom`).
+
+#### Bundlers
+
+| Bundler | Setup |
+| --- | --- |
+| Vite 8 (build and dev server), webpack 5, Next.js 16 (Turbopack and webpack) | None. The `.wasm` is emitted as an asset from its `new URL(..., import.meta.url)` reference. |
+| esbuild, `bun build` | Copy `node_modules/rapid-fuzzy/rapid-fuzzy-wasm-bindgen_bg.wasm` next to the output bundle: these bundlers keep the `new URL('./rapid-fuzzy-wasm-bindgen_bg.wasm', import.meta.url)` reference but do not emit the file. |
+
+The build target must support top-level `await` (ES2022; the defaults of the bundlers above do).
+
 #### CDN (no bundler required)
 
-Import directly from [esm.sh](https://esm.sh) in any `<script type="module">`:
+The browser build is plain ES modules, so it runs directly from a CDN that serves the package files unmodified, such as [jsDelivr](https://www.jsdelivr.com/) or [unpkg](https://unpkg.com/):
 
 ```html
 <script type="module">
-  import { search, FuzzyIndex } from 'https://esm.sh/rapid-fuzzy';
+  import { search, FuzzyIndex } from 'https://cdn.jsdelivr.net/npm/rapid-fuzzy@2/browser.mjs';
 
   const results = search('typscript', ['TypeScript', 'JavaScript', 'Python']);
   console.log(results[0].item); // 'TypeScript'
@@ -99,11 +110,11 @@ Import directly from [esm.sh](https://esm.sh) in any `<script type="module">`:
 </script>
 ```
 
-See [`examples/cdn-usage/`](examples/cdn-usage/) for a complete HTML example.
+Pin an exact version in production (`rapid-fuzzy@2.2.0`). `highlight` and the object search functions are exported by `browser.mjs` too; `https://cdn.jsdelivr.net/npm/rapid-fuzzy@2/highlight.browser.mjs` provides `highlight` alone, without loading the WebAssembly module. See [`examples/cdn-usage/`](examples/cdn-usage/) for a complete HTML example.
 
 #### Cloudflare Workers
 
-Install the package and import it in your Worker script. Wrangler bundles the WASM binary automatically:
+Install the package and import it in your Worker script. Wrangler resolves the `workerd` export condition and bundles the WASM binary as a precompiled module automatically — no `nodejs_compat` flag needed:
 
 ```bash
 npm install rapid-fuzzy
@@ -133,11 +144,11 @@ main = "worker.js"
 compatibility_date = "2025-01-01"
 ```
 
-See [`examples/cloudflare-workers/`](examples/cloudflare-workers/) for a complete example.
+See [`examples/cloudflare-workers/`](examples/cloudflare-workers/) for a complete example (tested with Wrangler 4).
 
 #### Deno
 
-Use rapid-fuzzy via the `npm:` specifier (Deno 1.28+):
+Use rapid-fuzzy via the `npm:` specifier. Deno resolves the `deno` export condition to the WASM build, which reads its `.wasm` file from the npm cache, so run with `--allow-read`:
 
 ```ts
 import { search } from 'npm:rapid-fuzzy';
@@ -146,35 +157,19 @@ const results = search('typscript', ['TypeScript', 'JavaScript', 'Python']);
 console.log(results[0].item); // 'TypeScript'
 ```
 
-Or import from a CDN directly:
-
-```ts
-import { search } from 'https://esm.sh/rapid-fuzzy';
+```bash
+deno run --allow-read main.ts
 ```
 
 #### Bun
 
-Bun uses the native napi-rs bindings when available (fastest). You can also use the wasm-bindgen WASM files directly if needed:
+Bun uses the native napi-rs bindings by default (fastest). To use the WASM build instead — for example to test the code path your browser bundle takes — run with the `browser` condition:
 
-```typescript
-import * as wasm from 'rapid-fuzzy/rapid-fuzzy-wasm-bindgen_bg.js';
-import { readFileSync } from 'node:fs';
-
-const wasmPath = require.resolve('rapid-fuzzy/rapid-fuzzy-wasm-bindgen_bg.wasm');
-const wasmModule = new WebAssembly.Module(readFileSync(wasmPath));
-const wasmInstance = new WebAssembly.Instance(wasmModule, {
-  './rapid-fuzzy-wasm-bindgen_bg.js': wasm,
-});
-wasm.__wbg_set_wasm(wasmInstance.exports);
-
-// Now use the WASM API directly
-const results = wasm.search('typscript', ['TypeScript', 'JavaScript', 'Python']);
-const index = new wasm.FuzzyIndex(['apple', 'banana', 'cherry']);
-index.search('aple');
-index.destroy();
+```bash
+bun --conditions=browser run main.ts
 ```
 
-See [`e2e/wasm-bun.test.ts`](e2e/wasm-bun.test.ts) for a complete working example.
+The same works in Node.js (`node --conditions=browser main.mjs`).
 
 ## API
 
@@ -692,15 +687,15 @@ The native binary for your platform may not have been installed correctly. Run `
 
 ### WASM fails to load in the browser
 
-Verify that your bundler is configured to handle `.wasm` files. If loading from a CDN, check that the server serves `.wasm` files with the correct `application/wasm` MIME type and that CORS headers allow the request.
+The browser build fetches `rapid-fuzzy-wasm-bindgen_bg.wasm` from the URL its `new URL(..., import.meta.url)` reference resolves to. If that request returns 404, your bundler did not emit the file: copy it next to your bundle (needed for esbuild and `bun build`, see [Bundlers](#bundlers)). When serving it yourself, use the `application/wasm` MIME type (otherwise it still loads, more slowly, with a console warning) and allow the request with CORS headers if it is cross-origin.
 
 ### SSR or Edge runtime errors
 
-Server-side rendering frameworks need to externalize rapid-fuzzy so the native module is not bundled. See [Framework Integration (SSR)](#framework-integration-ssr) above. For edge runtimes (Cloudflare Workers, Deno Deploy), rapid-fuzzy automatically uses the WASM build — see [Browser and Edge Runtime Usage](#browser-and-edge-runtime-usage).
+Server-side rendering frameworks need to externalize rapid-fuzzy so the native module is not bundled. See [Framework Integration (SSR)](#framework-integration-ssr) above. Cloudflare Workers use the WASM build automatically — see [Browser and Edge Runtime Usage](#browser-and-edge-runtime-usage). The Next.js / Vercel Edge runtime is not supported.
 
-### Bun WASM initialization
+### Using the WASM build in Bun or Node.js
 
-Bun does not yet support the TC39 WebAssembly ESM integration that wasm-bindgen relies on. If you need the WASM build in Bun, initialize it manually — see the [Bun section](#bun) for a complete code example.
+Bun and Node.js load the native binding. To run the WASM build instead, add `--conditions=browser` — see the [Bun section](#bun).
 
 ## Limitations
 
