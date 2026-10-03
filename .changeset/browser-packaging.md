@@ -1,0 +1,17 @@
+---
+"rapid-fuzzy": minor
+---
+
+Fix the browser, Cloudflare Workers and Deno builds, which previously could not be loaded from bundlers, CDNs or edge runtimes, and add the object search API to them (#730). The Node.js entry points (`import` / `require`) are unchanged.
+
+- **Bundlers**: the `browser` export condition is now listed before `import` / `require`, so Vite, webpack and Next.js resolve the WebAssembly build for browser code instead of the Node.js loader (which failed at build time or at runtime with `createRequire is not a function`). `require()` still resolves to the Node.js entry under the `browser` condition, so test setups such as Jest with `jest-environment-jsdom` keep working. The `module` field, which pointed tools that ignore `exports` at the Node.js loader, is removed.
+- **No initialization step**: the wasm-bindgen glue is now generated with `--target web` and the browser entry (`browser.mjs`) instantiates the WebAssembly module with top-level `await`, so the API is ready, and synchronous, once the import resolves. It no longer relies on the WebAssembly ESM integration that Vite, esbuild, Bun, Deno and Workers do not support. Works without configuration in Vite 8 (build and dev server), webpack 5 and Next.js 16 (Turbopack and webpack); with esbuild and `bun build`, copy `rapid-fuzzy-wasm-bindgen_bg.wasm` next to the bundle.
+- **`sideEffects`** now lists the modules that instantiate WebAssembly. With `"sideEffects": false`, webpack and Rollup dropped the initialization and every call failed.
+- The browser files are `.mjs` ES modules: webpack and Next.js rejected the previous ES module syntax in `.js` files of this CommonJS package.
+- **CDN**: the browser build is plain ES modules and loads directly from jsDelivr or unpkg, e.g. `import { search } from 'https://cdn.jsdelivr.net/npm/rapid-fuzzy@2/browser.mjs'`.
+- **Cloudflare Workers**: a new `workerd` export condition selects `workerd.mjs`, which imports the `.wasm` as a precompiled `WebAssembly.Module` (Workers cannot compile WebAssembly at runtime; the previous build failed at startup).
+- **Deno**: a new `deno` export condition makes `npm:rapid-fuzzy` use the WebAssembly build, as documented (run with `--allow-read`). Previously Deno loaded the Node-API addon, which needs `--allow-ffi`.
+- **`rapid-fuzzy/highlight` and `rapid-fuzzy/objects`** now resolve to browser / edge builds, and `searchObjects` / `FuzzyObjectIndex` are available outside Node.js (#730). `FuzzyObjectIndex` has no `serialize()` / `deserialize()` there, since they exchange Node.js Buffers.
+- New declarations (`browser.d.mts`, used through the `browser`, `deno` and `workerd` conditions, e.g. with TypeScript's `customConditions`) describe exactly what these entries export.
+- In Node.js and Bun, `--conditions=browser` loads the WebAssembly build, e.g. to test the code path of a browser bundle.
+- **Removed files**: `browser.js` and the `--target bundler` glue (`rapid-fuzzy-wasm-bindgen.js`, `rapid-fuzzy-wasm-bindgen_bg.js` and their `.d.ts`) are no longer published; they are replaced by `browser.mjs` and `rapid-fuzzy-wasm-bindgen.mjs`. The package `exports` never exposed them, and loading them required WebAssembly ESM integration, so only direct CDN file URLs referenced them: point those at `browser.mjs` instead.
