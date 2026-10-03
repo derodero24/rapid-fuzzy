@@ -196,3 +196,32 @@ fn sorensen_dice_counts_characters_not_bytes() {
         }
     }
 }
+
+// ─── Token set ratio ─────────────────────────────────────────────────────────
+
+#[test]
+fn token_set_ratio_without_shared_tokens_compares_the_remainders() {
+    assert_eq!(d::token_set_ratio("cat", "dog"), 0.0);
+    assert_eq!(d::token_set_ratio("Jan", "Feb"), 0.0);
+    assert_eq!(d::weighted_ratio("cat", "dog"), 0.0);
+    assert_eq!(
+        d::token_set_ratio("ab cd", "ab_ cd_"),
+        d::normalized_levenshtein("ab cd", "ab_ cd_")
+    );
+    assert_eq!(
+        d::token_set_ratio("b a", "xa"),
+        d::normalized_levenshtein("a b", "xa")
+    );
+    // Shared tokens still compare `sect + rest` (unchanged behaviour).
+    assert_eq!(
+        d::token_set_ratio("great gatsby", "the great gatsby"),
+        1.0,
+        "a token subset scores 1"
+    );
+    assert_eq!(
+        d::token_set_ratio("new york mets", "new york yankees"),
+        d::normalized_levenshtein("new york mets", "new york yankees")
+            .max(d::normalized_levenshtein("new york", "new york mets"))
+            .max(d::normalized_levenshtein("new york", "new york yankees"))
+    );
+}

@@ -1,7 +1,17 @@
 import stringSimilarity from 'string-similarity';
 import { describe, expect, it } from 'vitest';
 
-import { sorensenDice, sorensenDiceBatch, sorensenDiceMany } from '../index.js';
+import {
+  normalizedLevenshtein,
+  sorensenDice,
+  sorensenDiceBatch,
+  sorensenDiceMany,
+  tokenSetRatio,
+  tokenSetRatioBatch,
+  tokenSetRatioMany,
+  weightedRatio,
+  weightedRatioMany,
+} from '../index.js';
 
 // ─── Shared fixtures ─────────────────────────────────────────────────────────
 
@@ -104,5 +114,28 @@ describe('sorensenDice on non-ASCII input', () => {
         `sorensenDice(${JSON.stringify(a)}, ${JSON.stringify(b)})`,
       );
     }
+  });
+});
+
+// ─── tokenSetRatio with no shared tokens ─────────────────────────────────────
+
+describe('tokenSetRatio without shared tokens', () => {
+  it('scores strings with no shared tokens and no shared characters as 0', () => {
+    expect(tokenSetRatio('cat', 'dog')).toBe(0);
+    expect(tokenSetRatio('Jan', 'Feb')).toBe(0);
+    expect(tokenSetRatioMany('cat', ['dog', 'b'])).toEqual([0, 0]);
+    expect(tokenSetRatioBatch([['abc', 'xyz uvw']])).toEqual([0]);
+  });
+
+  it('compares the sorted token remainders when no token is shared', () => {
+    // No shared tokens: the score is the plain ratio of the sorted remainders.
+    expect(tokenSetRatio('ab cd', 'ab_ cd_')).toBe(normalizedLevenshtein('ab cd', 'ab_ cd_'));
+    expect(tokenSetRatio('b a', 'xa')).toBe(normalizedLevenshtein('a b', 'xa'));
+    expect(tokenSetRatio('red blue', 'cat dog')).toBe(normalizedLevenshtein('blue red', 'cat dog'));
+  });
+
+  it('feeds the corrected score into weightedRatio', () => {
+    expect(weightedRatio('cat', 'dog')).toBe(0);
+    expect(weightedRatioMany('cat', ['dog'])).toEqual([0]);
   });
 });

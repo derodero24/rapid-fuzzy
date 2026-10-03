@@ -477,6 +477,7 @@ pub fn token_set_ratio_impl(a: &str, b: &str) -> f64 {
     token_set_ratio_from_normalized(&norm_a, &norm_b)
 }
 
+/// Token set ratio of two strings already passed through [`normalize_str`].
 pub fn token_set_ratio_from_normalized(norm_a: &str, norm_b: &str) -> f64 {
     if norm_a.is_empty() || norm_b.is_empty() {
         return if norm_a.is_empty() && norm_b.is_empty() {
@@ -485,44 +486,52 @@ pub fn token_set_ratio_from_normalized(norm_a: &str, norm_b: &str) -> f64 {
             0.0
         };
     }
-
     let tokens_a: BTreeSet<&str> = norm_a.split_whitespace().collect();
     let tokens_b: BTreeSet<&str> = norm_b.split_whitespace().collect();
+    token_set_ratio_from_tokens(&tokens_a, &tokens_b)
+}
 
-    let diff_a: Vec<&str> = tokens_a.difference(&tokens_b).copied().collect();
-    let diff_b: Vec<&str> = tokens_b.difference(&tokens_a).copied().collect();
-
+/// Token set ratio of two non-empty token sets.
+///
+/// With `sect` the sorted shared tokens and `diff_a` / `diff_b` the sorted
+/// tokens only one side has, this is the best plain ratio among
+/// `sect + diff_a` vs `sect + diff_b`, `sect` vs `sect + diff_a`, and `sect`
+/// vs `sect + diff_b`. Without shared tokens it is the ratio of `diff_a` and
+/// `diff_b`.
+fn token_set_ratio_from_tokens(tokens_a: &BTreeSet<&str>, tokens_b: &BTreeSet<&str>) -> f64 {
+    let diff_a: Vec<&str> = tokens_a.difference(tokens_b).copied().collect();
+    let diff_b: Vec<&str> = tokens_b.difference(tokens_a).copied().collect();
     if diff_a.is_empty() && diff_b.is_empty() {
         return 1.0;
     }
 
-    let sect_str: String = tokens_a
-        .intersection(&tokens_b)
+    let sect = tokens_a
+        .intersection(tokens_b)
         .copied()
         .collect::<Vec<_>>()
         .join(" ");
-
-    let combined_a = if diff_a.is_empty() {
-        std::borrow::Cow::Borrowed(sect_str.as_str())
-    } else {
-        std::borrow::Cow::Owned(format!("{} {}", sect_str, diff_a.join(" ")))
+    // `sect` followed by `diff`, joined by a space only when both are non-empty.
+    let combine = |diff: &[&str]| -> String {
+        let diff = diff.join(" ");
+        match (sect.is_empty(), diff.is_empty()) {
+            (_, true) => sect.clone(),
+            (true, false) => diff,
+            (false, false) => format!("{sect} {diff}"),
+        }
     };
-    let combined_b = if diff_b.is_empty() {
-        std::borrow::Cow::Borrowed(sect_str.as_str())
-    } else {
-        std::borrow::Cow::Owned(format!("{} {}", sect_str, diff_b.join(" ")))
-    };
+    let combined_a = combine(&diff_a);
+    let combined_b = combine(&diff_b);
 
     let score_ab = rapid_lev::normalized_similarity(combined_a.chars(), combined_b.chars());
     let score_a = if diff_a.is_empty() {
         1.0
     } else {
-        rapid_lev::normalized_similarity(sect_str.chars(), combined_a.chars())
+        rapid_lev::normalized_similarity(sect.chars(), combined_a.chars())
     };
     let score_b = if diff_b.is_empty() {
         1.0
     } else {
-        rapid_lev::normalized_similarity(sect_str.chars(), combined_b.chars())
+        rapid_lev::normalized_similarity(sect.chars(), combined_b.chars())
     };
 
     f64::max(score_ab, f64::max(score_a, score_b))
@@ -659,59 +668,12 @@ pub fn token_set_ratio_many(
         .iter()
         .map(|c| {
             let norm_c = normalize_str(c);
-
-            if norm_ref.is_empty() || norm_c.is_empty() {
-                let score = if norm_ref.is_empty() && norm_c.is_empty() {
-                    1.0
-                } else {
-                    0.0
-                };
-                return match min_similarity {
-                    Some(cutoff) if score < cutoff => 0.0,
-                    _ => score,
-                };
-            }
-
-            let tokens_c: BTreeSet<&str> = norm_c.split_whitespace().collect();
-
-            let diff_ref: Vec<&str> = tokens_ref.difference(&tokens_c).copied().collect();
-            let diff_c: Vec<&str> = tokens_c.difference(&tokens_ref).copied().collect();
-
-            if diff_ref.is_empty() && diff_c.is_empty() {
-                return 1.0;
-            }
-
-            let sect_str: String = tokens_ref
-                .intersection(&tokens_c)
-                .copied()
-                .collect::<Vec<_>>()
-                .join(" ");
-
-            let combined_ref = if diff_ref.is_empty() {
-                std::borrow::Cow::Borrowed(sect_str.as_str())
+            let score = if norm_ref.is_empty() || norm_c.is_empty() {
+                token_set_ratio_from_normalized(&norm_ref, &norm_c)
             } else {
-                std::borrow::Cow::Owned(format!("{} {}", sect_str, diff_ref.join(" ")))
+                let tokens_c: BTreeSet<&str> = norm_c.split_whitespace().collect();
+                token_set_ratio_from_tokens(&tokens_ref, &tokens_c)
             };
-            let combined_c = if diff_c.is_empty() {
-                std::borrow::Cow::Borrowed(sect_str.as_str())
-            } else {
-                std::borrow::Cow::Owned(format!("{} {}", sect_str, diff_c.join(" ")))
-            };
-
-            let score_ab =
-                rapid_lev::normalized_similarity(combined_ref.chars(), combined_c.chars());
-            let score_a = if diff_ref.is_empty() {
-                1.0
-            } else {
-                rapid_lev::normalized_similarity(sect_str.chars(), combined_ref.chars())
-            };
-            let score_b = if diff_c.is_empty() {
-                1.0
-            } else {
-                rapid_lev::normalized_similarity(sect_str.chars(), combined_c.chars())
-            };
-
-            let score = f64::max(score_ab, f64::max(score_a, score_b));
             match min_similarity {
                 Some(cutoff) if score < cutoff => 0.0,
                 _ => score,
@@ -807,7 +769,7 @@ pub fn weighted_ratio_many(
 ) -> Vec<f64> {
     let norm_ref = normalize_str(reference);
     let sorted_ref = sorted_tokens(reference).join(" ");
-    let tokens_ref: BTreeSet<String> = norm_ref.split_whitespace().map(String::from).collect();
+    let tokens_ref: BTreeSet<&str> = norm_ref.split_whitespace().collect();
     let ref_scorer = rapid_lev::BatchComparator::new(norm_ref.chars());
     let ref_is_normalized = norm_ref == reference;
     // Only needed when the original reference differs from the normalized one.
@@ -840,61 +802,11 @@ pub fn weighted_ratio_many(
                 rapid_lev::normalized_similarity(sorted_ref.chars(), sorted_c.chars())
             };
 
-            let set = {
-                if norm_ref.is_empty() || norm_c.is_empty() {
-                    if norm_ref.is_empty() && norm_c.is_empty() {
-                        1.0
-                    } else {
-                        0.0
-                    }
-                } else {
-                    let tokens_c: BTreeSet<&str> = norm_c.split_whitespace().collect();
-                    let tokens_ref_borrowed: BTreeSet<&str> =
-                        tokens_ref.iter().map(|s| s.as_str()).collect();
-
-                    let diff_ref: Vec<&str> =
-                        tokens_ref_borrowed.difference(&tokens_c).copied().collect();
-                    let diff_c: Vec<&str> =
-                        tokens_c.difference(&tokens_ref_borrowed).copied().collect();
-
-                    if diff_ref.is_empty() && diff_c.is_empty() {
-                        1.0
-                    } else {
-                        let sect_str: String = tokens_ref_borrowed
-                            .intersection(&tokens_c)
-                            .copied()
-                            .collect::<Vec<_>>()
-                            .join(" ");
-
-                        let combined_ref = if diff_ref.is_empty() {
-                            std::borrow::Cow::Borrowed(sect_str.as_str())
-                        } else {
-                            std::borrow::Cow::Owned(format!("{} {}", sect_str, diff_ref.join(" ")))
-                        };
-                        let combined_c = if diff_c.is_empty() {
-                            std::borrow::Cow::Borrowed(sect_str.as_str())
-                        } else {
-                            std::borrow::Cow::Owned(format!("{} {}", sect_str, diff_c.join(" ")))
-                        };
-
-                        let score_ab = rapid_lev::normalized_similarity(
-                            combined_ref.chars(),
-                            combined_c.chars(),
-                        );
-                        let score_a = if diff_ref.is_empty() {
-                            1.0
-                        } else {
-                            rapid_lev::normalized_similarity(sect_str.chars(), combined_ref.chars())
-                        };
-                        let score_b = if diff_c.is_empty() {
-                            1.0
-                        } else {
-                            rapid_lev::normalized_similarity(sect_str.chars(), combined_c.chars())
-                        };
-
-                        f64::max(score_ab, f64::max(score_a, score_b))
-                    }
-                }
+            let set = if norm_ref.is_empty() || norm_c.is_empty() {
+                token_set_ratio_from_normalized(&norm_ref, &norm_c)
+            } else {
+                let tokens_c: BTreeSet<&str> = norm_c.split_whitespace().collect();
+                token_set_ratio_from_tokens(&tokens_ref, &tokens_c)
             };
 
             let partial = {
