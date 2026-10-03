@@ -3,48 +3,27 @@ name: CI
 on:
   push:
     branches: [develop]
-    paths:
-      - 'crates/**'
-      - '__test__/**'
-      - 'e2e/**'
-      - 'src/**'
-      - 'package.json'
-      - 'pnpm-lock.yaml'
-      - 'pnpm-workspace.yaml'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - 'tsconfig.json'
-      - 'biome.json'
-      - 'playwright.config.ts'
-      - '.github/workflows/ci.yml'
-      - 'deny.toml'
-      - 'rust-toolchain.toml'
-      - 'scripts/**'
-      - 'vitest.config.mts'
-      - 'codecov.yml'
+    # A deny-list rather than an allow-list: every file that ships in the npm
+    # package or feeds a build or test (root *.js/*.mjs/*.d.ts loaders, npm/,
+    # scripts/, e2e/, .cargo/, .nvmrc, ...) must trigger CI, including files
+    # added later. Only paths that cannot affect any job are skipped. Keep
+    # this list in sync with the pull_request one below.
+    paths-ignore:
+      - '**/*.md'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/assets/**'
+      - '.github/CODEOWNERS'
+      - '.github/FUNDING.yml'
   pull_request:
     branches: [develop]
     # "labeled" lets the ci-full label re-run the plan job on an open PR.
     types: [opened, synchronize, reopened, labeled]
-    paths:
-      - 'crates/**'
-      - '__test__/**'
-      - 'e2e/**'
-      - 'src/**'
-      - 'package.json'
-      - 'pnpm-lock.yaml'
-      - 'pnpm-workspace.yaml'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - 'tsconfig.json'
-      - 'biome.json'
-      - 'playwright.config.ts'
-      - '.github/workflows/ci.yml'
-      - 'deny.toml'
-      - 'rust-toolchain.toml'
-      - 'scripts/**'
-      - 'vitest.config.mts'
-      - 'codecov.yml'
+    paths-ignore:
+      - '**/*.md'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/assets/**'
+      - '.github/CODEOWNERS'
+      - '.github/FUNDING.yml'
 
 permissions:
   contents: read
@@ -58,8 +37,8 @@ concurrency:
 jobs:
   # Decide how much of the build matrix a run needs. Pushes to develop always
   # build every target. Pull requests only build the targets the test jobs
-  # consume unless they touch the Rust sources, the Cargo manifests or this
-  # workflow, which keeps dependency-only PRs cheap.
+  # consume unless they touch the Rust sources, the Cargo manifests or
+  # config, or this workflow, which keeps dependency-only PRs cheap.
   plan:
     name: Plan
     # Label events only matter for ci-full; other labels must not rerun CI.
@@ -97,7 +76,7 @@ jobs:
             labels=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.labels[].name')
             # Add the "ci-full" label to a PR to force every target.
             if ! grep -qx 'ci-full' <<< "$labels" \
-              && ! grep -Eq '^(crates/|Cargo\.toml$|Cargo\.lock$|rust-toolchain\.toml$|deny\.toml$|scripts/|\.github/workflows/ci\.yml$)' <<< "$files"; then
+              && ! grep -Eq '^(crates/|\.cargo/|Cargo\.toml$|Cargo\.lock$|rust-toolchain\.toml$|deny\.toml$|scripts/|\.github/workflows/ci\.yml$)' <<< "$files"; then
               matrix="$reduced"
             fi
           fi

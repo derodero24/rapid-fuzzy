@@ -18,7 +18,10 @@ flags:
       - crates/
     carryforward: true
   javascript:
+    # The JS sources are the loader/wrapper modules at the repository root
+    # (index.js, objects.js, highlight.js, browser.js, *.mjs, wasm-bindgen glue).
     paths:
-      - __test__/
-      - src/
+      - '*.js'
+      - '*.mjs'
+      - '*.cjs'
     carryforward: true
