@@ -3,9 +3,7 @@ use napi::{Either, Task};
 use napi_derive::napi;
 use nucleo_matcher::pattern::CaseMatching;
 use rapid_fuzzy_core::search::FuzzyIndexCore;
-use rapid_fuzzy_core::search::serialization::{
-    FUZZY_INDEX_MAGIC, deserialize_items, serialize_items,
-};
+use rapid_fuzzy_core::search::serialization::{deserialize_fuzzy_index, serialize_fuzzy_index};
 
 use super::{IndexSearchResult, SearchOptions, SearchResult, resolve_case_matching};
 
@@ -222,12 +220,11 @@ impl FuzzyIndex {
     }
 
     fn serialize_impl(&self) -> Vec<u8> {
-        serialize_items(self.core.items(), FUZZY_INDEX_MAGIC)
+        serialize_fuzzy_index(&self.core)
     }
 
     fn deserialize_impl(bytes: &[u8]) -> Result<Self, String> {
-        let items = deserialize_items(bytes, FUZZY_INDEX_MAGIC)?;
-        Ok(Self::new(items))
+        deserialize_fuzzy_index(bytes).map(|core| Self { core })
     }
 
     fn search_impl(

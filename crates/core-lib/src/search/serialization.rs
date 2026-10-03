@@ -19,11 +19,22 @@
 
 use std::fmt;
 
+use super::FuzzyIndexCore;
+
 /// Magic bytes identifying a serialized `FuzzyIndex`.
+///
+/// Both the Node.js (napi) and browser (wasm-bindgen) builds write this.
 pub const FUZZY_INDEX_MAGIC: &[u8; 4] = b"RFZI";
 
-/// Magic bytes identifying a serialized `FuzzyIndex` (WASM variant).
+/// Legacy magic bytes for a serialized `FuzzyIndex`.
+///
+/// The browser (wasm-bindgen) build of rapid-fuzzy 2.1.1 and earlier wrote
+/// this instead of [`FUZZY_INDEX_MAGIC`]. It is still accepted when reading
+/// (see [`FUZZY_INDEX_ACCEPTED_MAGICS`]) but is no longer written.
 pub const FUZZY_INDEX_WASM_MAGIC: &[u8; 4] = b"RFUZ";
+
+/// Every magic accepted by [`deserialize_fuzzy_index`].
+pub const FUZZY_INDEX_ACCEPTED_MAGICS: &[&[u8; 4]] = &[FUZZY_INDEX_MAGIC, FUZZY_INDEX_WASM_MAGIC];
 
 /// Magic bytes identifying a serialized `KeyedFuzzyIndex`.
 pub const KEYED_INDEX_MAGIC: &[u8; 4] = b"RFKI";
@@ -39,6 +50,27 @@ const KEYED_HEADER_LEN: usize = 16;
 const LEN_PREFIX_SIZE: usize = 4;
 /// Size of one serialized weight.
 const WEIGHT_SIZE: usize = 8;
+
+// ---------------------------------------------------------------------------
+// Index-level API (used by the bindings)
+// ---------------------------------------------------------------------------
+
+/// Serialize a [`FuzzyIndexCore`] under [`FUZZY_INDEX_MAGIC`].
+pub fn serialize_fuzzy_index(index: &FuzzyIndexCore) -> Vec<u8> {
+    serialize_items(index.items(), FUZZY_INDEX_MAGIC)
+}
+
+/// Rebuild a [`FuzzyIndexCore`] from bytes produced by [`serialize_fuzzy_index`].
+///
+/// Accepts every magic in [`FUZZY_INDEX_ACCEPTED_MAGICS`], so indexes written
+/// by either the Node.js or the browser build (current or legacy) load in both.
+///
+/// # Errors
+///
+/// Same as [`deserialize_items`], with any accepted magic allowed.
+pub fn deserialize_fuzzy_index(bytes: &[u8]) -> Result<FuzzyIndexCore, String> {
+    parse_items(bytes, FUZZY_INDEX_ACCEPTED_MAGICS).map(FuzzyIndexCore::new)
+}
 
 // ---------------------------------------------------------------------------
 // Format-level API

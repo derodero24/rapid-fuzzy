@@ -8,9 +8,11 @@
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
+use rapid_fuzzy_core::search::FuzzyIndexCore;
 use rapid_fuzzy_core::search::serialization::{
-    FUZZY_INDEX_MAGIC, FUZZY_INDEX_WASM_MAGIC, KEYED_INDEX_MAGIC, SERIALIZE_VERSION,
-    deserialize_items, deserialize_keyed, serialize_items, serialize_keyed,
+    FUZZY_INDEX_ACCEPTED_MAGICS, FUZZY_INDEX_MAGIC, FUZZY_INDEX_WASM_MAGIC, KEYED_INDEX_MAGIC,
+    SERIALIZE_VERSION, deserialize_fuzzy_index, deserialize_items, deserialize_keyed,
+    serialize_fuzzy_index, serialize_items, serialize_keyed,
 };
 
 // ---------------------------------------------------------------------------
@@ -558,6 +560,125 @@ fn fuzz_keyed_parser() {
                 true
             }
             Err(_) => false,
+        }
+    });
+    assert!(accepted > 0);
+}
+
+// ---------------------------------------------------------------------------
+// FuzzyIndex: index-level API used by the bindings
+// ---------------------------------------------------------------------------
+
+#[test]
+fn fuzzy_index_writes_the_shared_magic() {
+    let index = FuzzyIndexCore::new(strings(&["apple", "banana"]));
+    let bytes = serialize_fuzzy_index(&index);
+    assert_eq!(&bytes[..4], FUZZY_INDEX_MAGIC);
+    assert_eq!(bytes, fuzzy_payload(&["apple", "banana"]));
+}
+
+#[test]
+fn fuzzy_index_reads_every_accepted_magic() {
+    assert_eq!(
+        FUZZY_INDEX_ACCEPTED_MAGICS,
+        &[FUZZY_INDEX_MAGIC, FUZZY_INDEX_WASM_MAGIC]
+    );
+    let items = strings(&["apple", "東京", ""]);
+    for magic in FUZZY_INDEX_ACCEPTED_MAGICS {
+        let restored = deserialize_fuzzy_index(&serialize_items(&items, magic)).unwrap();
+        assert_eq!(restored.items(), items);
+        // Re-serializing upgrades a legacy payload to the shared magic.
+        assert_eq!(
+            serialize_fuzzy_index(&restored),
+            serialize_items(&items, FUZZY_INDEX_MAGIC)
+        );
+    }
+}
+
+#[test]
+fn fuzzy_index_rejects_other_magics_with_a_hint() {
+    let mut bytes = fuzzy_payload(&["a"]);
+    bytes[..4].copy_from_slice(KEYED_INDEX_MAGIC);
+    let message = expect_err(
+        deserialize_fuzzy_index(&bytes).map(|i| i.size()),
+        "bad magic bytes",
+    );
+    assert!(message.contains("\"RFZI\" or \"RFUZ\""), "{message}");
+    assert!(message.contains("KeyedFuzzyIndex"), "{message}");
+
+    bytes[..4].copy_from_slice(&[0, 1, 2, 3]);
+    let message = expect_err(
+        deserialize_fuzzy_index(&bytes).map(|i| i.size()),
+        "bad magic bytes",
+    );
+    assert!(message.contains("0x00010203"), "{message}");
+
+    for magic in [FUZZY_INDEX_MAGIC, FUZZY_INDEX_WASM_MAGIC] {
+        let bytes = serialize_items(&strings(&["a", "b", "c"]), magic);
+        let message = expect_err(
+            deserialize_keyed(&bytes, KEYED_INDEX_MAGIC),
+            "bad magic bytes",
+        );
+        assert!(message.contains("serialized FuzzyIndex"), "{message}");
+    }
+}
+
+#[test]
+fn fuzzy_index_roundtrips_every_state() {
+    let mut index = FuzzyIndexCore::new(strings(&["apple", "banana", "cherry"]));
+    let check = |index: &FuzzyIndexCore| {
+        let bytes = serialize_fuzzy_index(index);
+        let restored = deserialize_fuzzy_index(&bytes).unwrap();
+        assert_eq!(restored.items(), index.items());
+        assert_eq!(serialize_fuzzy_index(&restored), bytes);
+    };
+    check(&index);
+    index.add("date".into());
+    check(&index);
+    assert!(index.remove(0));
+    check(&index);
+    index.destroy();
+    check(&index);
+    check(&FuzzyIndexCore::new(Vec::new()));
+}
+
+/// The bytes of `bytes` with a legacy FuzzyIndex magic normalized to the
+/// one `serialize_fuzzy_index` writes.
+fn with_current_fuzzy_magic(bytes: &[u8]) -> Vec<u8> {
+    let mut normalized = bytes.to_vec();
+    if normalized.starts_with(FUZZY_INDEX_WASM_MAGIC) {
+        normalized[..4].copy_from_slice(FUZZY_INDEX_MAGIC);
+    }
+    normalized
+}
+
+#[test]
+fn fuzz_fuzzy_index() {
+    // Building an index has a fixed cost (the matcher's scratch space) on
+    // top of the per-item data, so measure it instead of hard-coding it.
+    let (_, baseline) = largest_allocation_during(|| FuzzyIndexCore::new(Vec::new()));
+    let accepted = fuzz(0x5EED_0003, &fuzzy_seeds(), |bytes| {
+        let (result, largest) = largest_allocation_during(|| deserialize_fuzzy_index(bytes));
+        assert!(
+            largest <= baseline + parse_allocation_budget(bytes.len()),
+            "requested {largest} bytes for {bytes:02x?}"
+        );
+        match result {
+            Ok(index) => {
+                assert_eq!(
+                    serialize_fuzzy_index(&index),
+                    with_current_fuzzy_magic(bytes)
+                );
+                true
+            }
+            Err(message) => {
+                assert!(
+                    message.starts_with("Invalid data: ")
+                        || message.starts_with("Unsupported format version: "),
+                    "{message}"
+                );
+                false
+            }
         }
     });
     assert!(accepted > 0);
