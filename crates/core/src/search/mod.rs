@@ -10,10 +10,7 @@ pub use keys::search_keys;
 pub(crate) use rapid_fuzzy_core::search::resolve_case_matching;
 
 #[cfg(test)]
-pub(crate) use rapid_fuzzy_core::search::{
-    BigramIndex, PrecomputedSearch, bigram_key, compute_char_mask, extract_bigrams,
-    extract_query_bigrams, intersect_sorted, search_over_precomputed,
-};
+pub(crate) use rapid_fuzzy_core::search::compute_char_mask;
 
 use napi::Either;
 use napi_derive::napi;
@@ -222,11 +219,11 @@ mod tests {
     #[test]
     fn test_prefilters_fold_diacritics_like_the_matcher() {
         // nucleo matches "cafe" against "café" (Normalization::Smart), so the
-        // char-mask and bigram prefilters must not reject folded characters.
-        assert_eq!(compute_char_mask("café"), compute_char_mask("cafe"));
-        assert_eq!(compute_char_mask("Ärger"), compute_char_mask("arger"));
-        assert_eq!(bigram_key('é', 'x'), bigram_key('e', 'x'));
-        assert_eq!(extract_bigrams("naïve"), extract_bigrams("naive"));
+        // char-mask prefilter must not reject folded characters.
+        let cafe = compute_char_mask("cafe");
+        assert_eq!(compute_char_mask("café") & cafe, cafe);
+        let arger = compute_char_mask("arger");
+        assert_eq!(compute_char_mask("Ärger") & arger, arger);
     }
 
     #[test]
@@ -767,155 +764,6 @@ mod tests {
         }
     }
 
-    mod bigram_tests {
-        use super::*;
-
-        #[test]
-        fn test_bigram_key_ascii_case_folding() {
-            assert_eq!(bigram_key('a', 'b'), bigram_key('A', 'B'));
-            assert_eq!(bigram_key('a', 'b'), bigram_key('A', 'b'));
-            assert_eq!(bigram_key('Z', 'a'), bigram_key('z', 'A'));
-        }
-
-        #[test]
-        fn test_bigram_key_digits() {
-            assert_ne!(bigram_key('a', '0'), bigram_key('a', 'b'));
-            assert_eq!(bigram_key('0', '1'), bigram_key('0', '1'));
-        }
-
-        #[test]
-        fn test_extract_bigrams_basic() {
-            let bg = extract_bigrams("abc");
-            assert_eq!(bg.len(), 2); // "ab", "bc"
-        }
-
-        #[test]
-        fn test_extract_bigrams_case_insensitive() {
-            let lower = extract_bigrams("abc");
-            let upper = extract_bigrams("ABC");
-            assert_eq!(lower, upper);
-        }
-
-        #[test]
-        fn test_extract_bigrams_single_char() {
-            assert!(extract_bigrams("a").is_empty());
-        }
-
-        #[test]
-        fn test_extract_bigrams_empty() {
-            assert!(extract_bigrams("").is_empty());
-        }
-
-        #[test]
-        fn test_extract_bigrams_unicode() {
-            let bg = extract_bigrams("東京都");
-            assert_eq!(bg.len(), 2); // "東京", "京都"
-        }
-
-        #[test]
-        fn test_extract_query_bigrams_skips_inverted() {
-            let bg = extract_query_bigrams("hello !world");
-            let plain = extract_bigrams("hello");
-            assert_eq!(bg, plain);
-        }
-
-        #[test]
-        fn test_extract_query_bigrams_strips_syntax() {
-            let bg = extract_query_bigrams("^hello$");
-            let plain = extract_bigrams("hello");
-            assert_eq!(bg, plain);
-        }
-
-        #[test]
-        fn test_extract_query_bigrams_single_char_terms() {
-            // Single-char terms produce no bigrams
-            let bg = extract_query_bigrams("a b");
-            assert!(bg.is_empty());
-        }
-
-        #[test]
-        fn test_intersect_sorted_basic() {
-            let result = intersect_sorted(&[1, 3, 5, 7], &[2, 3, 5, 8]);
-            assert_eq!(result, vec![3, 5]);
-        }
-
-        #[test]
-        fn test_intersect_sorted_no_overlap() {
-            let result = intersect_sorted(&[1, 3], &[2, 4]);
-            assert!(result.is_empty());
-        }
-
-        #[test]
-        fn test_intersect_sorted_empty() {
-            let result = intersect_sorted(&[], &[1, 2]);
-            assert!(result.is_empty());
-        }
-
-        #[test]
-        fn test_bigram_index_basic() {
-            let items: Vec<String> = vec!["hello".into(), "world".into(), "help".into()];
-            let idx = BigramIndex::new(&items);
-            // "he" appears in "hello" and "help"
-            let bg = extract_query_bigrams("he");
-            let candidates = idx.candidates(&bg);
-            assert!(candidates.is_some());
-            let cands = candidates.unwrap();
-            assert!(cands.contains(&0)); // hello
-            assert!(cands.contains(&2)); // help
-            assert!(!cands.contains(&1)); // world
-        }
-
-        #[test]
-        fn test_bigram_index_no_match() {
-            let items: Vec<String> = vec!["hello".into(), "world".into()];
-            let idx = BigramIndex::new(&items);
-            let bg = extract_query_bigrams("zz");
-            let candidates = idx.candidates(&bg);
-            assert_eq!(candidates, Some(vec![]));
-        }
-
-        #[test]
-        fn test_bigram_index_add_item() {
-            // Add enough items so matching ones are below the 80% skip threshold.
-            let mut idx = BigramIndex::new(&[]);
-            idx.add_item(0, "hello");
-            idx.add_item(1, "help");
-            idx.add_item(2, "world");
-            idx.add_item(3, "rust");
-            idx.add_item(4, "code");
-            // "he" matches only items 0,1 = 2/5 = 40% < 80%
-            let bg = extract_query_bigrams("he");
-            let candidates = idx.candidates(&bg);
-            assert!(candidates.is_some());
-            let cands = candidates.unwrap();
-            assert!(cands.contains(&0));
-            assert!(cands.contains(&1));
-            assert!(!cands.contains(&2));
-        }
-
-        #[test]
-        fn test_bigram_index_remove_and_swap() {
-            let items: Vec<String> = vec!["abc".into(), "def".into(), "abx".into()];
-            let mut idx = BigramIndex::new(&items);
-            // Remove item 0 ("abc"), swapping in item 2 ("abx")
-            idx.remove_item(0, 2, "abc", Some("abx"));
-            // "abx" should now be at index 0
-            let bg = extract_query_bigrams("ab");
-            let candidates = idx.candidates(&bg);
-            assert!(candidates.is_some());
-            let cands = candidates.unwrap();
-            assert!(cands.contains(&0)); // "abx" was swapped to index 0
-            assert!(!cands.contains(&2)); // old index 2 no longer valid
-        }
-
-        #[test]
-        fn test_bigram_index_empty_query() {
-            let items: Vec<String> = vec!["hello".into()];
-            let idx = BigramIndex::new(&items);
-            assert_eq!(idx.candidates(&[]), None);
-        }
-    }
-
     mod proptest_search {
         use super::*;
         use proptest::prelude::*;
@@ -1111,9 +959,7 @@ mod tests {
             // using .len() (byte length) correctly differentiates them.
             // Both items contain the query's ASCII letters (h,e,l,o)
             // so the bitmask pre-filter in the indexed path matches both.
-            use std::cell::RefCell;
-
-            use nucleo_matcher::{Config, Matcher, Utf32String};
+            use rapid_fuzzy_core::search::FuzzyIndexCore;
 
             let items = vec!["hello世界".to_string(), "helloab".to_string()];
 
@@ -1126,29 +972,15 @@ mod tests {
                 CaseMatching::Smart,
             );
 
-            // Build precomputed context to test the indexed path.
-            let utf32_items: Vec<Utf32String> = items
-                .iter()
-                .map(|s| Utf32String::from(s.as_str()))
-                .collect();
-            let char_masks: Vec<u64> = items.iter().map(|s| compute_char_mask(s)).collect();
-            let matcher = RefCell::new(Matcher::new(Config::DEFAULT));
-            let ctx = PrecomputedSearch {
-                items: &items,
-                utf32_items: &utf32_items,
-                char_masks: &char_masks,
-                candidate_indices: None,
-                matcher: &matcher,
-            };
-            let indexed =
-                search_over_precomputed("hello", &ctx, None, None, false, CaseMatching::Smart);
+            let index = FuzzyIndexCore::new(items);
+            let indexed = index.search_impl("hello", None, None, false, CaseMatching::Smart);
 
             assert_eq!(
                 standalone.len(),
-                indexed.results.len(),
+                indexed.len(),
                 "result count differs between standalone and indexed search"
             );
-            for (s, i) in standalone.iter().zip(indexed.results.iter()) {
+            for (s, i) in standalone.iter().zip(indexed.iter()) {
                 assert_eq!(
                     s.item, i.item,
                     "ordering differs between standalone and indexed search"
