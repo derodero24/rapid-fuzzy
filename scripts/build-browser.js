@@ -60,6 +60,18 @@ const TYPED_ARRAY_ALIASES = {
   weightedRatioManyF64: 'weightedRatioMany',
 };
 
+// Exports the entry points implement in JavaScript on top of the glue.
+const JS_ONLY_EXPORTS = [
+  ...Object.keys(TYPED_ARRAY_ALIASES),
+  'hammingManyU32',
+  'normalizedHammingManyF64',
+  'MatchType',
+  'highlight',
+  'highlightRanges',
+  'FuzzyObjectIndex',
+  'searchObjects',
+];
+
 // Modules the CommonJS wrappers may require(), and the ES module code that
 // provides each of them in the browser build.
 const REQUIRE_PROVIDERS = {
@@ -110,6 +122,15 @@ function glueExports() {
   for (const required of ['search', 'FuzzyIndex', 'KeyedFuzzyIndex', 'searchKeys']) {
     if (!values.includes(required)) {
       throw new Error(`build-browser: ${GLUE} does not export ${required}`);
+    }
+  }
+  // The entries add these in JavaScript; a glue export of the same name would
+  // be a duplicate export (a SyntaxError when the entry is loaded).
+  for (const name of JS_ONLY_EXPORTS) {
+    if (values.includes(name)) {
+      throw new Error(
+        `build-browser: ${GLUE} now exports ${name}; remove its JavaScript version from scripts/build-browser.js`,
+      );
     }
   }
   const matchType = /^export type MatchType = (.+);$/m.exec(dts);
