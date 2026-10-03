@@ -193,6 +193,7 @@ const results = search('typscript', [
 // → [{ item: 'TypeScript', score: 0.85, index: 0, positions: [] }, ...]
 
 // With options: filter by minimum score and limit results
+// (maxResults: a non-negative integer, or Infinity for no limit)
 search('app', items, { maxResults: 5, minScore: 0.3 });
 
 // Get matched character positions for highlighting
@@ -252,6 +253,8 @@ Queries support extended syntax powered by the [nucleo](https://github.com/helix
 
 Diacritics are handled automatically — `cafe` matches `café`, `uber` matches `über`, and `naive` matches `naïve` with no configuration needed.
 
+In `search()`, `closest()` and `FuzzyIndex`, terms are separated by any whitespace, including the ideographic space (U+3000) typed by Japanese and Chinese input methods, so `東京　港区` searches for both terms. Escape a space with a backslash (`foo\ bar`) to match it literally. A query made only of syntax (such as `^` or `!`) has no search term and is treated like an empty query, and a single term longer than 2,520 characters cannot be scored and matches nothing.
+
 > **Note**: These patterns apply to all search functions: `search()`, `closest()`, `FuzzyIndex.search()`, `FuzzyObjectIndex.search()`, and `searchObjects()`. They do **not** apply to distance functions (`levenshtein`, `jaro`, etc.).
 
 ### Object Search
@@ -302,6 +305,7 @@ index.closest('tsc');
 
 // Tip: FuzzyIndex caches results internally — extending a previous query
 // (e.g. typing "app" → "apple") reuses cached candidates for faster lookups.
+// Results are always identical to search(query, items, options).
 
 // Index-only results (no string cloning — less GC pressure)
 const hits = index.searchIndices('typscript', { maxResults: 5 });
@@ -596,7 +600,7 @@ onUnmounted(() => index.destroy());
 
 ### Memory Usage
 
-`FuzzyIndex` and `FuzzyObjectIndex` store items and precomputed data (UTF-32 representations, character masks, bigram index) on the Rust side. Always call `.destroy()` when the index is no longer needed to free this memory immediately rather than waiting for garbage collection.
+`FuzzyIndex` and `FuzzyObjectIndex` store items and precomputed data (UTF-32 representations, character masks) on the Rust side. Always call `.destroy()` when the index is no longer needed to free this memory immediately rather than waiting for garbage collection.
 
 For read-heavy workloads, prefer `searchIndices()` over `search()` — it returns only indices and scores without cloning item strings back to JavaScript, reducing GC pressure.
 
