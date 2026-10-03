@@ -171,6 +171,8 @@ export declare function damerauLevenshtein(a: string, b: string): number
  * Compute the Damerau-Levenshtein distance for multiple pairs of strings in a single call.
  *
  * Returns an array of distances in the same order as the input pairs.
+ * Each pair must be an array of exactly two strings `[a, b]`; otherwise an
+ * `InvalidArg` error is thrown.
  */
 export declare function damerauLevenshteinBatch(pairs: Array<Array<string>>): Array<number>
 
@@ -179,7 +181,8 @@ export declare function damerauLevenshteinBatch(pairs: Array<Array<string>>): Ar
  *
  * Returns an array of distances, one per candidate, in the same order as the input.
  * If `max_distance` is provided, candidates with distance exceeding the threshold
- * will return `max_distance + 1` (enabling early termination for better performance).
+ * will return `max_distance + 1`, at most 4294967295 (enabling early termination
+ * for better performance).
  */
 export declare function damerauLevenshteinMany(reference: string, candidates: Array<string>, maxDistance?: number | undefined | null): Array<number>
 
@@ -196,7 +199,8 @@ export declare function hamming(a: string, b: string): number | null
  * Compute the Hamming distance for multiple pairs of strings in a single call.
  *
  * Returns an array of distances in the same order as the input pairs.
- * Each pair must be an array of exactly two strings `[a, b]`.
+ * Each pair must be an array of exactly two strings `[a, b]`; otherwise an
+ * `InvalidArg` error is thrown.
  * Returns `null` for pairs with different lengths.
  */
 export declare function hammingBatch(pairs: Array<Array<string>>): Array<number | undefined | null>
@@ -227,7 +231,8 @@ export declare function indel(a: string, b: string): number
  * Compute the Indel distance for multiple pairs of strings in a single call.
  *
  * Returns an array of distances in the same order as the input pairs.
- * Each pair must be an array of exactly two strings `[a, b]`.
+ * Each pair must be an array of exactly two strings `[a, b]`; otherwise an
+ * `InvalidArg` error is thrown.
  */
 export declare function indelBatch(pairs: Array<Array<string>>): Array<number>
 
@@ -236,7 +241,8 @@ export declare function indelBatch(pairs: Array<Array<string>>): Array<number>
  *
  * Returns an array of distances, one per candidate, in the same order as the input.
  * If `max_distance` is provided, candidates with distance exceeding the threshold
- * will return `max_distance + 1` (enabling early termination for better performance).
+ * will return `max_distance + 1`, at most 4294967295 (enabling early termination
+ * for better performance).
  */
 export declare function indelMany(reference: string, candidates: Array<string>, maxDistance?: number | undefined | null): Array<number>
 
@@ -275,6 +281,8 @@ export declare function jaro(a: string, b: string): number
  * Compute the Jaro similarity for multiple pairs of strings in a single call.
  *
  * Returns an array of similarity scores in the same order as the input pairs.
+ * Each pair must be an array of exactly two strings `[a, b]`; otherwise an
+ * `InvalidArg` error is thrown.
  */
 export declare function jaroBatch(pairs: Array<Array<string>>): Array<number>
 
@@ -283,7 +291,8 @@ export declare function jaroBatch(pairs: Array<Array<string>>): Array<number>
  *
  * Returns an array of similarity scores, one per candidate, in the same order as the input.
  * If `min_similarity` is provided, candidates with similarity below the threshold
- * will return `0.0` (enabling early termination for better performance).
+ * will return `0.0` (enabling early termination for better performance); a score
+ * equal to it is kept. Throws an `InvalidArg` error if `min_similarity` is `NaN`.
  */
 export declare function jaroMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number>
 
@@ -299,6 +308,8 @@ export declare function jaroWinkler(a: string, b: string): number
  * Compute the Jaro-Winkler similarity for multiple pairs of strings in a single call.
  *
  * Returns an array of similarity scores in the same order as the input pairs.
+ * Each pair must be an array of exactly two strings `[a, b]`; otherwise an
+ * `InvalidArg` error is thrown.
  */
 export declare function jaroWinklerBatch(pairs: Array<Array<string>>): Array<number>
 
@@ -307,7 +318,8 @@ export declare function jaroWinklerBatch(pairs: Array<Array<string>>): Array<num
  *
  * Returns an array of similarity scores, one per candidate, in the same order as the input.
  * If `min_similarity` is provided, candidates with similarity below the threshold
- * will return `0.0` (enabling early termination for better performance).
+ * will return `0.0` (enabling early termination for better performance); a score
+ * equal to it is kept. Throws an `InvalidArg` error if `min_similarity` is `NaN`.
  */
 export declare function jaroWinklerMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number>
 
@@ -337,7 +349,8 @@ export declare function levenshtein(a: string, b: string): number
  * Compute the Levenshtein distance for multiple pairs of strings in a single call.
  *
  * Returns an array of distances in the same order as the input pairs.
- * Each pair must be an array of exactly two strings `[a, b]`.
+ * Each pair must be an array of exactly two strings `[a, b]`; otherwise an
+ * `InvalidArg` error is thrown.
  */
 export declare function levenshteinBatch(pairs: Array<Array<string>>): Array<number>
 
@@ -346,7 +359,8 @@ export declare function levenshteinBatch(pairs: Array<Array<string>>): Array<num
  *
  * Returns an array of distances, one per candidate, in the same order as the input.
  * If `max_distance` is provided, candidates with distance exceeding the threshold
- * will return `max_distance + 1` (enabling early termination for better performance).
+ * will return `max_distance + 1`, at most 4294967295 (enabling early termination
+ * for better performance).
  */
 export declare function levenshteinMany(reference: string, candidates: Array<string>, maxDistance?: number | undefined | null): Array<number>
 
@@ -378,6 +392,8 @@ export declare function normalizedHamming(a: string, b: string): number | null
  * Compute the normalized Hamming similarity for multiple pairs of strings in a single call.
  *
  * Returns an array of scores in the same order as the input pairs.
+ * Each pair must be an array of exactly two strings `[a, b]`; otherwise an
+ * `InvalidArg` error is thrown.
  * Returns `null` for pairs with different lengths.
  */
 export declare function normalizedHammingBatch(pairs: Array<Array<string>>): Array<number | undefined | null>
@@ -388,7 +404,8 @@ export declare function normalizedHammingBatch(pairs: Array<Array<string>>): Arr
  * Returns an array of scores, one per candidate, in the same order as the input.
  * Returns `null` for candidates with a different length than the reference.
  * If `min_similarity` is provided, candidates with similarity below the threshold
- * will also return `null` (enabling early termination for better performance).
+ * will also return `null`; a score equal to it is kept. Throws an `InvalidArg`
+ * error if `min_similarity` is `NaN`.
  */
 export declare function normalizedHammingMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number | undefined | null>
 
@@ -403,6 +420,8 @@ export declare function normalizedIndel(a: string, b: string): number
  * Compute the normalized Indel similarity for multiple pairs of strings in a single call.
  *
  * Returns an array of similarity scores in the same order as the input pairs.
+ * Each pair must be an array of exactly two strings `[a, b]`; otherwise an
+ * `InvalidArg` error is thrown.
  */
 export declare function normalizedIndelBatch(pairs: Array<Array<string>>): Array<number>
 
@@ -411,7 +430,8 @@ export declare function normalizedIndelBatch(pairs: Array<Array<string>>): Array
  *
  * Returns an array of similarity scores, one per candidate, in the same order as the input.
  * If `min_similarity` is provided, candidates with similarity below the threshold
- * will return `0.0` (enabling early termination for better performance).
+ * will return `0.0` (enabling early termination for better performance); a score
+ * equal to it is kept. Throws an `InvalidArg` error if `min_similarity` is `NaN`.
  */
 export declare function normalizedIndelMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number>
 
@@ -426,6 +446,8 @@ export declare function normalizedLevenshtein(a: string, b: string): number
  * Compute the normalized Levenshtein similarity for multiple pairs of strings in a single call.
  *
  * Returns an array of similarity scores in the same order as the input pairs.
+ * Each pair must be an array of exactly two strings `[a, b]`; otherwise an
+ * `InvalidArg` error is thrown.
  */
 export declare function normalizedLevenshteinBatch(pairs: Array<Array<string>>): Array<number>
 
@@ -434,7 +456,8 @@ export declare function normalizedLevenshteinBatch(pairs: Array<Array<string>>):
  *
  * Returns an array of similarity scores, one per candidate, in the same order as the input.
  * If `min_similarity` is provided, candidates with similarity below the threshold
- * will return `0.0` (enabling early termination for better performance).
+ * will return `0.0` (enabling early termination for better performance); a score
+ * equal to it is kept. Throws an `InvalidArg` error if `min_similarity` is `NaN`.
  */
 export declare function normalizedLevenshteinMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number>
 
@@ -452,6 +475,8 @@ export declare function partialRatio(a: string, b: string): number
  * Compute the partial ratio for multiple pairs of strings in a single call.
  *
  * Returns an array of similarity scores in the same order as the input pairs.
+ * Each pair must be an array of exactly two strings `[a, b]`; otherwise an
+ * `InvalidArg` error is thrown.
  */
 export declare function partialRatioBatch(pairs: Array<Array<string>>): Array<number>
 
@@ -459,7 +484,8 @@ export declare function partialRatioBatch(pairs: Array<Array<string>>): Array<nu
  * Compute the partial ratio from one reference string to many candidates.
  *
  * Returns an array of similarity scores, one per candidate, in the same order as the input.
- * If `min_similarity` is provided, candidates scoring below the threshold return `0.0`.
+ * If `min_similarity` is provided, candidates scoring below the threshold return `0.0`;
+ * a score equal to it is kept. Throws an `InvalidArg` error if `min_similarity` is `NaN`.
  */
 export declare function partialRatioMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number>
 
@@ -541,6 +567,8 @@ export declare function sorensenDice(a: string, b: string): number
  * Compute the Sorensen-Dice coefficient for multiple pairs of strings in a single call.
  *
  * Returns an array of similarity scores in the same order as the input pairs.
+ * Each pair must be an array of exactly two strings `[a, b]`; otherwise an
+ * `InvalidArg` error is thrown.
  */
 export declare function sorensenDiceBatch(pairs: Array<Array<string>>): Array<number>
 
@@ -548,7 +576,8 @@ export declare function sorensenDiceBatch(pairs: Array<Array<string>>): Array<nu
  * Compute the Sorensen-Dice coefficient from one reference string to many candidates.
  *
  * Returns an array of similarity scores, one per candidate, in the same order as the input.
- * If `min_similarity` is provided, candidates scoring below the threshold return `0.0`.
+ * If `min_similarity` is provided, candidates scoring below the threshold return `0.0`;
+ * a score equal to it is kept. Throws an `InvalidArg` error if `min_similarity` is `NaN`.
  * Reference bigrams are pre-computed once and reused for all candidates.
  */
 export declare function sorensenDiceMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number>
@@ -567,6 +596,8 @@ export declare function tokenSetRatio(a: string, b: string): number
  * Compute the token set ratio for multiple pairs of strings in a single call.
  *
  * Returns an array of similarity scores in the same order as the input pairs.
+ * Each pair must be an array of exactly two strings `[a, b]`; otherwise an
+ * `InvalidArg` error is thrown.
  */
 export declare function tokenSetRatioBatch(pairs: Array<Array<string>>): Array<number>
 
@@ -574,7 +605,8 @@ export declare function tokenSetRatioBatch(pairs: Array<Array<string>>): Array<n
  * Compute the token set ratio from one reference string to many candidates.
  *
  * Returns an array of similarity scores, one per candidate, in the same order as the input.
- * If `min_similarity` is provided, candidates scoring below the threshold return `0.0`.
+ * If `min_similarity` is provided, candidates scoring below the threshold return `0.0`;
+ * a score equal to it is kept. Throws an `InvalidArg` error if `min_similarity` is `NaN`.
  */
 export declare function tokenSetRatioMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number>
 
@@ -592,6 +624,8 @@ export declare function tokenSortRatio(a: string, b: string): number
  * Compute the token sort ratio for multiple pairs of strings in a single call.
  *
  * Returns an array of similarity scores in the same order as the input pairs.
+ * Each pair must be an array of exactly two strings `[a, b]`; otherwise an
+ * `InvalidArg` error is thrown.
  */
 export declare function tokenSortRatioBatch(pairs: Array<Array<string>>): Array<number>
 
@@ -599,7 +633,8 @@ export declare function tokenSortRatioBatch(pairs: Array<Array<string>>): Array<
  * Compute the token sort ratio from one reference string to many candidates.
  *
  * Returns an array of similarity scores, one per candidate, in the same order as the input.
- * If `min_similarity` is provided, candidates scoring below the threshold return `0.0`.
+ * If `min_similarity` is provided, candidates scoring below the threshold return `0.0`;
+ * a score equal to it is kept. Throws an `InvalidArg` error if `min_similarity` is `NaN`.
  */
 export declare function tokenSortRatioMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number>
 
@@ -617,6 +652,8 @@ export declare function weightedRatio(a: string, b: string): number
  * Compute the weighted ratio for multiple pairs of strings in a single call.
  *
  * Returns an array of similarity scores in the same order as the input pairs.
+ * Each pair must be an array of exactly two strings `[a, b]`; otherwise an
+ * `InvalidArg` error is thrown.
  */
 export declare function weightedRatioBatch(pairs: Array<Array<string>>): Array<number>
 
@@ -624,7 +661,8 @@ export declare function weightedRatioBatch(pairs: Array<Array<string>>): Array<n
  * Compute the weighted ratio from one reference string to many candidates.
  *
  * Returns an array of similarity scores, one per candidate, in the same order as the input.
- * If `min_similarity` is provided, candidates scoring below the threshold return `0.0`.
+ * If `min_similarity` is provided, candidates scoring below the threshold return `0.0`;
+ * a score equal to it is kept. Throws an `InvalidArg` error if `min_similarity` is `NaN`.
  */
 export declare function weightedRatioMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number>
 

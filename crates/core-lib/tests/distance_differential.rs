@@ -1,11 +1,12 @@
 //! Differential tests for `rapid_fuzzy_core::distance`.
 //!
-//! The single-pair, batch and one-to-many entry points must return
-//! bit-identical results for the same pair. The inputs are random but seeded
-//! (ASCII, accents in both precomposed and combining form, CJK, emoji, ZWJ
-//! sequences, whitespace, empty strings), so failures reproduce.
+//! Every algorithm has a single-pair, a batch and a one-to-many entry point;
+//! they must return bit-identical results for the same pair, and every
+//! `*_many` threshold must follow the documented rule. The inputs are random
+//! but seeded (ASCII, accents in both precomposed and combining form, CJK,
+//! emoji, ZWJ sequences, whitespace, empty strings), so failures reproduce.
 
-use rapid_fuzzy_core::distance as d;
+use rapid_fuzzy_core::distance::{self as d, DistanceError};
 
 // ─── Deterministic input generation ──────────────────────────────────────────
 
@@ -111,6 +112,151 @@ fn pairs_of(case: &Case) -> Vec<Vec<String>> {
         .collect()
 }
 
+// ─── Families ────────────────────────────────────────────────────────────────
+
+type Single = fn(&str, &str) -> f64;
+type Batch = fn(&[Vec<String>]) -> Result<Vec<f64>, DistanceError>;
+type Many = fn(&str, &[String], Option<f64>) -> Result<Vec<f64>, DistanceError>;
+
+struct SimilarityFamily {
+    name: &'static str,
+    single: Single,
+    batch: Batch,
+    many: Many,
+}
+
+const SIMILARITY_FAMILIES: &[SimilarityFamily] = &[
+    SimilarityFamily {
+        name: "jaro",
+        single: d::jaro,
+        batch: d::jaro_batch,
+        many: d::jaro_many,
+    },
+    SimilarityFamily {
+        name: "jaro_winkler",
+        single: d::jaro_winkler,
+        batch: d::jaro_winkler_batch,
+        many: d::jaro_winkler_many,
+    },
+    SimilarityFamily {
+        name: "sorensen_dice",
+        single: d::sorensen_dice,
+        batch: d::sorensen_dice_batch,
+        many: d::sorensen_dice_many,
+    },
+    SimilarityFamily {
+        name: "normalized_levenshtein",
+        single: d::normalized_levenshtein,
+        batch: d::normalized_levenshtein_batch,
+        many: d::normalized_levenshtein_many,
+    },
+    SimilarityFamily {
+        name: "normalized_indel",
+        single: d::normalized_indel,
+        batch: d::normalized_indel_batch,
+        many: d::normalized_indel_many,
+    },
+    SimilarityFamily {
+        name: "token_sort_ratio",
+        single: d::token_sort_ratio,
+        batch: d::token_sort_ratio_batch,
+        many: d::token_sort_ratio_many,
+    },
+    SimilarityFamily {
+        name: "token_set_ratio",
+        single: d::token_set_ratio,
+        batch: d::token_set_ratio_batch,
+        many: d::token_set_ratio_many,
+    },
+    SimilarityFamily {
+        name: "partial_ratio",
+        single: d::partial_ratio,
+        batch: d::partial_ratio_batch,
+        many: d::partial_ratio_many,
+    },
+    SimilarityFamily {
+        name: "weighted_ratio",
+        single: d::weighted_ratio,
+        batch: d::weighted_ratio_batch,
+        many: d::weighted_ratio_many,
+    },
+];
+
+type DistSingle = fn(&str, &str) -> u32;
+type DistBatch = fn(&[Vec<String>]) -> Result<Vec<u32>, DistanceError>;
+type DistMany = fn(&str, &[String], Option<u32>) -> Vec<u32>;
+
+struct DistanceFamily {
+    name: &'static str,
+    single: DistSingle,
+    batch: DistBatch,
+    many: DistMany,
+}
+
+const DISTANCE_FAMILIES: &[DistanceFamily] = &[
+    DistanceFamily {
+        name: "levenshtein",
+        single: d::levenshtein,
+        batch: d::levenshtein_batch,
+        many: d::levenshtein_many,
+    },
+    DistanceFamily {
+        name: "damerau_levenshtein",
+        single: d::damerau_levenshtein,
+        batch: d::damerau_levenshtein_batch,
+        many: d::damerau_levenshtein_many,
+    },
+    DistanceFamily {
+        name: "indel",
+        single: d::indel,
+        batch: d::indel_batch,
+        many: d::indel_many,
+    },
+];
+
+const FIXED_THRESHOLDS: &[f64] = &[
+    0.0,
+    -0.0,
+    0.3,
+    0.5,
+    0.7,
+    0.8,
+    0.9,
+    1.0,
+    1.5,
+    -0.5,
+    f64::INFINITY,
+    f64::NEG_INFINITY,
+];
+
+const FIXED_MAX_DISTANCES: &[u32] = &[0, 1, 2, 3, 5, 10, u32::MAX - 1, u32::MAX];
+
+/// The documented `min_similarity` rule.
+fn filter_similarity(score: f64, min_similarity: f64) -> f64 {
+    if score >= min_similarity { score } else { 0.0 }
+}
+
+/// The documented `max_distance` rule.
+fn filter_distance(distance: u32, max_distance: u32) -> u32 {
+    if distance <= max_distance {
+        distance
+    } else {
+        max_distance.saturating_add(1)
+    }
+}
+
+/// The closest representable values around a positive score.
+fn neighbours(score: f64) -> Vec<f64> {
+    if score > 0.0 && score.is_finite() {
+        vec![
+            f64::from_bits(score.to_bits() - 1),
+            f64::from_bits(score.to_bits() + 1),
+        ]
+    } else {
+        Vec::new()
+    }
+}
+
 fn assert_bits(actual: f64, expected: f64, context: impl Fn() -> String) {
     assert!(
         actual.to_bits() == expected.to_bits(),
@@ -122,16 +268,135 @@ fn assert_bits(actual: f64, expected: f64, context: impl Fn() -> String) {
 // ─── Differential tests ──────────────────────────────────────────────────────
 
 #[test]
-fn sorensen_dice_entry_points_agree_bit_for_bit() {
-    for case in cases(0x5eed_0001, 600) {
+fn similarity_entry_points_agree_bit_for_bit() {
+    let cases = cases(0x5eed_0001, 600);
+    for family in SIMILARITY_FAMILIES {
+        for case in &cases {
+            let reference = case.reference.as_str();
+            let ctx =
+                |i: usize| format!("{}({reference:?}, {:?})", family.name, case.candidates[i]);
+            let scores: Vec<f64> = case
+                .candidates
+                .iter()
+                .map(|c| (family.single)(reference, c))
+                .collect();
+            let batch = (family.batch)(&pairs_of(case)).unwrap();
+            let many = (family.many)(reference, &case.candidates, None).unwrap();
+            for (i, &score) in scores.iter().enumerate() {
+                assert!((0.0..=1.0).contains(&score), "{} out of [0, 1]", ctx(i));
+                assert_bits(batch[i], score, || format!("{} batch", ctx(i)));
+                assert_bits(many[i], score, || format!("{} many", ctx(i)));
+            }
+
+            for &threshold in FIXED_THRESHOLDS {
+                let filtered = (family.many)(reference, &case.candidates, Some(threshold)).unwrap();
+                for (i, &score) in scores.iter().enumerate() {
+                    assert_bits(filtered[i], filter_similarity(score, threshold), || {
+                        format!("{} min_similarity={threshold}", ctx(i))
+                    });
+                }
+            }
+
+            // The boundary: a threshold equal to the score keeps it, one ulp
+            // above drops it.
+            for (i, &score) in scores.iter().enumerate() {
+                let candidate = std::slice::from_ref(&case.candidates[i]);
+                for threshold in std::iter::once(score).chain(neighbours(score)) {
+                    let got = (family.many)(reference, candidate, Some(threshold)).unwrap()[0];
+                    assert_bits(got, filter_similarity(score, threshold), || {
+                        format!("{} min_similarity={threshold:?}", ctx(i))
+                    });
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn distance_entry_points_agree() {
+    let cases = cases(0x5eed_0002, 600);
+    for family in DISTANCE_FAMILIES {
+        for case in &cases {
+            let reference = case.reference.as_str();
+            let ctx =
+                |i: usize| format!("{}({reference:?}, {:?})", family.name, case.candidates[i]);
+            let distances: Vec<u32> = case
+                .candidates
+                .iter()
+                .map(|c| (family.single)(reference, c))
+                .collect();
+            let batch = (family.batch)(&pairs_of(case)).unwrap();
+            let many = (family.many)(reference, &case.candidates, None);
+            assert_eq!(batch, distances, "{} batch", ctx(0));
+            assert_eq!(many, distances, "{} many", ctx(0));
+
+            let thresholds = FIXED_MAX_DISTANCES.iter().copied().chain(
+                distances
+                    .iter()
+                    .flat_map(|&d| [d.saturating_sub(1), d, d.saturating_add(1)]),
+            );
+            for max_distance in thresholds {
+                let filtered = (family.many)(reference, &case.candidates, Some(max_distance));
+                let expected: Vec<u32> = distances
+                    .iter()
+                    .map(|&d| filter_distance(d, max_distance))
+                    .collect();
+                assert_eq!(filtered, expected, "{} max_distance={max_distance}", ctx(0));
+            }
+        }
+    }
+}
+
+#[test]
+fn hamming_entry_points_agree() {
+    for case in cases(0x5eed_0003, 600) {
         let reference = case.reference.as_str();
-        let batch = d::sorensen_dice_batch(&pairs_of(&case));
-        let many = d::sorensen_dice_many(reference, &case.candidates, None);
-        for (i, candidate) in case.candidates.iter().enumerate() {
-            let score = d::sorensen_dice(reference, candidate);
-            let ctx = || format!("sorensen_dice({reference:?}, {candidate:?})");
-            assert_bits(batch[i], score, || format!("{} batch", ctx()));
-            assert_bits(many[i], score, || format!("{} many", ctx()));
+        let distances: Vec<Option<u32>> = case
+            .candidates
+            .iter()
+            .map(|c| d::hamming(reference, c))
+            .collect();
+        assert_eq!(d::hamming_batch(&pairs_of(&case)).unwrap(), distances);
+        assert_eq!(
+            d::hamming_many(reference, &case.candidates, None),
+            distances
+        );
+        for &max_distance in FIXED_MAX_DISTANCES {
+            let expected: Vec<Option<u32>> = distances
+                .iter()
+                .map(|d| d.filter(|&d| d <= max_distance))
+                .collect();
+            assert_eq!(
+                d::hamming_many(reference, &case.candidates, Some(max_distance)),
+                expected,
+                "hamming_many({reference:?}, .., {max_distance})"
+            );
+        }
+
+        let scores: Vec<Option<f64>> = case
+            .candidates
+            .iter()
+            .map(|c| d::normalized_hamming(reference, c))
+            .collect();
+        assert_eq!(
+            d::normalized_hamming_batch(&pairs_of(&case)).unwrap(),
+            scores
+        );
+        assert_eq!(
+            d::normalized_hamming_many(reference, &case.candidates, None).unwrap(),
+            scores
+        );
+        let exact = scores.iter().flatten().copied();
+        for threshold in FIXED_THRESHOLDS.iter().copied().chain(exact) {
+            let expected: Vec<Option<f64>> = scores
+                .iter()
+                .map(|s| s.filter(|&s| s >= threshold))
+                .collect();
+            assert_eq!(
+                d::normalized_hamming_many(reference, &case.candidates, Some(threshold)).unwrap(),
+                expected,
+                "normalized_hamming_many({reference:?}, .., {threshold})"
+            );
         }
     }
 }
@@ -165,7 +430,7 @@ fn sorensen_dice_matches_strsim_bit_for_bit_on_ascii() {
             format!("sorensen_dice({a:?}, {b:?})")
         });
         assert_bits(
-            d::sorensen_dice_many(&a, std::slice::from_ref(&b), None)[0],
+            d::sorensen_dice_many(&a, std::slice::from_ref(&b), None).unwrap()[0],
             expected,
             || format!("sorensen_dice_many({a:?}, [{b:?}])"),
         );
@@ -197,6 +462,20 @@ fn sorensen_dice_counts_characters_not_bytes() {
     }
 }
 
+// ─── Jaro-Winkler cutoff ─────────────────────────────────────────────────────
+
+#[test]
+fn jaro_winkler_many_keeps_a_score_equal_to_the_threshold() {
+    for (reference, candidate) in [("aaac dc ", "aa"), ("\txAB", "\tXAB")] {
+        let score = d::jaro_winkler(reference, candidate);
+        let many = d::jaro_winkler_many(reference, &[candidate.to_string()], Some(score)).unwrap();
+        assert_bits(many[0], score, || {
+            format!("jaro_winkler_many({reference:?}, [{candidate:?}], {score})")
+        });
+    }
+    assert_eq!(d::jaro_winkler("aaac dc ", "aa"), 0.8);
+}
+
 // ─── Token set ratio ─────────────────────────────────────────────────────────
 
 #[test]
@@ -223,5 +502,120 @@ fn token_set_ratio_without_shared_tokens_compares_the_remainders() {
         d::normalized_levenshtein("new york mets", "new york yankees")
             .max(d::normalized_levenshtein("new york", "new york mets"))
             .max(d::normalized_levenshtein("new york", "new york yankees"))
+    );
+}
+
+// ─── Errors and threshold edges ──────────────────────────────────────────────
+
+fn pairs(raw: &[&[&str]]) -> Vec<Vec<String>> {
+    raw.iter()
+        .map(|p| p.iter().map(|s| s.to_string()).collect())
+        .collect()
+}
+
+#[test]
+fn batch_rejects_pairs_without_exactly_two_strings() {
+    let short = pairs(&[&["abc", "abd"], &["abc"]]);
+    let empty = pairs(&[&[]]);
+    let long = pairs(&[&["abc", "abd", "zzz"]]);
+    let cases = [
+        (&short, DistanceError::InvalidPair { index: 1, len: 1 }),
+        (&empty, DistanceError::InvalidPair { index: 0, len: 0 }),
+        (&long, DistanceError::InvalidPair { index: 0, len: 3 }),
+    ];
+    for (input, expected) in cases {
+        for family in SIMILARITY_FAMILIES {
+            assert_eq!((family.batch)(input), Err(expected), "{}", family.name);
+        }
+        for family in DISTANCE_FAMILIES {
+            assert_eq!((family.batch)(input), Err(expected), "{}", family.name);
+        }
+        assert_eq!(d::hamming_batch(input), Err(expected));
+        assert_eq!(d::normalized_hamming_batch(input), Err(expected));
+    }
+    assert_eq!(
+        DistanceError::InvalidPair { index: 1, len: 1 }.to_string(),
+        "pairs[1] must contain exactly 2 strings, got 1"
+    );
+    assert_eq!(d::levenshtein_batch(&[]), Ok(vec![]));
+}
+
+#[test]
+fn many_rejects_a_nan_threshold() {
+    let candidates = vec!["hello".to_string(), "help".to_string()];
+    for family in SIMILARITY_FAMILIES {
+        assert_eq!(
+            (family.many)("hello", &candidates, Some(f64::NAN)),
+            Err(DistanceError::NanThreshold),
+            "{}",
+            family.name
+        );
+    }
+    assert_eq!(
+        d::normalized_hamming_many("hello", &candidates, Some(f64::NAN)),
+        Err(DistanceError::NanThreshold)
+    );
+}
+
+#[test]
+fn many_filters_everything_above_one() {
+    let candidates = vec!["hello".to_string(), String::new()];
+    for family in SIMILARITY_FAMILIES {
+        for threshold in [1.0 + f64::EPSILON, 2.0, f64::INFINITY] {
+            assert_eq!(
+                (family.many)("hello", &candidates, Some(threshold)).unwrap(),
+                vec![0.0, 0.0],
+                "{} min_similarity={threshold}",
+                family.name
+            );
+            assert_eq!(
+                (family.many)("", &[String::new()], Some(threshold)).unwrap(),
+                vec![0.0],
+                "{} empty strings, min_similarity={threshold}",
+                family.name
+            );
+        }
+        assert_eq!(
+            (family.many)("hello", &candidates[..1], Some(1.0)).unwrap(),
+            vec![1.0],
+            "{} keeps an exact match at 1.0",
+            family.name
+        );
+    }
+    assert_eq!(
+        d::normalized_hamming_many("abc", &["abc".to_string()], Some(2.0)).unwrap(),
+        vec![None]
+    );
+}
+
+#[test]
+fn many_sentinel_saturates_at_u32_max() {
+    let candidates = vec!["kitten".to_string(), "sitting".to_string(), String::new()];
+    for family in DISTANCE_FAMILIES {
+        let plain = (family.many)("kitten", &candidates, None);
+        assert_eq!(
+            (family.many)("kitten", &candidates, Some(u32::MAX)),
+            plain,
+            "{}",
+            family.name
+        );
+        assert_eq!(
+            (family.many)("kitten", &candidates, Some(u32::MAX - 1)),
+            plain,
+            "{}",
+            family.name
+        );
+    }
+    assert_eq!(
+        d::levenshtein_many("kitten", &candidates, Some(0)),
+        vec![0, 1, 1]
+    );
+    assert_eq!(
+        d::hamming_many(
+            "abc",
+            &["abd".to_string(), "ab".to_string()],
+            Some(u32::MAX)
+        ),
+        vec![Some(1), None]
     );
 }

@@ -406,6 +406,11 @@ export function damerauLevenshteinBatch(pairs) {
         wasm.damerauLevenshteinBatch(retptr, addHeapObject(pairs));
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        if (r3) {
+            throw takeObject(r2);
+        }
         var v1 = getArrayU32FromWasm0(r0, r1).slice();
         wasm.__wbindgen_export4(r0, r1 * 4, 4);
         return v1;
@@ -457,8 +462,19 @@ export function hamming(a, b) {
  * @returns {any}
  */
 export function hammingBatch(pairs) {
-    const ret = wasm.hammingBatch(addHeapObject(pairs));
-    return takeObject(ret);
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        wasm.hammingBatch(retptr, addHeapObject(pairs));
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        if (r2) {
+            throw takeObject(r1);
+        }
+        return takeObject(r0);
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
 }
 
 /**
@@ -500,6 +516,11 @@ export function indelBatch(pairs) {
         wasm.indelBatch(retptr, addHeapObject(pairs));
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        if (r3) {
+            throw takeObject(r2);
+        }
         var v1 = getArrayU32FromWasm0(r0, r1).slice();
         wasm.__wbindgen_export4(r0, r1 * 4, 4);
         return v1;
@@ -556,6 +577,11 @@ export function jaroBatch(pairs) {
         wasm.jaroBatch(retptr, addHeapObject(pairs));
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        if (r3) {
+            throw takeObject(r2);
+        }
         var v1 = getArrayF64FromWasm0(r0, r1).slice();
         wasm.__wbindgen_export4(r0, r1 * 8, 8);
         return v1;
@@ -580,6 +606,11 @@ export function jaroMany(reference, candidates, score_cutoff) {
         wasm.jaroMany(retptr, ptr0, len0, ptr1, len1, !isLikeNone(score_cutoff), isLikeNone(score_cutoff) ? 0 : score_cutoff);
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        if (r3) {
+            throw takeObject(r2);
+        }
         var v3 = getArrayF64FromWasm0(r0, r1).slice();
         wasm.__wbindgen_export4(r0, r1 * 8, 8);
         return v3;
@@ -612,6 +643,11 @@ export function jaroWinklerBatch(pairs) {
         wasm.jaroWinklerBatch(retptr, addHeapObject(pairs));
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        if (r3) {
+            throw takeObject(r2);
+        }
         var v1 = getArrayF64FromWasm0(r0, r1).slice();
         wasm.__wbindgen_export4(r0, r1 * 8, 8);
         return v1;
@@ -636,6 +672,11 @@ export function jaroWinklerMany(reference, candidates, score_cutoff) {
         wasm.jaroWinklerMany(retptr, ptr0, len0, ptr1, len1, !isLikeNone(score_cutoff), isLikeNone(score_cutoff) ? 0 : score_cutoff);
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        if (r3) {
+            throw takeObject(r2);
+        }
         var v3 = getArrayF64FromWasm0(r0, r1).slice();
         wasm.__wbindgen_export4(r0, r1 * 8, 8);
         return v3;
@@ -668,6 +709,11 @@ export function levenshteinBatch(pairs) {
         wasm.levenshteinBatch(retptr, addHeapObject(pairs));
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        if (r3) {
+            throw takeObject(r2);
+        }
         var v1 = getArrayU32FromWasm0(r0, r1).slice();
         wasm.__wbindgen_export4(r0, r1 * 4, 4);
         return v1;
@@ -719,8 +765,19 @@ export function normalizedHamming(a, b) {
  * @returns {any}
  */
 export function normalizedHammingBatch(pairs) {
-    const ret = wasm.normalizedHammingBatch(addHeapObject(pairs));
-    return takeObject(ret);
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        wasm.normalizedHammingBatch(retptr, addHeapObject(pairs));
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        if (r2) {
+            throw takeObject(r1);
+        }
+        return takeObject(r0);
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
 }
 
 /**
@@ -730,12 +787,23 @@ export function normalizedHammingBatch(pairs) {
  * @returns {any}
  */
 export function normalizedHammingMany(reference, candidates, score_cutoff) {
-    const ptr0 = passStringToWasm0(reference, wasm.__wbindgen_export, wasm.__wbindgen_export2);
-    const len0 = WASM_VECTOR_LEN;
-    const ptr1 = passArrayJsValueToWasm0(candidates, wasm.__wbindgen_export);
-    const len1 = WASM_VECTOR_LEN;
-    const ret = wasm.normalizedHammingMany(ptr0, len0, ptr1, len1, !isLikeNone(score_cutoff), isLikeNone(score_cutoff) ? 0 : score_cutoff);
-    return takeObject(ret);
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passStringToWasm0(reference, wasm.__wbindgen_export, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArrayJsValueToWasm0(candidates, wasm.__wbindgen_export);
+        const len1 = WASM_VECTOR_LEN;
+        wasm.normalizedHammingMany(retptr, ptr0, len0, ptr1, len1, !isLikeNone(score_cutoff), isLikeNone(score_cutoff) ? 0 : score_cutoff);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        if (r2) {
+            throw takeObject(r1);
+        }
+        return takeObject(r0);
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
 }
 
 /**
@@ -762,6 +830,11 @@ export function normalizedIndelBatch(pairs) {
         wasm.normalizedIndelBatch(retptr, addHeapObject(pairs));
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        if (r3) {
+            throw takeObject(r2);
+        }
         var v1 = getArrayF64FromWasm0(r0, r1).slice();
         wasm.__wbindgen_export4(r0, r1 * 8, 8);
         return v1;
@@ -786,6 +859,11 @@ export function normalizedIndelMany(reference, candidates, score_cutoff) {
         wasm.normalizedIndelMany(retptr, ptr0, len0, ptr1, len1, !isLikeNone(score_cutoff), isLikeNone(score_cutoff) ? 0 : score_cutoff);
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        if (r3) {
+            throw takeObject(r2);
+        }
         var v3 = getArrayF64FromWasm0(r0, r1).slice();
         wasm.__wbindgen_export4(r0, r1 * 8, 8);
         return v3;
@@ -818,6 +896,11 @@ export function normalizedLevenshteinBatch(pairs) {
         wasm.normalizedLevenshteinBatch(retptr, addHeapObject(pairs));
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        if (r3) {
+            throw takeObject(r2);
+        }
         var v1 = getArrayF64FromWasm0(r0, r1).slice();
         wasm.__wbindgen_export4(r0, r1 * 8, 8);
         return v1;
@@ -842,6 +925,11 @@ export function normalizedLevenshteinMany(reference, candidates, score_cutoff) {
         wasm.normalizedLevenshteinMany(retptr, ptr0, len0, ptr1, len1, !isLikeNone(score_cutoff), isLikeNone(score_cutoff) ? 0 : score_cutoff);
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        if (r3) {
+            throw takeObject(r2);
+        }
         var v3 = getArrayF64FromWasm0(r0, r1).slice();
         wasm.__wbindgen_export4(r0, r1 * 8, 8);
         return v3;
@@ -874,6 +962,11 @@ export function partialRatioBatch(pairs) {
         wasm.partialRatioBatch(retptr, addHeapObject(pairs));
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        if (r3) {
+            throw takeObject(r2);
+        }
         var v1 = getArrayF64FromWasm0(r0, r1).slice();
         wasm.__wbindgen_export4(r0, r1 * 8, 8);
         return v1;
@@ -898,6 +991,11 @@ export function partialRatioMany(reference, candidates, score_cutoff) {
         wasm.partialRatioMany(retptr, ptr0, len0, ptr1, len1, !isLikeNone(score_cutoff), isLikeNone(score_cutoff) ? 0 : score_cutoff);
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        if (r3) {
+            throw takeObject(r2);
+        }
         var v3 = getArrayF64FromWasm0(r0, r1).slice();
         wasm.__wbindgen_export4(r0, r1 * 8, 8);
         return v3;
@@ -972,6 +1070,11 @@ export function sorensenDiceBatch(pairs) {
         wasm.sorensenDiceBatch(retptr, addHeapObject(pairs));
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        if (r3) {
+            throw takeObject(r2);
+        }
         var v1 = getArrayF64FromWasm0(r0, r1).slice();
         wasm.__wbindgen_export4(r0, r1 * 8, 8);
         return v1;
@@ -996,6 +1099,11 @@ export function sorensenDiceMany(reference, candidates, score_cutoff) {
         wasm.sorensenDiceMany(retptr, ptr0, len0, ptr1, len1, !isLikeNone(score_cutoff), isLikeNone(score_cutoff) ? 0 : score_cutoff);
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        if (r3) {
+            throw takeObject(r2);
+        }
         var v3 = getArrayF64FromWasm0(r0, r1).slice();
         wasm.__wbindgen_export4(r0, r1 * 8, 8);
         return v3;
@@ -1028,6 +1136,11 @@ export function tokenSetRatioBatch(pairs) {
         wasm.tokenSetRatioBatch(retptr, addHeapObject(pairs));
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        if (r3) {
+            throw takeObject(r2);
+        }
         var v1 = getArrayF64FromWasm0(r0, r1).slice();
         wasm.__wbindgen_export4(r0, r1 * 8, 8);
         return v1;
@@ -1052,6 +1165,11 @@ export function tokenSetRatioMany(reference, candidates, score_cutoff) {
         wasm.tokenSetRatioMany(retptr, ptr0, len0, ptr1, len1, !isLikeNone(score_cutoff), isLikeNone(score_cutoff) ? 0 : score_cutoff);
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        if (r3) {
+            throw takeObject(r2);
+        }
         var v3 = getArrayF64FromWasm0(r0, r1).slice();
         wasm.__wbindgen_export4(r0, r1 * 8, 8);
         return v3;
@@ -1084,6 +1202,11 @@ export function tokenSortRatioBatch(pairs) {
         wasm.tokenSortRatioBatch(retptr, addHeapObject(pairs));
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        if (r3) {
+            throw takeObject(r2);
+        }
         var v1 = getArrayF64FromWasm0(r0, r1).slice();
         wasm.__wbindgen_export4(r0, r1 * 8, 8);
         return v1;
@@ -1108,6 +1231,11 @@ export function tokenSortRatioMany(reference, candidates, score_cutoff) {
         wasm.tokenSortRatioMany(retptr, ptr0, len0, ptr1, len1, !isLikeNone(score_cutoff), isLikeNone(score_cutoff) ? 0 : score_cutoff);
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        if (r3) {
+            throw takeObject(r2);
+        }
         var v3 = getArrayF64FromWasm0(r0, r1).slice();
         wasm.__wbindgen_export4(r0, r1 * 8, 8);
         return v3;
@@ -1140,6 +1268,11 @@ export function weightedRatioBatch(pairs) {
         wasm.weightedRatioBatch(retptr, addHeapObject(pairs));
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        if (r3) {
+            throw takeObject(r2);
+        }
         var v1 = getArrayF64FromWasm0(r0, r1).slice();
         wasm.__wbindgen_export4(r0, r1 * 8, 8);
         return v1;
@@ -1164,6 +1297,11 @@ export function weightedRatioMany(reference, candidates, score_cutoff) {
         wasm.weightedRatioMany(retptr, ptr0, len0, ptr1, len1, !isLikeNone(score_cutoff), isLikeNone(score_cutoff) ? 0 : score_cutoff);
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        if (r3) {
+            throw takeObject(r2);
+        }
         var v3 = getArrayF64FromWasm0(r0, r1).slice();
         wasm.__wbindgen_export4(r0, r1 * 8, 8);
         return v3;
