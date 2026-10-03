@@ -9,10 +9,8 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
-permissions:
-  contents: write
-  pull-requests: write
-  id-token: write
+# Nothing by default: every job requests only the token scopes it needs.
+permissions: {}
 
 jobs:
   # ──── On develop push: manage version PR and create release PR ────
@@ -20,6 +18,9 @@ jobs:
     name: Version
     if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # changesets/action pushes the version branch
+      pull-requests: write # changesets/action and `gh pr` open/update the PRs
     env:
       LEFTHOOK: "0"
     steps:
@@ -55,6 +56,7 @@ jobs:
           fi
 
           EXISTING=$(gh pr list --base main --head develop --json number --jq '.[0].number')
+          # shellcheck disable=SC2016 # the backticks are a literal Markdown fence
           BODY=$(printf '## Release v%s\n\nMerging this PR will:\n1. Build native binaries for all 9 platforms\n2. Publish to npm with provenance\n\n### Changelog\n\n```\n%s\n```' "$VERSION" "$(head -50 CHANGELOG.md)")
 
           if [ -n "$EXISTING" ]; then
@@ -76,6 +78,8 @@ jobs:
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       should_publish: ${{ steps.check.outputs.should_publish }}
     steps:
@@ -92,10 +96,10 @@ jobs:
           VERSION=$(node -p "require('./package.json').version")
           if npm view "rapid-fuzzy@${VERSION}" version 2>/dev/null; then
             echo "Version ${VERSION} already published, skipping"
-            echo "should_publish=false" >> $GITHUB_OUTPUT
+            echo "should_publish=false" >> "$GITHUB_OUTPUT"
           else
             echo "Version ${VERSION} not yet published, proceeding"
-            echo "should_publish=true" >> $GITHUB_OUTPUT
+            echo "should_publish=true" >> "$GITHUB_OUTPUT"
           fi
 
   # ──── Build native binaries for all platforms ────
@@ -103,6 +107,8 @@ jobs:
     name: Build - ${{ matrix.settings.target }}
     needs: check
     if: needs.check.outputs.should_publish == 'true'
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -149,9 +155,17 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # Pinned and checksum-verified: the zig toolchain links the shipped musl
+      # binaries. Renovate bumps the version and hashes in the requirements file.
+      - name: Install zig
+        if: ${{ matrix.settings.use-zig }}
+        run: pip3 install --require-hashes -r .github/zig-requirements.txt
+
       - name: Install cargo-zigbuild
         if: ${{ matrix.settings.use-zig }}
-        run: pip3 install ziglang && cargo install cargo-zigbuild
+        uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
+        with:
+          tool: cargo-zigbuild@0.23.4
 
       - name: Build
         run: >-
@@ -182,12 +196,95 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
+  # ──── Load every release binary on its own platform before publishing ────
+  # A binary that cannot be loaded where it will be installed (wrong libc, a
+  # missing DLL, an unsupported instruction, a missing N-API symbol) must stop
+  # the release here rather than reach npm. Each target runs on a runner with
+  # the matching OS, architecture and libc (Alpine containers for musl).
+  smoke-test:
+    name: Smoke test - ${{ matrix.settings.target }}
+    needs: [check, build]
+    if: needs.check.outputs.should_publish == 'true'
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        settings:
+          - host: macos-latest
+            target: aarch64-apple-darwin
+            binding: rapid-fuzzy.darwin-arm64.node
+          - host: macos-15-intel
+            target: x86_64-apple-darwin
+            binding: rapid-fuzzy.darwin-x64.node
+          - host: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            binding: rapid-fuzzy.linux-x64-gnu.node
+          - host: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            binding: rapid-fuzzy.linux-x64-musl.node
+            alpine: true
+          - host: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            binding: rapid-fuzzy.linux-arm64-gnu.node
+          - host: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+            binding: rapid-fuzzy.linux-arm64-musl.node
+            alpine: true
+          - host: windows-latest
+            target: x86_64-pc-windows-msvc
+            binding: rapid-fuzzy.win32-x64-msvc.node
+          - host: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            binding: rapid-fuzzy.win32-arm64-msvc.node
+          - host: ubuntu-latest
+            target: wasm32-wasip1-threads
+            binding: rapid-fuzzy.wasi.cjs
+            wasi: true
+    runs-on: ${{ matrix.settings.host }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Download build artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: bindings-${{ matrix.settings.target }}
+          path: .
+
+      # The WASI loader needs @napi-rs/wasm-runtime and emnapi from node_modules.
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        if: ${{ matrix.settings.wasi }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        if: ${{ !matrix.settings.alpine }}
+        with:
+          node-version-file: .nvmrc
+          cache: ${{ matrix.settings.wasi && 'pnpm' || '' }}
+      - if: ${{ matrix.settings.wasi }}
+        run: pnpm install --frozen-lockfile
+
+      - name: Load the binding
+        if: ${{ !matrix.settings.alpine }}
+        run: node .github/scripts/smoke-test.cjs ${{ matrix.settings.binding }}
+        env:
+          # Require the WASI binding; never fall back to a native one.
+          NAPI_RS_FORCE_WASI: ${{ matrix.settings.wasi && 'error' || '' }}
+
+      - name: Load the binding (Alpine, musl)
+        if: ${{ matrix.settings.alpine }}
+        uses: docker://node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1
+        with:
+          entrypoint: node
+          args: .github/scripts/smoke-test.cjs ${{ matrix.settings.binding }}
+
   # ──── Build the wasm-bindgen browser binary shipped in the root package ────
   build-wasm-bindgen:
     name: Build - wasm-bindgen
     needs: check
     if: needs.check.outputs.should_publish == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -205,7 +302,9 @@ jobs:
           shared-key: build-wasm-bindgen
       - run: pnpm install --frozen-lockfile
       - name: Install wasm-pack
-        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+        uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
+        with:
+          tool: wasm-pack@0.13.1
       - name: Install binaryen
         run: bash scripts/install-binaryen.sh
       - name: Build wasm-bindgen
@@ -220,12 +319,15 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
-  # ──── Publish to npm after all builds succeed ────
+  # ──── Publish to npm after all builds and smoke tests succeed ────
   publish:
     name: Publish
-    needs: [check, build, build-wasm-bindgen]
+    needs: [check, build, smoke-test, build-wasm-bindgen]
     if: needs.check.outputs.should_publish == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # npm provenance attestations
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -289,21 +391,61 @@ jobs:
           [ "$missing" -eq 0 ]
           npm pack --dry-run
 
-      - name: Publish to npm
+      # The platform packages go first, then the root package that depends on
+      # them. `napi prepublish` also adds the optionalDependencies to the root
+      # package.json. GitHub release creation is left to the github-release
+      # job, which only runs once everything is on npm.
+      #
+      # npm trusted publishing (OIDC instead of the long-lived NPM_TOKEN)
+      # needs this workflow to be registered as a trusted publisher for all ten
+      # packages on npmjs.com (package settings, "Trusted publishing"). Once
+      # that is done, NODE_AUTH_TOKEN can be dropped from both steps below:
+      # `id-token: write` is already granted for provenance.
+      - name: Publish platform packages
         run: |
           npm config set provenance true
-          npm publish --access public --provenance
+          pnpm exec napi prepublish -t npm --no-gh-release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-  # ──── Update GitHub Release notes from CHANGELOG ────
-  release-notes:
-    name: Release Notes
+      # Without these the root package installs no native binary at all. The
+      # WASI package is deliberately not an optionalDependency (napi-rs only
+      # declares it when it is the sole target); users opt into it.
+      - name: Verify optionalDependencies
+        run: |
+          # shellcheck disable=SC2016 # ${...} is a JavaScript template literal
+          node -e '
+            const fs = require("node:fs");
+            const pkg = require("./package.json");
+            const deps = pkg.optionalDependencies ?? {};
+            const missing = fs
+              .readdirSync("npm")
+              .map((dir) => require(`./npm/${dir}/package.json`).name)
+              .filter((name) => !name.endsWith("-wasm32-wasi"))
+              .filter((name) => deps[name] !== pkg.version);
+            if (missing.length > 0) {
+              console.error(`optionalDependencies missing or not at ${pkg.version}:`, missing, deps);
+              process.exit(1);
+            }
+          '
+
+      # --ignore-scripts: prepublishOnly would run `napi prepublish` again.
+      - name: Publish rapid-fuzzy
+        run: npm publish --access public --provenance --ignore-scripts
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # ──── Tag the released commit and create the GitHub release ────
+  # Runs only after every package is on npm, so a failed publish never leaves
+  # a tag or release behind. The tag points at the commit that was built
+  # (GITHUB_SHA), not at the default branch.
+  github-release:
+    name: GitHub Release
     needs: [check, publish]
     if: needs.check.outputs.should_publish == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the tag and the release, upload the binaries
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -311,11 +453,34 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version-file: .nvmrc
+      - name: Download build artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: bindings-*
+          path: artifacts
 
-      - name: Extract and update release notes
+      - name: Create tag and release
         run: |
           VERSION=$(node -p "require('./package.json').version")
+          TAG="v${VERSION}"
           NOTES=$(node scripts/extract-changelog.js "$VERSION")
-          gh release edit "v${VERSION}" --title "v${VERSION}" --notes "$NOTES"
+
+          # Same assets napi-rs used to attach: one binary per target.
+          shopt -s nullglob
+          assets=(artifacts/bindings-*/rapid-fuzzy.*.node artifacts/bindings-wasm32-wasip1-threads/rapid-fuzzy.wasm32-wasi.wasm)
+          expected=$(node -p "require('./package.json').napi.targets.length")
+          if [ "${#assets[@]}" -ne "$expected" ]; then
+            echo "::error::expected ${expected} release binaries, found ${#assets[@]}: ${assets[*]}"
+            exit 1
+          fi
+
+          # Re-runs update the existing release instead of failing.
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release edit "$TAG" --title "$TAG" --notes "$NOTES"
+          else
+            gh release create "$TAG" --target "$GITHUB_SHA" --title "$TAG" --notes "$NOTES"
+          fi
+          gh release upload "$TAG" "${assets[@]}" --clobber
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
