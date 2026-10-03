@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { highlight } from '../highlight.js';
 import { FuzzyIndex, KeyedFuzzyIndex } from '../index.js';
 import { FuzzyObjectIndex, searchObjects } from '../objects.js';
 
@@ -398,5 +399,36 @@ describe('destroy() leaves a usable, empty index', () => {
     index.destroy();
     index.add('banana');
     expect(index.size).toBe(1);
+  });
+});
+
+describe('highlight() escapeHtml option', () => {
+  it('is off by default', () => {
+    expect(highlight('<a>', [1], '<b>', '</b>')).toBe('<<b>a</b>>');
+  });
+
+  it('escapes matched and unmatched text with string markers', () => {
+    expect(highlight(`<a&"'>`, [1], '<mark>', '</mark>', { escapeHtml: true })).toBe(
+      '&lt;<mark>a</mark>&amp;&quot;&#39;&gt;',
+    );
+  });
+
+  it('passes escaped text to the callback', () => {
+    const seen: string[] = [];
+    const html = highlight(
+      'a<b',
+      [1],
+      (s) => {
+        seen.push(s);
+        return `[${s}]`;
+      },
+      { escapeHtml: true },
+    );
+    expect(seen).toEqual(['&lt;']);
+    expect(html).toBe('a[&lt;]b');
+  });
+
+  it('escapes the whole string when nothing matched', () => {
+    expect(highlight('<i>', [], '<b>', '</b>', { escapeHtml: true })).toBe('&lt;i&gt;');
   });
 });
