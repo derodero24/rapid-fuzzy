@@ -86,7 +86,8 @@
     "rapid-fuzzy-wasm-bindgen_bg.js",
     "rapid-fuzzy-wasm-bindgen_bg.wasm",
     "rapid-fuzzy-wasm-bindgen.d.ts",
-    "rapid-fuzzy-wasm-bindgen_bg.wasm.d.ts"
+    "rapid-fuzzy-wasm-bindgen_bg.wasm.d.ts",
+    "THIRD_PARTY_NOTICES"
   ],
   "napi": {
     "binaryName": "rapid-fuzzy",
@@ -136,6 +137,7 @@
     "bench:charts": "npx tsx scripts/generate-bench-charts.ts",
     "publint": "publint",
     "bench:rust": "cargo bench -p rapid-fuzzy-bench",
+    "notices": "cargo fetch --locked && node scripts/third-party-notices.js",
     "verify": "pnpm run check && cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace && pnpm run build && pnpm run typecheck && pnpm test",
     "clean": "rm -rf target coverage *.node *.wasm",
     "prepare": "lefthook install"

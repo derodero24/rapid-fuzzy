@@ -102,6 +102,15 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       - run: pnpm install --frozen-lockfile
       - run: pnpm run check
+      - name: Verify THIRD_PARTY_NOTICES is up to date
+        run: |
+          cargo fetch --locked
+          node scripts/third-party-notices.js --check
+      - name: Verify every platform package carries the root LICENSE
+        run: |
+          for dir in npm/*/; do
+            cmp LICENSE "${dir}LICENSE"
+          done
       - run: pnpm run build
       - name: Verify generated binding files are up to date
         run: git diff --exit-code index.js index.d.ts browser.js

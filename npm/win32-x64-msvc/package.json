@@ -6,7 +6,9 @@
   ],
   "main": "rapid-fuzzy.win32-x64-msvc.node",
   "files": [
-    "rapid-fuzzy.win32-x64-msvc.node"
+    "rapid-fuzzy.win32-x64-msvc.node",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES"
   ],
   "description": "Rust-powered fuzzy search and string distance for JavaScript/TypeScript. Up to 15,000x faster than fuse.js with indexed mode.",
   "keywords": [

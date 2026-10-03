@@ -367,6 +367,14 @@ jobs:
       - name: Restore committed binding files
         run: git checkout -- index.js index.d.ts browser.js
 
+      # The binaries statically link third-party code, so every package ships
+      # the notices next to its LICENSE (committed in each npm/* directory).
+      - name: Add third-party notices to the platform packages
+        run: |
+          for dir in npm/*/; do
+            cp THIRD_PARTY_NOTICES "$dir"
+          done
+
       - name: List packages
         run: |
           echo "=== Platform packages ==="
@@ -382,11 +390,14 @@ jobs:
       - name: Verify package contents
         run: |
           missing=0
-          for f in $(node -p "require('./package.json').files.join(' ')"); do
-            if [ ! -f "$f" ]; then
-              echo "::error::missing file listed in package.json files: $f"
-              missing=1
-            fi
+          for manifest in package.json npm/*/package.json; do
+            dir=$(dirname "$manifest")
+            for f in $(node -p "require('./${manifest}').files.join(' ')"); do
+              if [ ! -f "${dir}/${f}" ]; then
+                echo "::error::missing file listed in ${manifest} files: ${f}"
+                missing=1
+              fi
+            done
           done
           [ "$missing" -eq 0 ]
           npm pack --dry-run
