@@ -141,3 +141,81 @@ describe.skipIf(!wasmAvailable)('FuzzyIndex.fromAsync in the WebAssembly build',
     expect(index.search('ap')).toEqual(new napi.FuzzyIndex(ITEMS).search('ap'));
   });
 });
+
+describe('FuzzyObjectIndex.deserialize() checks the keys against the native index', () => {
+  const items = [
+    { name: 'apple', color: 'red' },
+    { name: 'banana', color: 'yellow' },
+  ];
+
+  /** Split serialized data into its metadata and its native index payload. */
+  function split(bytes: Buffer): {
+    meta: { keys: Array<{ name: string; weight: number }> };
+    native: Buffer;
+  } {
+    const metaLen = bytes.readUInt32LE(0);
+    return {
+      meta: JSON.parse(bytes.subarray(4, 4 + metaLen).toString('utf8')),
+      native: bytes.subarray(4 + metaLen),
+    };
+  }
+
+  function join(meta: unknown, native: Buffer): Buffer {
+    const json = Buffer.from(JSON.stringify(meta), 'utf8');
+    const header = Buffer.alloc(4);
+    header.writeUInt32LE(json.length, 0);
+    return Buffer.concat([header, json, native]);
+  }
+
+  it('rejects metadata with more or fewer keys than the native index', () => {
+    const { meta, native } = split(new NodeFuzzyObjectIndex(items, { keys: ['name'] }).serialize());
+    const more = { ...meta, keys: [...meta.keys, { name: 'color', weight: 1 }] };
+    expect(() => NodeFuzzyObjectIndex.deserialize(join(more, native))).toThrow(
+      /^Invalid FuzzyObjectIndex data: key count mismatch \(2 keys, 1 indexed\)/,
+    );
+    const two = split(new NodeFuzzyObjectIndex(items, { keys: ['name', 'color'] }).serialize());
+    const fewer = { ...two.meta, keys: two.meta.keys.slice(0, 1) };
+    expect(() => NodeFuzzyObjectIndex.deserialize(join(fewer, two.native))).toThrow(
+      /key count mismatch \(1 keys, 2 indexed\)/,
+    );
+  });
+
+  it('rejects metadata whose weights differ from the native index', () => {
+    const { meta, native } = split(
+      new NodeFuzzyObjectIndex(items, { keys: [{ name: 'name', weight: 2 }, 'color'] }).serialize(),
+    );
+    const reweighted = { ...meta, keys: meta.keys.map((k) => ({ ...k, weight: 1 })) };
+    expect(() => NodeFuzzyObjectIndex.deserialize(join(reweighted, native))).toThrow(
+      /^Invalid FuzzyObjectIndex data: weight of key 0 \(name\) is 1, the native index has 2/,
+    );
+  });
+
+  it('still loads consistent data, which then accepts new items', () => {
+    const original = new NodeFuzzyObjectIndex(items, {
+      keys: [{ name: 'name', weight: 2 }, 'color'],
+    });
+    const restored = NodeFuzzyObjectIndex.deserialize(original.serialize());
+    expect(restored.search('apple')).toEqual(original.search('apple'));
+    restored.add({ name: 'cherry', color: 'red' });
+    expect(restored.search('cherry')[0]?.item).toEqual({ name: 'cherry', color: 'red' });
+  });
+
+  it('turns a payload destroyed by 2.1 (no native keys) into a usable empty index', () => {
+    // rapid-fuzzy 2.1 cleared the native key configuration on destroy(), so
+    // its serialized payload kept the keys only in the metadata.
+    const legacyNative = Buffer.alloc(16);
+    legacyNative.write('RFKI', 0, 'latin1');
+    legacyNative.writeUInt32LE(1, 4); // version
+    const meta = {
+      items: [],
+      keys: [
+        { name: 'name', weight: 2 },
+        { name: 'color', weight: 1 },
+      ],
+    };
+    const restored = NodeFuzzyObjectIndex.deserialize(join(meta, legacyNative));
+    expect(restored.size).toBe(0);
+    restored.add({ name: 'cherry', color: 'red' });
+    expect(restored.search('red')[0]?.keyScores).toHaveLength(2);
+  });
+});

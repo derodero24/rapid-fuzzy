@@ -406,17 +406,21 @@ class FuzzyObjectIndex {
     }
     const { items, keys } = parseMeta(bytes.subarray(4, metaEnd));
 
+    const native = Buffer.from(
+      bytes.buffer,
+      bytes.byteOffset + metaEnd,
+      bytes.byteLength - metaEnd,
+    );
     let index;
     try {
-      index = KeyedFuzzyIndex.deserialize(
-        Buffer.from(bytes.buffer, bytes.byteOffset + metaEnd, bytes.byteLength - metaEnd),
-      );
+      index = KeyedFuzzyIndex.deserialize(native);
     } catch (err) {
       throw invalidData(err instanceof Error ? err.message : String(err), err);
     }
     if (index.size !== items.length) {
       throw invalidData(`item count mismatch (${items.length} items, ${index.size} indexed)`);
     }
+    index = reconcileKeys(index, nativeWeights(native), items, keys);
     return FuzzyObjectIndex.#fromState(items, keys, index);
   }
 }
@@ -429,6 +433,53 @@ class FuzzyObjectIndex {
 function invalidData(reason, cause) {
   const message = `Invalid FuzzyObjectIndex data: ${reason}`;
   return cause === undefined ? new Error(message) : new Error(message, { cause });
+}
+
+/**
+ * Check the keys of the metadata against the native index they were
+ * serialized with, and return the index to use.
+ * @param {KeyedFuzzyIndex} index - The deserialized native index.
+ * @param {number[]} weights - Its key weights (see {@link nativeWeights}).
+ * @param {unknown[]} items
+ * @param {Array<{ name: string; weight: number }>} keys
+ * @returns {KeyedFuzzyIndex}
+ */
+function reconcileKeys(index, weights, items, keys) {
+  if (weights.length === 0 && items.length === 0) {
+    // rapid-fuzzy 2.1 cleared the native key configuration on destroy(), so
+    // its data kept the keys only in the metadata: rebuild the empty index.
+    try {
+      return new KeyedFuzzyIndex(
+        keys.map(() => []),
+        keys.map((k) => k.weight),
+      );
+    } catch (err) {
+      throw invalidData(err instanceof Error ? err.message : String(err), err);
+    }
+  }
+  if (weights.length !== keys.length) {
+    throw invalidData(`key count mismatch (${keys.length} keys, ${weights.length} indexed)`);
+  }
+  const k = keys.findIndex((key, i) => key.weight !== weights[i]);
+  if (k !== -1) {
+    throw invalidData(
+      `weight of key ${k} (${keys[k].name}) is ${keys[k].weight}, the native index has ${weights[k]}`,
+    );
+  }
+  return index;
+}
+
+/**
+ * The key weights stored in a serialized `KeyedFuzzyIndex` that
+ * `KeyedFuzzyIndex.deserialize()` accepted: `[magic 4B] [version u32]
+ * [num_keys u32] [num_items u32] [num_keys x f64 weight] ...`, little-endian.
+ * @param {Uint8Array} bytes
+ * @returns {number[]}
+ */
+function nativeWeights(bytes) {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const numKeys = view.getUint32(8, true);
+  return Array.from({ length: numKeys }, (_, k) => view.getFloat64(16 + 8 * k, true));
 }
 
 /**
