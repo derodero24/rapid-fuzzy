@@ -56,6 +56,49 @@ function rewriteGlue(source) {
   return `/* @ts-self-types="./${OUT_NAME}.d.mts" */${source.slice(from.length)}`;
 }
 
+/**
+ * Let array parameters accept readonly arrays, as the Node.js declarations do
+ * (scripts/patch-binding.js): `string[]` parameters become
+ * `ReadonlyArray<string>` and `string[][]` ones
+ * `ReadonlyArray<ReadonlyArray<string>>`. The bindings never modify their
+ * arguments. Return types are left as generated.
+ */
+function rewriteDeclarations(dts) {
+  const declaration = /^(\s*(?:export function \w+|(?:static )?\w+|constructor))\(/;
+  const rewritten = dts
+    .split('\n')
+    .map((line) => {
+      const match = declaration.exec(line);
+      if (!match) return line;
+      // Find the parenthesis closing the parameter list.
+      const open = match[1].length;
+      let depth = 0;
+      for (let i = open; i < line.length; i++) {
+        if (line[i] === '(') depth++;
+        else if (line[i] === ')' && --depth === 0) {
+          const params = line
+            .slice(open, i)
+            .replace(/\bstring\[\]\[\]/g, 'ReadonlyArray<ReadonlyArray<string>>')
+            .replace(/\bstring\[\]/g, 'ReadonlyArray<string>');
+          return line.slice(0, open) + params + line.slice(i);
+        }
+      }
+      return line;
+    })
+    .join('\n');
+  // Fail loudly if wasm-bindgen changes its output format and the rewrite stops applying.
+  for (const expected of [
+    'export function levenshteinBatch(pairs: ReadonlyArray<ReadonlyArray<string>>)',
+    'export function search(query: string, items: ReadonlyArray<string>,',
+    '    constructor(items: ReadonlyArray<string>);',
+  ]) {
+    if (!rewritten.includes(expected)) {
+      throw new Error(`build-wasm-bindgen: expected \`${expected}\` in the declarations`);
+    }
+  }
+  return rewritten;
+}
+
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wasm-pack-'));
 
 try {
@@ -74,6 +117,8 @@ try {
     }
     if (target.endsWith('.mjs')) {
       fs.writeFileSync(path.join(ROOT, target), rewriteGlue(fs.readFileSync(src, 'utf8')));
+    } else if (target.endsWith('.d.mts')) {
+      fs.writeFileSync(path.join(ROOT, target), rewriteDeclarations(fs.readFileSync(src, 'utf8')));
     } else {
       fs.copyFileSync(src, path.join(ROOT, target));
     }

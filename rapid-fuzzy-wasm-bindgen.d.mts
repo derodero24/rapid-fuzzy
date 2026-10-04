@@ -127,7 +127,7 @@ export class FuzzyIndex {
     /**
      * Add multiple items to the index at once.
      */
-    addMany(items: string[]): void;
+    addMany(items: ReadonlyArray<string>): void;
     /**
      * Add a single item to the index.
      */
@@ -160,11 +160,11 @@ export class FuzzyIndex {
      * Invalid input (anything but an array of strings) rejects the returned
      * Promise with a `TypeError` instead of throwing synchronously.
      */
-    static fromAsync(items: string[]): Promise<FuzzyIndex>;
+    static fromAsync(items: ReadonlyArray<string>): Promise<FuzzyIndex>;
     /**
      * Create a new FuzzyIndex from an array of strings.
      */
-    constructor(items: string[]);
+    constructor(items: ReadonlyArray<string>);
     /**
      * Remove the item at the given index.
      *
@@ -208,14 +208,14 @@ export class KeyedFuzzyIndex {
      * Each element of `itemsKeyValues` is an array of key values for one item.
      * Throws if any element has the wrong number of key values.
      */
-    addMany(itemsKeyValues: string[][]): void;
+    addMany(itemsKeyValues: ReadonlyArray<ReadonlyArray<string>>): void;
     /**
      * Add a single item to the index.
      *
      * `keyValues` must have the same length as the number of keys.
      * Throws if the length does not match.
      */
-    add(keyValues: string[]): void;
+    add(keyValues: ReadonlyArray<string>): void;
     /**
      * Find the index of the closest matching item.
      *
@@ -241,7 +241,7 @@ export class KeyedFuzzyIndex {
      * All inner arrays must have the same length (the number of items).
      * `weights` holds one finite, non-negative weight per key.
      */
-    constructor(keyTexts: string[][], weights: ArrayLike<number>);
+    constructor(keyTexts: ReadonlyArray<ReadonlyArray<string>>, weights: ArrayLike<number>);
     /**
      * Remove the item at the given index.
      *
@@ -272,7 +272,7 @@ export class KeyedFuzzyIndex {
  * Returns the best match, or null if no match is found.
  * If `minScore` is provided, returns null when the best match scores below the threshold.
  */
-export function closest(query: string, items: string[], minScore?: number | null): string | null;
+export function closest(query: string, items: ReadonlyArray<string>, minScore?: number | null): string | null;
 
 /**
  * Compute the Damerau-Levenshtein distance between two strings.
@@ -292,7 +292,7 @@ export function damerauLevenshtein(a: string, b: string): number;
  *
  * Returns an array of distances in the same order as the input pairs.
  */
-export function damerauLevenshteinBatch(pairs: string[][]): Uint32Array;
+export function damerauLevenshteinBatch(pairs: ReadonlyArray<ReadonlyArray<string>>): Uint32Array;
 
 /**
  * Compute the Damerau-Levenshtein distance from one reference string to many candidates.
@@ -301,7 +301,7 @@ export function damerauLevenshteinBatch(pairs: string[][]): Uint32Array;
  * If `maxDistance` is provided, candidates with distance exceeding the threshold
  * will return `maxDistance + 1` (enabling early termination for better performance).
  */
-export function damerauLevenshteinMany(reference: string, candidates: string[], maxDistance?: number | null): Uint32Array;
+export function damerauLevenshteinMany(reference: string, candidates: ReadonlyArray<string>, maxDistance?: number | null): Uint32Array;
 
 /**
  * Compute the Hamming distance between two strings.
@@ -322,7 +322,7 @@ export function hamming(a: string, b: string): number | null;
  * Each pair must be an array of exactly two strings `[a, b]`.
  * Returns `null` for pairs with different lengths.
  */
-export function hammingBatch(pairs: string[][]): (number | null)[];
+export function hammingBatch(pairs: ReadonlyArray<ReadonlyArray<string>>): (number | null)[];
 
 /**
  * Compute the Hamming distance from one reference string to many candidates.
@@ -332,7 +332,7 @@ export function hammingBatch(pairs: string[][]): (number | null)[];
  * If `maxDistance` is provided, candidates with distance exceeding the threshold
  * will also return `null` (enabling early termination for better performance).
  */
-export function hammingMany(reference: string, candidates: string[], maxDistance?: number | null): (number | null)[];
+export function hammingMany(reference: string, candidates: ReadonlyArray<string>, maxDistance?: number | null): (number | null)[];
 
 /**
  * Compute the Indel distance between two strings.
@@ -355,7 +355,7 @@ export function indel(a: string, b: string): number;
  * Returns an array of distances in the same order as the input pairs.
  * Each pair must be an array of exactly two strings `[a, b]`.
  */
-export function indelBatch(pairs: string[][]): Uint32Array;
+export function indelBatch(pairs: ReadonlyArray<ReadonlyArray<string>>): Uint32Array;
 
 /**
  * Compute the Indel distance from one reference string to many candidates.
@@ -364,7 +364,7 @@ export function indelBatch(pairs: string[][]): Uint32Array;
  * If `maxDistance` is provided, candidates with distance exceeding the threshold
  * will return `maxDistance + 1` (enabling early termination for better performance).
  */
-export function indelMany(reference: string, candidates: string[], maxDistance?: number | null): Uint32Array;
+export function indelMany(reference: string, candidates: ReadonlyArray<string>, maxDistance?: number | null): Uint32Array;
 
 /**
  * Compute the Jaro similarity between two strings.
@@ -381,7 +381,7 @@ export function jaro(a: string, b: string): number;
  *
  * Returns an array of similarity scores in the same order as the input pairs.
  */
-export function jaroBatch(pairs: string[][]): Float64Array;
+export function jaroBatch(pairs: ReadonlyArray<ReadonlyArray<string>>): Float64Array;
 
 /**
  * Compute the Jaro similarity from one reference string to many candidates.
@@ -390,7 +390,7 @@ export function jaroBatch(pairs: string[][]): Float64Array;
  * If `minSimilarity` is provided, candidates with similarity below the threshold
  * will return `0.0` (enabling early termination for better performance).
  */
-export function jaroMany(reference: string, candidates: string[], minSimilarity?: number | null): Float64Array;
+export function jaroMany(reference: string, candidates: ReadonlyArray<string>, minSimilarity?: number | null): Float64Array;
 
 /**
  * Compute the Jaro-Winkler similarity between two strings.
@@ -408,7 +408,7 @@ export function jaroWinkler(a: string, b: string): number;
  *
  * Returns an array of similarity scores in the same order as the input pairs.
  */
-export function jaroWinklerBatch(pairs: string[][]): Float64Array;
+export function jaroWinklerBatch(pairs: ReadonlyArray<ReadonlyArray<string>>): Float64Array;
 
 /**
  * Compute the Jaro-Winkler similarity from one reference string to many candidates.
@@ -417,7 +417,7 @@ export function jaroWinklerBatch(pairs: string[][]): Float64Array;
  * If `minSimilarity` is provided, candidates with similarity below the threshold
  * will return `0.0` (enabling early termination for better performance).
  */
-export function jaroWinklerMany(reference: string, candidates: string[], minSimilarity?: number | null): Float64Array;
+export function jaroWinklerMany(reference: string, candidates: ReadonlyArray<string>, minSimilarity?: number | null): Float64Array;
 
 /**
  * Compute the Levenshtein distance between two strings.
@@ -437,7 +437,7 @@ export function levenshtein(a: string, b: string): number;
  * Returns an array of distances in the same order as the input pairs.
  * Each pair must be an array of exactly two strings `[a, b]`.
  */
-export function levenshteinBatch(pairs: string[][]): Uint32Array;
+export function levenshteinBatch(pairs: ReadonlyArray<ReadonlyArray<string>>): Uint32Array;
 
 /**
  * Compute the Levenshtein distance from one reference string to many candidates.
@@ -446,7 +446,7 @@ export function levenshteinBatch(pairs: string[][]): Uint32Array;
  * If `maxDistance` is provided, candidates with distance exceeding the threshold
  * will return `maxDistance + 1` (enabling early termination for better performance).
  */
-export function levenshteinMany(reference: string, candidates: string[], maxDistance?: number | null): Uint32Array;
+export function levenshteinMany(reference: string, candidates: ReadonlyArray<string>, maxDistance?: number | null): Uint32Array;
 
 /**
  * Compute the normalized Hamming similarity between two strings.
@@ -465,7 +465,7 @@ export function normalizedHamming(a: string, b: string): number | null;
  * Returns an array of scores in the same order as the input pairs.
  * Returns `null` for pairs with different lengths.
  */
-export function normalizedHammingBatch(pairs: string[][]): (number | null)[];
+export function normalizedHammingBatch(pairs: ReadonlyArray<ReadonlyArray<string>>): (number | null)[];
 
 /**
  * Compute the normalized Hamming similarity from one reference string to many candidates.
@@ -475,7 +475,7 @@ export function normalizedHammingBatch(pairs: string[][]): (number | null)[];
  * If `minSimilarity` is provided, candidates with similarity below the threshold
  * will also return `null` (enabling early termination for better performance).
  */
-export function normalizedHammingMany(reference: string, candidates: string[], minSimilarity?: number | null): (number | null)[];
+export function normalizedHammingMany(reference: string, candidates: ReadonlyArray<string>, minSimilarity?: number | null): (number | null)[];
 
 /**
  * Compute the normalized Indel similarity between two strings.
@@ -496,7 +496,7 @@ export function normalizedIndel(a: string, b: string): number;
  *
  * Returns an array of similarity scores in the same order as the input pairs.
  */
-export function normalizedIndelBatch(pairs: string[][]): Float64Array;
+export function normalizedIndelBatch(pairs: ReadonlyArray<ReadonlyArray<string>>): Float64Array;
 
 /**
  * Compute the normalized Indel similarity from one reference string to many candidates.
@@ -505,7 +505,7 @@ export function normalizedIndelBatch(pairs: string[][]): Float64Array;
  * If `minSimilarity` is provided, candidates with similarity below the threshold
  * will return `0.0` (enabling early termination for better performance).
  */
-export function normalizedIndelMany(reference: string, candidates: string[], minSimilarity?: number | null): Float64Array;
+export function normalizedIndelMany(reference: string, candidates: ReadonlyArray<string>, minSimilarity?: number | null): Float64Array;
 
 /**
  * Compute the normalized Levenshtein similarity between two strings.
@@ -524,7 +524,7 @@ export function normalizedLevenshtein(a: string, b: string): number;
  *
  * Returns an array of similarity scores in the same order as the input pairs.
  */
-export function normalizedLevenshteinBatch(pairs: string[][]): Float64Array;
+export function normalizedLevenshteinBatch(pairs: ReadonlyArray<ReadonlyArray<string>>): Float64Array;
 
 /**
  * Compute the normalized Levenshtein similarity from one reference string to many candidates.
@@ -533,7 +533,7 @@ export function normalizedLevenshteinBatch(pairs: string[][]): Float64Array;
  * If `minSimilarity` is provided, candidates with similarity below the threshold
  * will return `0.0` (enabling early termination for better performance).
  */
-export function normalizedLevenshteinMany(reference: string, candidates: string[], minSimilarity?: number | null): Float64Array;
+export function normalizedLevenshteinMany(reference: string, candidates: ReadonlyArray<string>, minSimilarity?: number | null): Float64Array;
 
 /**
  * Compute the partial ratio between two strings.
@@ -558,7 +558,7 @@ export function partialRatio(a: string, b: string): number;
  *
  * Returns an array of similarity scores in the same order as the input pairs.
  */
-export function partialRatioBatch(pairs: string[][]): Float64Array;
+export function partialRatioBatch(pairs: ReadonlyArray<ReadonlyArray<string>>): Float64Array;
 
 /**
  * Compute the partial ratio from one reference string to many candidates.
@@ -566,7 +566,7 @@ export function partialRatioBatch(pairs: string[][]): Float64Array;
  * Returns an array of similarity scores, one per candidate, in the same order as the input.
  * If `minSimilarity` is provided, candidates scoring below the threshold return `0.0`.
  */
-export function partialRatioMany(reference: string, candidates: string[], minSimilarity?: number | null): Float64Array;
+export function partialRatioMany(reference: string, candidates: ReadonlyArray<string>, minSimilarity?: number | null): Float64Array;
 
 /**
  * Perform fuzzy search over a list of strings.
@@ -577,7 +577,7 @@ export function partialRatioMany(reference: string, candidates: string[], minSim
  * The third argument accepts either a number (maxResults for backward
  * compatibility) or a SearchOptions object.
  */
-export function search(query: string, items: string[], options?: number | SearchOptions | null): SearchResult[];
+export function search(query: string, items: ReadonlyArray<string>, options?: number | SearchOptions | null): SearchResult[];
 
 /**
  * Perform fuzzy search across multiple text keys with weights.
@@ -593,7 +593,7 @@ export function search(query: string, items: string[], options?: number | Search
  * weights, or weights summing to 0 or Infinity), like the `KeyedFuzzyIndex`
  * constructor.
  */
-export function searchKeys(query: string, keyTexts: string[][], weights: ArrayLike<number>, options?: number | SearchOptions | null): KeySearchResult[];
+export function searchKeys(query: string, keyTexts: ReadonlyArray<ReadonlyArray<string>>, weights: ArrayLike<number>, options?: number | SearchOptions | null): KeySearchResult[];
 
 /**
  * Compute the Sorensen-Dice coefficient between two strings.
@@ -610,7 +610,7 @@ export function sorensenDice(a: string, b: string): number;
  *
  * Returns an array of similarity scores in the same order as the input pairs.
  */
-export function sorensenDiceBatch(pairs: string[][]): Float64Array;
+export function sorensenDiceBatch(pairs: ReadonlyArray<ReadonlyArray<string>>): Float64Array;
 
 /**
  * Compute the Sorensen-Dice coefficient from one reference string to many candidates.
@@ -619,7 +619,7 @@ export function sorensenDiceBatch(pairs: string[][]): Float64Array;
  * If `minSimilarity` is provided, candidates scoring below the threshold return `0.0`.
  * Reference bigrams are pre-computed once and reused for all candidates.
  */
-export function sorensenDiceMany(reference: string, candidates: string[], minSimilarity?: number | null): Float64Array;
+export function sorensenDiceMany(reference: string, candidates: ReadonlyArray<string>, minSimilarity?: number | null): Float64Array;
 
 /**
  * Compute the token set ratio between two strings.
@@ -639,7 +639,7 @@ export function tokenSetRatio(a: string, b: string): number;
  *
  * Returns an array of similarity scores in the same order as the input pairs.
  */
-export function tokenSetRatioBatch(pairs: string[][]): Float64Array;
+export function tokenSetRatioBatch(pairs: ReadonlyArray<ReadonlyArray<string>>): Float64Array;
 
 /**
  * Compute the token set ratio from one reference string to many candidates.
@@ -647,7 +647,7 @@ export function tokenSetRatioBatch(pairs: string[][]): Float64Array;
  * Returns an array of similarity scores, one per candidate, in the same order as the input.
  * If `minSimilarity` is provided, candidates scoring below the threshold return `0.0`.
  */
-export function tokenSetRatioMany(reference: string, candidates: string[], minSimilarity?: number | null): Float64Array;
+export function tokenSetRatioMany(reference: string, candidates: ReadonlyArray<string>, minSimilarity?: number | null): Float64Array;
 
 /**
  * Compute the token sort ratio between two strings.
@@ -665,7 +665,7 @@ export function tokenSortRatio(a: string, b: string): number;
  *
  * Returns an array of similarity scores in the same order as the input pairs.
  */
-export function tokenSortRatioBatch(pairs: string[][]): Float64Array;
+export function tokenSortRatioBatch(pairs: ReadonlyArray<ReadonlyArray<string>>): Float64Array;
 
 /**
  * Compute the token sort ratio from one reference string to many candidates.
@@ -673,7 +673,7 @@ export function tokenSortRatioBatch(pairs: string[][]): Float64Array;
  * Returns an array of similarity scores, one per candidate, in the same order as the input.
  * If `minSimilarity` is provided, candidates scoring below the threshold return `0.0`.
  */
-export function tokenSortRatioMany(reference: string, candidates: string[], minSimilarity?: number | null): Float64Array;
+export function tokenSortRatioMany(reference: string, candidates: ReadonlyArray<string>, minSimilarity?: number | null): Float64Array;
 
 /**
  * Compute the weighted ratio between two strings.
@@ -693,7 +693,7 @@ export function weightedRatio(a: string, b: string): number;
  *
  * Returns an array of similarity scores in the same order as the input pairs.
  */
-export function weightedRatioBatch(pairs: string[][]): Float64Array;
+export function weightedRatioBatch(pairs: ReadonlyArray<ReadonlyArray<string>>): Float64Array;
 
 /**
  * Compute the weighted ratio from one reference string to many candidates.
@@ -701,7 +701,7 @@ export function weightedRatioBatch(pairs: string[][]): Float64Array;
  * Returns an array of similarity scores, one per candidate, in the same order as the input.
  * If `minSimilarity` is provided, candidates scoring below the threshold return `0.0`.
  */
-export function weightedRatioMany(reference: string, candidates: string[], minSimilarity?: number | null): Float64Array;
+export function weightedRatioMany(reference: string, candidates: ReadonlyArray<string>, minSimilarity?: number | null): Float64Array;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
