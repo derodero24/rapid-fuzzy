@@ -1,7 +1,5 @@
 use rapid_fuzzy_core::search::KeyedFuzzyIndexCore;
-use rapid_fuzzy_core::search::serialization::{
-    KEYED_INDEX_MAGIC, deserialize_keyed, serialize_keyed,
-};
+use rapid_fuzzy_core::search::serialization::{deserialize_keyed_index, serialize_keyed_index};
 use wasm_bindgen::prelude::*;
 
 use super::keys::KeySearchResult;
@@ -122,18 +120,12 @@ impl KeyedFuzzyIndex {
 
     /// Serialize the index to a compact binary format (Uint8Array).
     pub fn serialize(&self) -> Vec<u8> {
-        serialize_keyed(
-            self.core.key_texts(),
-            self.core.weights(),
-            KEYED_INDEX_MAGIC,
-        )
+        serialize_keyed_index(&self.core)
     }
 
     /// Reconstruct a KeyedFuzzyIndex from a previously serialized Uint8Array.
     pub fn deserialize(data: &[u8]) -> Result<KeyedFuzzyIndex, JsValue> {
-        let (key_texts, weights) =
-            deserialize_keyed(data, KEYED_INDEX_MAGIC).map_err(|e| JsValue::from_str(&e))?;
-        KeyedFuzzyIndexCore::new(key_texts, weights)
+        deserialize_keyed_index(data)
             .map(|core| Self { core })
             .map_err(|e| JsValue::from_str(&e))
     }

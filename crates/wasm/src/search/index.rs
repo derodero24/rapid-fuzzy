@@ -1,8 +1,6 @@
 use nucleo_matcher::pattern::CaseMatching;
 use rapid_fuzzy_core::search::FuzzyIndexCore;
-use rapid_fuzzy_core::search::serialization::{
-    FUZZY_INDEX_WASM_MAGIC, deserialize_items, serialize_items,
-};
+use rapid_fuzzy_core::search::serialization::{deserialize_fuzzy_index, serialize_fuzzy_index};
 use wasm_bindgen::prelude::*;
 
 use super::{IndexSearchResult, SearchOptions, SearchResult, resolve_case_matching, to_js};
@@ -155,13 +153,13 @@ impl FuzzyIndex {
 
     /// Serialize the index to a compact binary format (Uint8Array).
     pub fn serialize(&self) -> Vec<u8> {
-        serialize_items(self.core.items(), FUZZY_INDEX_WASM_MAGIC)
+        serialize_fuzzy_index(&self.core)
     }
 
     /// Reconstruct a FuzzyIndex from a previously serialized Uint8Array.
     pub fn deserialize(data: &[u8]) -> Result<FuzzyIndex, JsValue> {
-        let items =
-            deserialize_items(data, FUZZY_INDEX_WASM_MAGIC).map_err(|e| JsValue::from_str(&e))?;
-        Ok(Self::new(items))
+        deserialize_fuzzy_index(data)
+            .map(|core| Self { core })
+            .map_err(|e| JsValue::from_str(&e))
     }
 }
