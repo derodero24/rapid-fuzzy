@@ -79,8 +79,10 @@ export type {
  * exchange Node.js Buffers.
  */
 export interface FuzzyObjectIndex<T> extends Omit<NodeFuzzyObjectIndex<T>, 'serialize'> {}
-export declare const FuzzyObjectIndex: new <T>(
-  ...args: ConstructorParameters<typeof NodeFuzzyObjectIndex<T>>
+// S and C capture the key names written in the options, like the type parameters
+// of the Node.js constructor, so that they are checked against T.
+export declare const FuzzyObjectIndex: new <T, S extends string = string, C extends string = string>(
+  ...args: ConstructorParameters<typeof NodeFuzzyObjectIndex<T, S, C>>
 ) => FuzzyObjectIndex<T>;
 
 /** How a search result matched the query. */

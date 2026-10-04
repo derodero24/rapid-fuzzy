@@ -73,3 +73,18 @@ searchObjects('q', located, { keys: ['name', 'address.geo.lat'] });
 searchObjects('q', located, { keys: ['greet'] });
 // @ts-expect-error -- path continues past a string value
 searchObjects('q', located, { keys: ['name.length'] });
+
+// ─── The browser FuzzyObjectIndex checks key names like the Node.js one ─────
+
+export function browserKeys(b: typeof Browser): void {
+  new b.FuzzyObjectIndex(located, { keys: ['name', { name: 'address.city', weight: 2 }] });
+  // @ts-expect-error -- typo in a key name
+  new b.FuzzyObjectIndex(located, { keys: ['nmae'] });
+  // @ts-expect-error -- typo in a key config name
+  new b.FuzzyObjectIndex(located, { keys: [{ name: 'address.ctiy' }] });
+  const dynamic: string[] = ['name'];
+  const index: Browser.FuzzyObjectIndex<Located> = new b.FuzzyObjectIndex(located, {
+    keys: dynamic,
+  });
+  index.search('q', 2);
+}
