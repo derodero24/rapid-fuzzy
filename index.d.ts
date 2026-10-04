@@ -6,21 +6,25 @@
  *
  * Holds items in memory on the Rust side, avoiding repeated FFI overhead
  * for applications that search the same dataset multiple times.
- * Pre-computes Utf32String representations for each item, eliminating
- * per-search string conversion overhead.
+ * Pre-computes the search representation of each item (a character mask,
+ * plus the UTF-32 text of non-ASCII items), eliminating per-search string
+ * conversion overhead.
  * Memory is freed when the JavaScript garbage collector collects the instance
  * or when `destroy()` is called explicitly.
  */
 export declare class FuzzyIndex {
   /** Create a new FuzzyIndex from an array of strings. */
-  constructor(items: Array<string>)
+  constructor(items: ReadonlyArray<string>)
   /**
    * Construct a FuzzyIndex on the libuv thread pool, returning a Promise.
    *
    * For large datasets this keeps the JavaScript event loop unblocked during
    * index construction. The synchronous constructor is fine for small datasets.
+   *
+   * Invalid input (such as an array containing a non-string) rejects the
+   * returned Promise instead of throwing synchronously.
    */
-  static fromAsync(items: Array<string>): Promise<FuzzyIndex>
+  static fromAsync(items: ReadonlyArray<string>): Promise<FuzzyIndex>
   /** Return the number of items in the index. */
   get size(): number
   /**
@@ -29,8 +33,12 @@ export declare class FuzzyIndex {
    * Returns matches sorted by score (best match first).
    * Scores are normalized to a 0.0-1.0 range where 1.0 is a perfect match.
    *
+   * Results are identical to `search(query, items, options)` over the same
+   * items, including the query syntax and whitespace rules.
+   *
    * The second argument accepts either a number (maxResults shorthand) or a
-   * SearchOptions object.
+   * SearchOptions object. `maxResults` must be a non-negative integer or
+   * `Infinity`.
    */
   search(query: string, options?: number | SearchOptions | undefined | null): Array<SearchResult>
   /**
@@ -48,20 +56,26 @@ export declare class FuzzyIndex {
    * String cloning overhead for each result.
    *
    * The second argument accepts either a number (maxResults shorthand) or a
-   * SearchOptions object.
+   * SearchOptions object. `maxResults` must be a non-negative integer or
+   * `Infinity`.
    */
   searchIndices(query: string, options?: number | SearchOptions | undefined | null): Array<IndexSearchResult>
   /** Add a single item to the index. */
   add(item: string): void
   /** Add multiple items to the index at once. */
-  addMany(items: Array<string>): void
+  addMany(items: ReadonlyArray<string>): void
   /**
    * Remove the item at the given index.
    *
    * Uses swap-remove for O(1) performance. Returns false if out of bounds.
    */
   remove(index: number): boolean
-  /** Free the internal data. After calling this, the index is empty. */
+  /**
+   * Free the internal data. After calling this, the index is empty.
+   *
+   * The index stays usable: it behaves as an empty index (searches
+   * return no results) and `add()` / `addMany()` work as before.
+   */
   destroy(): void
   /**
    * Serialize the index to a compact binary format.
@@ -69,12 +83,18 @@ export declare class FuzzyIndex {
    * The returned Buffer can be written to disk, stored in IndexedDB,
    * or transferred over the network. Use `FuzzyIndex.deserialize()` to
    * reconstruct the index.
+   *
+   * The format stores the item strings (UTF-8, each with a 4-byte length)
+   * after a small header, not the precomputed search data:
+   * `deserialize()` recomputes it, so loading takes about as long as
+   * building the index from an array. The format is versioned; data
+   * written by a different format version is rejected.
    */
   serialize(): Buffer
   /**
    * Reconstruct a FuzzyIndex from a previously serialized Buffer.
    *
-   * Pre-computes Utf32String and character masks from the stored items,
+   * Pre-computes the search representation of the stored items,
    * so the returned index is immediately ready for searching.
    */
   static deserialize(data: Buffer): FuzzyIndex
@@ -86,8 +106,10 @@ export declare class FuzzyIndex {
  * Holds key text arrays and weights in memory on the Rust side,
  * avoiding repeated FFI overhead for applications that search the
  * same dataset multiple times with multiple keys.
- * Pre-computes Utf32String representations and reuses the Matcher
- * instance for optimal repeated-search performance.
+ * Pre-computes the search representation of every key text, eliminating
+ * per-search string conversion overhead.
+ * Memory is freed when the JavaScript garbage collector collects the instance
+ * or when `destroy()` is called explicitly.
  *
  * Typically wrapped by a JS-side `FuzzyObjectIndex` class that maps
  * results back to original objects.
@@ -96,23 +118,27 @@ export declare class KeyedFuzzyIndex {
   /**
    * Create a new KeyedFuzzyIndex.
    *
-   * `key_texts[k]` is an array of strings for key `k`, one per item.
+   * `keyTexts[k]` is an array of strings for key `k`, one per item.
    * All inner arrays must have the same length (the number of items).
    */
-  constructor(keyTexts: Array<Array<string>>, weights: Array<number>)
+  constructor(keyTexts: ReadonlyArray<ReadonlyArray<string>>, weights: ReadonlyArray<number>)
   /** Return the number of items in the index. */
   get size(): number
   /**
    * Search the index for items matching the query.
    *
    * Returns results sorted by combined weighted score (best match first).
+   *
+   * The second argument accepts either a number (maxResults shorthand) or a
+   * SearchOptions object, like `FuzzyIndex.search()`. `maxResults` must be a
+   * non-negative integer or `Infinity`.
    */
-  search(query: string, options?: SearchOptions | undefined | null): Array<KeySearchResult>
+  search(query: string, options?: number | SearchOptions | undefined | null): Array<KeySearchResult>
   /**
    * Find the index of the closest matching item.
    *
    * Returns the index of the best match, or null if no match is found.
-   * If `min_score` is provided, returns null when the best match scores below the threshold.
+   * If `minScore` is provided, returns null when the best match scores below the threshold.
    *
    * Use the returned index to look up the item in your own data array.
    */
@@ -120,24 +146,30 @@ export declare class KeyedFuzzyIndex {
   /**
    * Add a single item to the index.
    *
-   * `key_values` must have the same length as the number of keys.
+   * `keyValues` must have the same length as the number of keys.
    * Throws if the length does not match.
    */
-  add(keyValues: Array<string>): void
+  add(keyValues: ReadonlyArray<string>): void
   /**
    * Add multiple items to the index at once.
    *
-   * Each element of `items_key_values` is an array of key values for one item.
-   * Throws if any element has the wrong number of key values.
+   * Each element of `itemsKeyValues` is an array of key values for one item.
+   * Throws if any element has the wrong number of key values; every element
+   * is checked first, so on error no item is added.
    */
-  addMany(itemsKeyValues: Array<Array<string>>): void
+  addMany(itemsKeyValues: ReadonlyArray<ReadonlyArray<string>>): void
   /**
    * Remove the item at the given index.
    *
    * Uses swap-remove for O(1) performance. Returns false if out of bounds.
    */
   remove(index: number): boolean
-  /** Free the internal data. After calling this, the index is empty. */
+  /**
+   * Free the internal data. After calling this, the index is empty.
+   *
+   * The key configuration is kept, so the index stays usable: it behaves
+   * as an empty index and `add()` / `addMany()` work as before.
+   */
   destroy(): void
   /**
    * Serialize the index to a compact binary format.
@@ -157,13 +189,18 @@ export declare class KeyedFuzzyIndex {
  * Returns the best match, or null if no match is found.
  * If minScore is provided, returns null when the best match scores below the threshold.
  */
-export declare function closest(query: string, items: Array<string>, minScore?: number | undefined | null): string | null
+export declare function closest(query: string, items: ReadonlyArray<string>, minScore?: number | undefined | null): string | null
 
 /**
  * Compute the Damerau-Levenshtein distance between two strings.
  *
  * Like Levenshtein, but also considers transpositions of two adjacent
  * characters as a single edit.
+ *
+ * Compares the Unicode code points of the strings as given: case, whitespace
+ * and Unicode normalization (NFC vs NFD) are not adjusted.
+ * Takes time proportional to the product of the two lengths: about 0.4 s
+ * for two 10,000-character strings with the native addon.
  */
 export declare function damerauLevenshtein(a: string, b: string): number
 
@@ -171,17 +208,23 @@ export declare function damerauLevenshtein(a: string, b: string): number
  * Compute the Damerau-Levenshtein distance for multiple pairs of strings in a single call.
  *
  * Returns an array of distances in the same order as the input pairs.
+ * Each pair must be an array of exactly two strings `[a, b]`; otherwise an
+ * `InvalidArg` error is thrown.
  */
-export declare function damerauLevenshteinBatch(pairs: Array<Array<string>>): Array<number>
+export declare function damerauLevenshteinBatch(pairs: ReadonlyArray<ReadonlyArray<string>>): Array<number>
 
 /**
  * Compute the Damerau-Levenshtein distance from one reference string to many candidates.
  *
  * Returns an array of distances, one per candidate, in the same order as the input.
- * If `max_distance` is provided, candidates with distance exceeding the threshold
- * will return `max_distance + 1` (enabling early termination for better performance).
+ * If `maxDistance` is provided, candidates with distance exceeding the threshold
+ * will return `maxDistance + 1`, at most 4294967295 (enabling early termination
+ * for better performance).
  */
-export declare function damerauLevenshteinMany(reference: string, candidates: Array<string>, maxDistance?: number | undefined | null): Array<number>
+export declare function damerauLevenshteinMany(reference: string, candidates: ReadonlyArray<string>, maxDistance?: number | undefined | null): Array<number>
+
+/** Like `damerauLevenshteinMany`, but returns the distances in a `Uint32Array`. */
+export declare function damerauLevenshteinManyU32(reference: string, candidates: ReadonlyArray<string>, maxDistance?: number | undefined | null): Uint32Array
 
 /**
  * Compute the Hamming distance between two strings.
@@ -189,6 +232,9 @@ export declare function damerauLevenshteinMany(reference: string, candidates: Ar
  * The Hamming distance counts the number of positions at which the corresponding
  * characters differ. It is only defined for strings of equal length.
  * Returns `null` if the strings have different lengths.
+ *
+ * Compares the Unicode code points of the strings as given: case, whitespace
+ * and Unicode normalization (NFC vs NFD) are not adjusted.
  */
 export declare function hamming(a: string, b: string): number | null
 
@@ -196,20 +242,31 @@ export declare function hamming(a: string, b: string): number | null
  * Compute the Hamming distance for multiple pairs of strings in a single call.
  *
  * Returns an array of distances in the same order as the input pairs.
- * Each pair must be an array of exactly two strings `[a, b]`.
+ * Each pair must be an array of exactly two strings `[a, b]`; otherwise an
+ * `InvalidArg` error is thrown.
  * Returns `null` for pairs with different lengths.
  */
-export declare function hammingBatch(pairs: Array<Array<string>>): Array<number | undefined | null>
+export declare function hammingBatch(pairs: ReadonlyArray<ReadonlyArray<string>>): Array<number | undefined | null>
 
 /**
  * Compute the Hamming distance from one reference string to many candidates.
  *
  * Returns an array of distances, one per candidate, in the same order as the input.
  * Returns `null` for candidates with a different length than the reference.
- * If `max_distance` is provided, candidates with distance exceeding the threshold
+ * If `maxDistance` is provided, candidates with distance exceeding the threshold
  * will also return `null` (enabling early termination for better performance).
  */
-export declare function hammingMany(reference: string, candidates: Array<string>, maxDistance?: number | undefined | null): Array<number | undefined | null>
+export declare function hammingMany(reference: string, candidates: ReadonlyArray<string>, maxDistance?: number | undefined | null): Array<number | undefined | null>
+
+/**
+ * Like `hammingMany`, but returns the distances in a `Uint32Array`.
+ *
+ * Slots that `hammingMany` returns as `null` (length mismatch, or filtered out
+ * by `maxDistance`) become the sentinel `0xffffffff` (4294967295), since a
+ * Uint32Array cannot hold `null`. Check for it with `value === 0xffffffff`
+ * before treating a slot as a real distance.
+ */
+export declare function hammingManyU32(reference: string, candidates: ReadonlyArray<string>, maxDistance?: number | undefined | null): Uint32Array
 
 /**
  * Compute the Indel distance between two strings.
@@ -220,6 +277,9 @@ export declare function hammingMany(reference: string, candidates: Array<string>
  *
  * Useful when substitutions are semantically two operations (one deletion +
  * one insertion), such as in DNA sequence alignment.
+ *
+ * Compares the Unicode code points of the strings as given: case, whitespace
+ * and Unicode normalization (NFC vs NFD) are not adjusted.
  */
 export declare function indel(a: string, b: string): number
 
@@ -227,18 +287,23 @@ export declare function indel(a: string, b: string): number
  * Compute the Indel distance for multiple pairs of strings in a single call.
  *
  * Returns an array of distances in the same order as the input pairs.
- * Each pair must be an array of exactly two strings `[a, b]`.
+ * Each pair must be an array of exactly two strings `[a, b]`; otherwise an
+ * `InvalidArg` error is thrown.
  */
-export declare function indelBatch(pairs: Array<Array<string>>): Array<number>
+export declare function indelBatch(pairs: ReadonlyArray<ReadonlyArray<string>>): Array<number>
 
 /**
  * Compute the Indel distance from one reference string to many candidates.
  *
  * Returns an array of distances, one per candidate, in the same order as the input.
- * If `max_distance` is provided, candidates with distance exceeding the threshold
- * will return `max_distance + 1` (enabling early termination for better performance).
+ * If `maxDistance` is provided, candidates with distance exceeding the threshold
+ * will return `maxDistance + 1`, at most 4294967295 (enabling early termination
+ * for better performance).
  */
-export declare function indelMany(reference: string, candidates: Array<string>, maxDistance?: number | undefined | null): Array<number>
+export declare function indelMany(reference: string, candidates: ReadonlyArray<string>, maxDistance?: number | undefined | null): Array<number>
+
+/** Like `indelMany`, but returns the distances in a `Uint32Array`. */
+export declare function indelManyU32(reference: string, candidates: ReadonlyArray<string>, maxDistance?: number | undefined | null): Uint32Array
 
 /**
  * A lightweight search result containing only index and score (no item string).
@@ -252,8 +317,12 @@ export interface IndexSearchResult {
   /** The match score normalized to 0.0-1.0 range (1.0 is a perfect match). */
   score: number
   /**
-   * Indices of matched characters in the item string.
-   * Empty unless `includePositions` is set to true in SearchOptions.
+   * Indices of the matched characters of the item, in ascending order.
+   * An ASCII item is counted by character; any other item by grapheme
+   * cluster (a user-perceived character, such as an emoji with its
+   * modifiers or a letter with its combining marks), so these are not
+   * UTF-16 string offsets. `highlight()` and `highlightRanges()` convert
+   * them. Empty unless `includePositions` is set to true in SearchOptions.
    */
   positions: Array<number>
   /**
@@ -268,6 +337,9 @@ export interface IndexSearchResult {
  * Compute the Jaro similarity between two strings.
  *
  * Returns a value between 0.0 (completely different) and 1.0 (identical).
+ *
+ * Compares the Unicode code points of the strings as given: case, whitespace
+ * and Unicode normalization (NFC vs NFD) are not adjusted.
  */
 export declare function jaro(a: string, b: string): number
 
@@ -275,23 +347,32 @@ export declare function jaro(a: string, b: string): number
  * Compute the Jaro similarity for multiple pairs of strings in a single call.
  *
  * Returns an array of similarity scores in the same order as the input pairs.
+ * Each pair must be an array of exactly two strings `[a, b]`; otherwise an
+ * `InvalidArg` error is thrown.
  */
-export declare function jaroBatch(pairs: Array<Array<string>>): Array<number>
+export declare function jaroBatch(pairs: ReadonlyArray<ReadonlyArray<string>>): Array<number>
 
 /**
  * Compute the Jaro similarity from one reference string to many candidates.
  *
  * Returns an array of similarity scores, one per candidate, in the same order as the input.
- * If `min_similarity` is provided, candidates with similarity below the threshold
- * will return `0.0` (enabling early termination for better performance).
+ * If `minSimilarity` is provided, candidates with similarity below the threshold
+ * will return `0.0` (enabling early termination for better performance); a score
+ * equal to it is kept. Throws an `InvalidArg` error if `minSimilarity` is `NaN`.
  */
-export declare function jaroMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number>
+export declare function jaroMany(reference: string, candidates: ReadonlyArray<string>, minSimilarity?: number | undefined | null): Array<number>
+
+/** Like `jaroMany`, but returns the scores in a `Float64Array`. */
+export declare function jaroManyF64(reference: string, candidates: ReadonlyArray<string>, minSimilarity?: number | undefined | null): Float64Array
 
 /**
  * Compute the Jaro-Winkler similarity between two strings.
  *
  * A modification of Jaro that gives more weight to common prefixes.
  * Returns a value between 0.0 and 1.0.
+ *
+ * Compares the Unicode code points of the strings as given: case, whitespace
+ * and Unicode normalization (NFC vs NFD) are not adjusted.
  */
 export declare function jaroWinkler(a: string, b: string): number
 
@@ -299,17 +380,23 @@ export declare function jaroWinkler(a: string, b: string): number
  * Compute the Jaro-Winkler similarity for multiple pairs of strings in a single call.
  *
  * Returns an array of similarity scores in the same order as the input pairs.
+ * Each pair must be an array of exactly two strings `[a, b]`; otherwise an
+ * `InvalidArg` error is thrown.
  */
-export declare function jaroWinklerBatch(pairs: Array<Array<string>>): Array<number>
+export declare function jaroWinklerBatch(pairs: ReadonlyArray<ReadonlyArray<string>>): Array<number>
 
 /**
  * Compute the Jaro-Winkler similarity from one reference string to many candidates.
  *
  * Returns an array of similarity scores, one per candidate, in the same order as the input.
- * If `min_similarity` is provided, candidates with similarity below the threshold
- * will return `0.0` (enabling early termination for better performance).
+ * If `minSimilarity` is provided, candidates with similarity below the threshold
+ * will return `0.0` (enabling early termination for better performance); a score
+ * equal to it is kept. Throws an `InvalidArg` error if `minSimilarity` is `NaN`.
  */
-export declare function jaroWinklerMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number>
+export declare function jaroWinklerMany(reference: string, candidates: ReadonlyArray<string>, minSimilarity?: number | undefined | null): Array<number>
+
+/** Like `jaroWinklerMany`, but returns the scores in a `Float64Array`. */
+export declare function jaroWinklerManyF64(reference: string, candidates: ReadonlyArray<string>, minSimilarity?: number | undefined | null): Float64Array
 
 /** A single result from multi-key fuzzy search. */
 export interface KeySearchResult {
@@ -330,6 +417,9 @@ export interface KeySearchResult {
  * The Levenshtein distance is the minimum number of single-character edits
  * (insertions, deletions, or substitutions) required to change one string
  * into the other.
+ *
+ * Compares the Unicode code points of the strings as given: case, whitespace
+ * and Unicode normalization (NFC vs NFD) are not adjusted.
  */
 export declare function levenshtein(a: string, b: string): number
 
@@ -337,18 +427,23 @@ export declare function levenshtein(a: string, b: string): number
  * Compute the Levenshtein distance for multiple pairs of strings in a single call.
  *
  * Returns an array of distances in the same order as the input pairs.
- * Each pair must be an array of exactly two strings `[a, b]`.
+ * Each pair must be an array of exactly two strings `[a, b]`; otherwise an
+ * `InvalidArg` error is thrown.
  */
-export declare function levenshteinBatch(pairs: Array<Array<string>>): Array<number>
+export declare function levenshteinBatch(pairs: ReadonlyArray<ReadonlyArray<string>>): Array<number>
 
 /**
  * Compute the Levenshtein distance from one reference string to many candidates.
  *
  * Returns an array of distances, one per candidate, in the same order as the input.
- * If `max_distance` is provided, candidates with distance exceeding the threshold
- * will return `max_distance + 1` (enabling early termination for better performance).
+ * If `maxDistance` is provided, candidates with distance exceeding the threshold
+ * will return `maxDistance + 1`, at most 4294967295 (enabling early termination
+ * for better performance).
  */
-export declare function levenshteinMany(reference: string, candidates: Array<string>, maxDistance?: number | undefined | null): Array<number>
+export declare function levenshteinMany(reference: string, candidates: ReadonlyArray<string>, maxDistance?: number | undefined | null): Array<number>
+
+/** Like `levenshteinMany`, but returns the distances in a `Uint32Array`. */
+export declare function levenshteinManyU32(reference: string, candidates: ReadonlyArray<string>, maxDistance?: number | undefined | null): Uint32Array
 
 /**
  * Classification of how a query matched an item.
@@ -359,7 +454,7 @@ export declare function levenshteinMany(reference: string, candidates: Array<str
  * - **Contains**: all positions consecutive (a substring match), not starting at 0.
  * - **Fuzzy**: positions have gaps (character-level fuzzy match).
  */
-export declare const enum MatchType {
+export declare enum MatchType {
   Exact = 'Exact',
   Prefix = 'Prefix',
   Contains = 'Contains',
@@ -371,6 +466,9 @@ export declare const enum MatchType {
  *
  * Returns `null` if the strings have different lengths.
  * Returns a value between 0.0 (no matching characters) and 1.0 (identical).
+ *
+ * Compares the Unicode code points of the strings as given: case, whitespace
+ * and Unicode normalization (NFC vs NFD) are not adjusted.
  */
 export declare function normalizedHamming(a: string, b: string): number | null
 
@@ -378,24 +476,43 @@ export declare function normalizedHamming(a: string, b: string): number | null
  * Compute the normalized Hamming similarity for multiple pairs of strings in a single call.
  *
  * Returns an array of scores in the same order as the input pairs.
+ * Each pair must be an array of exactly two strings `[a, b]`; otherwise an
+ * `InvalidArg` error is thrown.
  * Returns `null` for pairs with different lengths.
  */
-export declare function normalizedHammingBatch(pairs: Array<Array<string>>): Array<number | undefined | null>
+export declare function normalizedHammingBatch(pairs: ReadonlyArray<ReadonlyArray<string>>): Array<number | undefined | null>
 
 /**
  * Compute the normalized Hamming similarity from one reference string to many candidates.
  *
  * Returns an array of scores, one per candidate, in the same order as the input.
  * Returns `null` for candidates with a different length than the reference.
- * If `min_similarity` is provided, candidates with similarity below the threshold
- * will also return `null` (enabling early termination for better performance).
+ * If `minSimilarity` is provided, candidates with similarity below the threshold
+ * will also return `null`; a score equal to it is kept. Throws an `InvalidArg`
+ * error if `minSimilarity` is `NaN`.
  */
-export declare function normalizedHammingMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number | undefined | null>
+export declare function normalizedHammingMany(reference: string, candidates: ReadonlyArray<string>, minSimilarity?: number | undefined | null): Array<number | undefined | null>
+
+/**
+ * Like `normalizedHammingMany`, but returns the scores in a `Float64Array`.
+ *
+ * Slots that `normalizedHammingMany` returns as `null` (length mismatch, or
+ * filtered out by `minSimilarity`) become `NaN`, since a Float64Array cannot
+ * hold `null`. Check for it with `Number.isNaN(value)`.
+ */
+export declare function normalizedHammingManyF64(reference: string, candidates: ReadonlyArray<string>, minSimilarity?: number | undefined | null): Float64Array
 
 /**
  * Compute the normalized Indel similarity between two strings.
  *
- * Returns a value between 0.0 (completely different) and 1.0 (identical).
+ * `1 - indel(a, b) / (length of a + length of b)`, counted in characters:
+ * the measure behind `fuzz.ratio` in RapidFuzz and fuzzball, on a 0.0-1.0
+ * scale (fuzzball also lower-cases and strips punctuation by default; this
+ * function does not). Returns a value between 0.0 (completely different)
+ * and 1.0 (identical).
+ *
+ * Compares the Unicode code points of the strings as given: case, whitespace
+ * and Unicode normalization (NFC vs NFD) are not adjusted.
  */
 export declare function normalizedIndel(a: string, b: string): number
 
@@ -403,22 +520,33 @@ export declare function normalizedIndel(a: string, b: string): number
  * Compute the normalized Indel similarity for multiple pairs of strings in a single call.
  *
  * Returns an array of similarity scores in the same order as the input pairs.
+ * Each pair must be an array of exactly two strings `[a, b]`; otherwise an
+ * `InvalidArg` error is thrown.
  */
-export declare function normalizedIndelBatch(pairs: Array<Array<string>>): Array<number>
+export declare function normalizedIndelBatch(pairs: ReadonlyArray<ReadonlyArray<string>>): Array<number>
 
 /**
  * Compute the normalized Indel similarity from one reference string to many candidates.
  *
  * Returns an array of similarity scores, one per candidate, in the same order as the input.
- * If `min_similarity` is provided, candidates with similarity below the threshold
- * will return `0.0` (enabling early termination for better performance).
+ * If `minSimilarity` is provided, candidates with similarity below the threshold
+ * will return `0.0` (enabling early termination for better performance); a score
+ * equal to it is kept. Throws an `InvalidArg` error if `minSimilarity` is `NaN`.
  */
-export declare function normalizedIndelMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number>
+export declare function normalizedIndelMany(reference: string, candidates: ReadonlyArray<string>, minSimilarity?: number | undefined | null): Array<number>
+
+/** Like `normalizedIndelMany`, but returns the scores in a `Float64Array`. */
+export declare function normalizedIndelManyF64(reference: string, candidates: ReadonlyArray<string>, minSimilarity?: number | undefined | null): Float64Array
 
 /**
  * Compute the normalized Levenshtein similarity between two strings.
  *
- * Returns a value between 0.0 (completely different) and 1.0 (identical).
+ * `1 - levenshtein(a, b) / max(length of a, length of b)`, counted in
+ * characters. Returns a value between 0.0 (completely different) and 1.0
+ * (identical).
+ *
+ * Compares the Unicode code points of the strings as given: case, whitespace
+ * and Unicode normalization (NFC vs NFD) are not adjusted.
  */
 export declare function normalizedLevenshtein(a: string, b: string): number
 
@@ -426,25 +554,39 @@ export declare function normalizedLevenshtein(a: string, b: string): number
  * Compute the normalized Levenshtein similarity for multiple pairs of strings in a single call.
  *
  * Returns an array of similarity scores in the same order as the input pairs.
+ * Each pair must be an array of exactly two strings `[a, b]`; otherwise an
+ * `InvalidArg` error is thrown.
  */
-export declare function normalizedLevenshteinBatch(pairs: Array<Array<string>>): Array<number>
+export declare function normalizedLevenshteinBatch(pairs: ReadonlyArray<ReadonlyArray<string>>): Array<number>
 
 /**
  * Compute the normalized Levenshtein similarity from one reference string to many candidates.
  *
  * Returns an array of similarity scores, one per candidate, in the same order as the input.
- * If `min_similarity` is provided, candidates with similarity below the threshold
- * will return `0.0` (enabling early termination for better performance).
+ * If `minSimilarity` is provided, candidates with similarity below the threshold
+ * will return `0.0` (enabling early termination for better performance); a score
+ * equal to it is kept. Throws an `InvalidArg` error if `minSimilarity` is `NaN`.
  */
-export declare function normalizedLevenshteinMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number>
+export declare function normalizedLevenshteinMany(reference: string, candidates: ReadonlyArray<string>, minSimilarity?: number | undefined | null): Array<number>
+
+/** Like `normalizedLevenshteinMany`, but returns the scores in a `Float64Array`. */
+export declare function normalizedLevenshteinManyF64(reference: string, candidates: ReadonlyArray<string>, minSimilarity?: number | undefined | null): Float64Array
 
 /**
  * Compute the partial ratio between two strings.
  *
- * Finds the best matching substring of the shorter string within the longer string
- * using a sliding window approach. Returns the highest normalized Levenshtein
- * similarity across all windows. Useful for matching when one string is a
- * substring or abbreviation of the other. Returns a value between 0.0 and 1.0.
+ * Lower-cases both strings and collapses whitespace runs into single
+ * spaces, then compares the shorter string with every window of the same
+ * length in the longer one and returns the highest normalized Levenshtein
+ * similarity. Useful when one string is a substring or truncation of the
+ * other; it does not match abbreviations (`MSFT` vs `Microsoft` scores low).
+ * Scores can differ from fuzzball's / RapidFuzz's `partial_ratio`, which
+ * use a different alignment. Returns a value between 0.0 and 1.0.
+ *
+ * Takes time proportional to the length of the longer string times the
+ * square of the length of the shorter one: about 0.4 s for a
+ * 1,000-character string against a 10,000-character one with the native
+ * addon.
  */
 export declare function partialRatio(a: string, b: string): number
 
@@ -452,60 +594,96 @@ export declare function partialRatio(a: string, b: string): number
  * Compute the partial ratio for multiple pairs of strings in a single call.
  *
  * Returns an array of similarity scores in the same order as the input pairs.
+ * Each pair must be an array of exactly two strings `[a, b]`; otherwise an
+ * `InvalidArg` error is thrown.
  */
-export declare function partialRatioBatch(pairs: Array<Array<string>>): Array<number>
+export declare function partialRatioBatch(pairs: ReadonlyArray<ReadonlyArray<string>>): Array<number>
 
 /**
  * Compute the partial ratio from one reference string to many candidates.
  *
  * Returns an array of similarity scores, one per candidate, in the same order as the input.
- * If `min_similarity` is provided, candidates scoring below the threshold return `0.0`.
+ * If `minSimilarity` is provided, candidates scoring below the threshold return `0.0`;
+ * a score equal to it is kept. Throws an `InvalidArg` error if `minSimilarity` is `NaN`.
  */
-export declare function partialRatioMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number>
+export declare function partialRatioMany(reference: string, candidates: ReadonlyArray<string>, minSimilarity?: number | undefined | null): Array<number>
+
+/** Like `partialRatioMany`, but returns the scores in a `Float64Array`. */
+export declare function partialRatioManyF64(reference: string, candidates: ReadonlyArray<string>, minSimilarity?: number | undefined | null): Float64Array
 
 /**
  * Perform fuzzy search over a list of strings.
  *
  * Returns matches sorted by score (best match first).
  * Scores are normalized to a 0.0-1.0 range where 1.0 is a perfect match.
- * Uses the nucleo algorithm (same as Helix editor), which is
- * significantly faster than fzf/skim for large datasets.
+ * Uses the nucleo matcher (the one in the Helix editor): every character of
+ * each query term must occur in the item in order, so letters missing from
+ * the query are tolerated but substituted or swapped letters are not. Matches
+ * at the start of the item, at word boundaries and in consecutive runs score
+ * higher. Matching is smart case by default (see `SearchOptions`).
+ *
+ * Terms are separated by any whitespace (including the ideographic space
+ * U+3000). A query without any search term (empty, whitespace-only or only
+ * syntax such as `^`) returns no results, and so does a query containing a
+ * single term longer than 2,520 characters, which cannot be scored.
  *
  * The third argument accepts either a number (maxResults for backward
  * compatibility) or a SearchOptions object with maxResults and minScore.
+ * `maxResults` must be a non-negative integer or `Infinity`.
  */
-export declare function search(query: string, items: Array<string>, options?: number | SearchOptions | undefined | null): Array<SearchResult>
+export declare function search(query: string, items: ReadonlyArray<string>, options?: number | SearchOptions | undefined | null): Array<SearchResult>
 
 /**
  * Perform fuzzy search across multiple text keys with weights.
  *
- * `key_texts[k]` is an array of strings for key `k`, one per item.
+ * `keyTexts[k]` is an array of strings for key `k`, one per item.
  * All inner arrays must have the same length (the number of items).
  * `weights` specifies the relative importance of each key.
  *
- * Returns results sorted by combined weighted score (best match first).
+ * Every key is scored like `search()` scores an item; `keyScores` holds
+ * these scores for every key, including keys whose weight is 0. The
+ * combined score is `sum(keyScore * weight) / sum(weights)`, and items
+ * whose combined score is 0 (no match on a key with a positive weight) are
+ * not returned.
+ *
+ * Returns results sorted by combined weighted score (best match first),
+ * then by the length of the best-matching key's text (shorter first, like
+ * `search()`), then by index. `new KeyedFuzzyIndex(keyTexts, weights)`
+ * returns exactly the same results.
+ *
+ * The fourth argument accepts either a number (maxResults) or a
+ * SearchOptions object. Throws when the key texts have different lengths,
+ * when there is not exactly one weight per key, or when a weight is
+ * negative, NaN or infinite, or the weights sum to 0 or to Infinity (the
+ * same errors as the `KeyedFuzzyIndex` constructor).
  */
-export declare function searchKeys(query: string, keyTexts: Array<Array<string>>, weights: Array<number>, options?: SearchOptions | undefined | null): Array<KeySearchResult>
+export declare function searchKeys(query: string, keyTexts: ReadonlyArray<ReadonlyArray<string>>, weights: ReadonlyArray<number>, options?: number | SearchOptions | undefined | null): Array<KeySearchResult>
 
 /** Options for the search function. */
 export interface SearchOptions {
-  /** Maximum number of results to return. */
-  maxResults?: number
-  /** Minimum normalized score (0.0-1.0) to include in results. */
-  minScore?: number
-  /** If true, include matched character positions in results. */
-  includePositions?: boolean
   /**
-   * If true, matching is case-sensitive. Default is smart case
-   * (case-insensitive unless the query contains uppercase characters).
+   * Maximum number of results to return: a non-negative integer, or
+   * `Infinity` for no limit. NaN, negative and fractional values throw.
    */
-  isCaseSensitive?: boolean
+  maxResults?: number | undefined
+  /** Minimum normalized score (0.0-1.0) to include in results. */
+  minScore?: number | undefined
+  /** If true, include matched character positions in results. */
+  includePositions?: boolean | undefined
   /**
-   * If true, return all items when the query is empty (or whitespace-only).
+   * If true, matching is case-sensitive. When false or omitted, matching
+   * is smart case: case-insensitive while the query is all lower-case, and
+   * case-sensitive once it contains an upper-case letter. `false` does not
+   * force case-insensitive matching; lower-case the query for that.
+   */
+  isCaseSensitive?: boolean | undefined
+  /**
+   * If true, return all items when the query has no search term: empty,
+   * whitespace-only, or only query syntax such as `^` or `!`.
    * Useful for filter-as-you-type UIs where the full list should appear
    * before the user starts typing. Default is false.
    */
-  returnAllOnEmpty?: boolean
+  returnAllOnEmpty?: boolean | undefined
 }
 
 /** A single fuzzy search result with the matched item and its score. */
@@ -517,8 +695,12 @@ export interface SearchResult {
   /** The index of the item in the original input array. */
   index: number
   /**
-   * Indices of matched characters in the item string.
-   * Empty unless `includePositions` is set to true in SearchOptions.
+   * Indices of the matched characters of the item, in ascending order.
+   * An ASCII item is counted by character; any other item by grapheme
+   * cluster (a user-perceived character, such as an emoji with its
+   * modifiers or a letter with its combining marks), so these are not
+   * UTF-16 string offsets. `highlight()` and `highlightRanges()` convert
+   * them. Empty unless `includePositions` is set to true in SearchOptions.
    */
   positions: Array<number>
   /**
@@ -532,8 +714,10 @@ export interface SearchResult {
 /**
  * Compute the Sorensen-Dice coefficient between two strings.
  *
- * Uses bigrams (pairs of consecutive characters) to measure similarity.
- * Returns a value between 0.0 and 1.0.
+ * Compares the bigrams (pairs of consecutive characters) of the two strings
+ * after removing all whitespace; case and Unicode normalization are not
+ * adjusted. Identical strings score 1.0; otherwise a string with fewer than
+ * two characters left scores 0.0. Returns a value between 0.0 and 1.0.
  */
 export declare function sorensenDice(a: string, b: string): number
 
@@ -541,25 +725,34 @@ export declare function sorensenDice(a: string, b: string): number
  * Compute the Sorensen-Dice coefficient for multiple pairs of strings in a single call.
  *
  * Returns an array of similarity scores in the same order as the input pairs.
+ * Each pair must be an array of exactly two strings `[a, b]`; otherwise an
+ * `InvalidArg` error is thrown.
  */
-export declare function sorensenDiceBatch(pairs: Array<Array<string>>): Array<number>
+export declare function sorensenDiceBatch(pairs: ReadonlyArray<ReadonlyArray<string>>): Array<number>
 
 /**
  * Compute the Sorensen-Dice coefficient from one reference string to many candidates.
  *
  * Returns an array of similarity scores, one per candidate, in the same order as the input.
- * If `min_similarity` is provided, candidates scoring below the threshold return `0.0`.
+ * If `minSimilarity` is provided, candidates scoring below the threshold return `0.0`;
+ * a score equal to it is kept. Throws an `InvalidArg` error if `minSimilarity` is `NaN`.
  * Reference bigrams are pre-computed once and reused for all candidates.
  */
-export declare function sorensenDiceMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number>
+export declare function sorensenDiceMany(reference: string, candidates: ReadonlyArray<string>, minSimilarity?: number | undefined | null): Array<number>
+
+/** Like `sorensenDiceMany`, but returns the scores in a `Float64Array`. */
+export declare function sorensenDiceManyF64(reference: string, candidates: ReadonlyArray<string>, minSimilarity?: number | undefined | null): Float64Array
 
 /**
  * Compute the token set ratio between two strings.
  *
- * Compares the intersection and differences of token sets from both strings.
- * Returns the maximum similarity among comparisons of the intersection with
- * each remainder. Highly effective for strings with shared tokens but
- * different lengths. Returns a value between 0.0 and 1.0.
+ * Lower-cases both strings and splits them into sets of whitespace-separated
+ * tokens (duplicates count once). With the shared tokens sorted and joined
+ * as `common`, returns the highest normalized Levenshtein similarity among
+ * `common + rest of a` vs `common + rest of b`, `common` vs
+ * `common + rest of a`, and `common` vs `common + rest of b`. It is 1.0
+ * when the tokens of one string are a subset of the other's.
+ * Returns a value between 0.0 and 1.0.
  */
 export declare function tokenSetRatio(a: string, b: string): number
 
@@ -567,23 +760,30 @@ export declare function tokenSetRatio(a: string, b: string): number
  * Compute the token set ratio for multiple pairs of strings in a single call.
  *
  * Returns an array of similarity scores in the same order as the input pairs.
+ * Each pair must be an array of exactly two strings `[a, b]`; otherwise an
+ * `InvalidArg` error is thrown.
  */
-export declare function tokenSetRatioBatch(pairs: Array<Array<string>>): Array<number>
+export declare function tokenSetRatioBatch(pairs: ReadonlyArray<ReadonlyArray<string>>): Array<number>
 
 /**
  * Compute the token set ratio from one reference string to many candidates.
  *
  * Returns an array of similarity scores, one per candidate, in the same order as the input.
- * If `min_similarity` is provided, candidates scoring below the threshold return `0.0`.
+ * If `minSimilarity` is provided, candidates scoring below the threshold return `0.0`;
+ * a score equal to it is kept. Throws an `InvalidArg` error if `minSimilarity` is `NaN`.
  */
-export declare function tokenSetRatioMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number>
+export declare function tokenSetRatioMany(reference: string, candidates: ReadonlyArray<string>, minSimilarity?: number | undefined | null): Array<number>
+
+/** Like `tokenSetRatioMany`, but returns the scores in a `Float64Array`. */
+export declare function tokenSetRatioManyF64(reference: string, candidates: ReadonlyArray<string>, minSimilarity?: number | undefined | null): Float64Array
 
 /**
  * Compute the token sort ratio between two strings.
  *
- * Splits both strings into tokens, sorts them alphabetically, then computes
- * the normalized Levenshtein similarity. This makes the comparison
- * order-independent, ideal for matching names or addresses where word order varies.
+ * Lower-cases both strings, splits them on whitespace, sorts the tokens and
+ * joins them with single spaces, then returns the normalized Levenshtein
+ * similarity of the two results, so word order does not matter. Punctuation
+ * is kept: `Smith,` and `Smith` are different tokens.
  * Returns a value between 0.0 (completely different) and 1.0 (identical after sorting).
  */
 export declare function tokenSortRatio(a: string, b: string): number
@@ -592,24 +792,33 @@ export declare function tokenSortRatio(a: string, b: string): number
  * Compute the token sort ratio for multiple pairs of strings in a single call.
  *
  * Returns an array of similarity scores in the same order as the input pairs.
+ * Each pair must be an array of exactly two strings `[a, b]`; otherwise an
+ * `InvalidArg` error is thrown.
  */
-export declare function tokenSortRatioBatch(pairs: Array<Array<string>>): Array<number>
+export declare function tokenSortRatioBatch(pairs: ReadonlyArray<ReadonlyArray<string>>): Array<number>
 
 /**
  * Compute the token sort ratio from one reference string to many candidates.
  *
  * Returns an array of similarity scores, one per candidate, in the same order as the input.
- * If `min_similarity` is provided, candidates scoring below the threshold return `0.0`.
+ * If `minSimilarity` is provided, candidates scoring below the threshold return `0.0`;
+ * a score equal to it is kept. Throws an `InvalidArg` error if `minSimilarity` is `NaN`.
  */
-export declare function tokenSortRatioMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number>
+export declare function tokenSortRatioMany(reference: string, candidates: ReadonlyArray<string>, minSimilarity?: number | undefined | null): Array<number>
+
+/** Like `tokenSortRatioMany`, but returns the scores in a `Float64Array`. */
+export declare function tokenSortRatioManyF64(reference: string, candidates: ReadonlyArray<string>, minSimilarity?: number | undefined | null): Float64Array
 
 /**
  * Compute the weighted ratio between two strings.
  *
- * Returns the maximum score across normalized Levenshtein, token sort ratio,
- * token set ratio, and partial ratio. This provides a single "best effort"
- * similarity score that automatically selects the most appropriate algorithm.
- * Returns a value between 0.0 and 1.0.
+ * Returns the highest of: the normalized Levenshtein similarity of the
+ * strings as given and after lower-casing and collapsing whitespace,
+ * `tokenSortRatio`, `tokenSetRatio` and `partialRatio`. Unlike `WRatio` in
+ * fuzzball / RapidFuzz, no score is scaled down or weighted by the length
+ * ratio of the strings, so scores are often higher than `WRatio`'s.
+ * Includes the cost of `partialRatio` (see there) when the strings differ
+ * in length. Returns a value between 0.0 and 1.0.
  */
 export declare function weightedRatio(a: string, b: string): number
 
@@ -617,42 +826,27 @@ export declare function weightedRatio(a: string, b: string): number
  * Compute the weighted ratio for multiple pairs of strings in a single call.
  *
  * Returns an array of similarity scores in the same order as the input pairs.
+ * Each pair must be an array of exactly two strings `[a, b]`; otherwise an
+ * `InvalidArg` error is thrown.
  */
-export declare function weightedRatioBatch(pairs: Array<Array<string>>): Array<number>
+export declare function weightedRatioBatch(pairs: ReadonlyArray<ReadonlyArray<string>>): Array<number>
 
 /**
  * Compute the weighted ratio from one reference string to many candidates.
  *
  * Returns an array of similarity scores, one per candidate, in the same order as the input.
- * If `min_similarity` is provided, candidates scoring below the threshold return `0.0`.
+ * If `minSimilarity` is provided, candidates scoring below the threshold return `0.0`;
+ * a score equal to it is kept. Throws an `InvalidArg` error if `minSimilarity` is `NaN`.
  */
-export declare function weightedRatioMany(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Array<number>
+export declare function weightedRatioMany(reference: string, candidates: ReadonlyArray<string>, minSimilarity?: number | undefined | null): Array<number>
+
+/** Like `weightedRatioMany`, but returns the scores in a `Float64Array`. */
+export declare function weightedRatioManyF64(reference: string, candidates: ReadonlyArray<string>, minSimilarity?: number | undefined | null): Float64Array
 
 // --- JS utilities (appended by scripts/patch-binding.js) ---
 export { highlight, highlightRanges, HighlightRange } from './highlight';
-/** TypedArray variants — identical to the `*Many` counterparts but return a typed array instead of `Array<number>`, reducing GC pressure for large candidate sets. */
-export declare function levenshteinManyU32(reference: string, candidates: Array<string>, maxDistance?: number | undefined | null): Uint32Array;
-export declare function damerauLevenshteinManyU32(reference: string, candidates: Array<string>, maxDistance?: number | undefined | null): Uint32Array;
-export declare function indelManyU32(reference: string, candidates: Array<string>, maxDistance?: number | undefined | null): Uint32Array;
-export declare function jaroManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array;
-export declare function jaroWinklerManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array;
-export declare function sorensenDiceManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array;
-export declare function normalizedLevenshteinManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array;
-export declare function normalizedIndelManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array;
-export declare function tokenSortRatioManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array;
-export declare function tokenSetRatioManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array;
-export declare function partialRatioManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array;
-export declare function weightedRatioManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array;
-/**
- * TypedArray variant of `hammingMany`. Slots that `hammingMany` returns as `null`
- * (length mismatch, or filtered out by `maxDistance`) become the sentinel `0xffffffff`
- * (4294967295), since a Uint32Array cannot hold `null`. Check for it with
- * `value === 0xffffffff` before treating a slot as a real distance.
- */
-export declare function hammingManyU32(reference: string, candidates: Array<string>, maxDistance?: number | undefined | null): Uint32Array;
-/**
- * TypedArray variant of `normalizedHammingMany`. Slots that `normalizedHammingMany`
- * returns as `null` (length mismatch, or filtered out by `minSimilarity`) become `NaN`,
- * since a Float64Array cannot hold `null`. Check for it with `Number.isNaN(value)`.
- */
-export declare function normalizedHammingManyF64(reference: string, candidates: Array<string>, minSimilarity?: number | undefined | null): Float64Array;
+
+// --- JS wrappers (appended by scripts/patch-binding.js) ---
+export { FuzzyObjectIndex, searchObjects } from './objects';
+export type { KeyConfig, KeyPath, ObjectIndexOptions, ObjectIndexSearchOptions, ObjectSearchOptions, ObjectSearchResult } from './objects';
+export type { HighlightOptions } from './highlight';
