@@ -121,7 +121,7 @@ cargo deny check                                      # Rust dependency licenses
 
 `pnpm run verify` runs most of these in one go, and the pre-commit and pre-push Git hooks run all of them automatically (after `pnpm exec lefthook install`).
 
-If you add, remove or update a Rust dependency, regenerate the third-party license notices that ship with every package and commit the result (CI fails when the file is stale):
+If you add or remove a Rust dependency (or one changes its license), regenerate the third-party license notices that ship with every package and commit the result (CI fails when the file is stale). The file lists no versions, so version bumps such as Renovate's dependency and lock file updates leave it unchanged:
 
 ```bash
 pnpm run notices

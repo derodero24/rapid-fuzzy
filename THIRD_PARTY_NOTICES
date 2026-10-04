@@ -13,184 +13,185 @@ emnapi package; do not edit by hand.
 Rust crates
 -----------
 
-bitflags 2.11.0 (MIT OR Apache-2.0)
+bitflags (MIT OR Apache-2.0)
   https://github.com/bitflags/bitflags
   License texts: [1] LICENSE-APACHE, [2] LICENSE-MIT
 
-cfg-if 1.0.4 (MIT OR Apache-2.0)
+cfg-if (MIT OR Apache-2.0)
   https://github.com/rust-lang/cfg-if
   License texts: [1] LICENSE-APACHE, [3] LICENSE-MIT
 
-crossbeam-deque 0.8.6 (MIT OR Apache-2.0)
+crossbeam-deque (MIT OR Apache-2.0)
   https://github.com/crossbeam-rs/crossbeam
   License texts: [1] LICENSE-APACHE, [4] LICENSE-MIT
 
-crossbeam-epoch 0.9.20 (MIT OR Apache-2.0)
+crossbeam-epoch (MIT OR Apache-2.0)
   https://github.com/crossbeam-rs/crossbeam
   License texts: [1] LICENSE-APACHE, [4] LICENSE-MIT
 
-crossbeam-utils 0.8.21 (MIT OR Apache-2.0)
+crossbeam-utils (MIT OR Apache-2.0)
   https://github.com/crossbeam-rs/crossbeam
   License texts: [1] LICENSE-APACHE, [4] LICENSE-MIT
 
-ctor 1.0.7 (Apache-2.0 OR MIT)
+ctor (Apache-2.0 OR MIT)
   https://github.com/mmastrac/linktime
   License texts: [5] LICENSE-APACHE, [6] LICENSE-MIT
 
-either 1.15.0 (MIT OR Apache-2.0)
+either (MIT OR Apache-2.0)
   https://github.com/rayon-rs/either
   License texts: [1] LICENSE-APACHE, [7] LICENSE-MIT
 
-futures 0.3.32 (MIT OR Apache-2.0)
+futures (MIT OR Apache-2.0)
   https://github.com/rust-lang/futures-rs
   License texts: [8] LICENSE-APACHE, [9] LICENSE-MIT
 
-futures-channel 0.3.32 (MIT OR Apache-2.0)
+futures-channel (MIT OR Apache-2.0)
   https://github.com/rust-lang/futures-rs
   License texts: [8] LICENSE-APACHE, [9] LICENSE-MIT
 
-futures-core 0.3.32 (MIT OR Apache-2.0)
+futures-core (MIT OR Apache-2.0)
   https://github.com/rust-lang/futures-rs
   License texts: [8] LICENSE-APACHE, [9] LICENSE-MIT
 
-futures-executor 0.3.32 (MIT OR Apache-2.0)
+futures-executor (MIT OR Apache-2.0)
   https://github.com/rust-lang/futures-rs
   License texts: [8] LICENSE-APACHE, [9] LICENSE-MIT
 
-futures-io 0.3.32 (MIT OR Apache-2.0)
+futures-io (MIT OR Apache-2.0)
   https://github.com/rust-lang/futures-rs
   License texts: [8] LICENSE-APACHE, [9] LICENSE-MIT
 
-futures-sink 0.3.32 (MIT OR Apache-2.0)
+futures-sink (MIT OR Apache-2.0)
   https://github.com/rust-lang/futures-rs
   License texts: [8] LICENSE-APACHE, [9] LICENSE-MIT
 
-futures-task 0.3.32 (MIT OR Apache-2.0)
+futures-task (MIT OR Apache-2.0)
   https://github.com/rust-lang/futures-rs
   License texts: [8] LICENSE-APACHE, [9] LICENSE-MIT
 
-futures-util 0.3.32 (MIT OR Apache-2.0)
+futures-util (MIT OR Apache-2.0)
   https://github.com/rust-lang/futures-rs
   License texts: [8] LICENSE-APACHE, [9] LICENSE-MIT
 
-gloo-utils 0.2.0 (MIT OR Apache-2.0)
+gloo-utils (MIT OR Apache-2.0)
   https://github.com/rustwasm/gloo/tree/master/crates/utils
   The crate package ships no license file; texts taken from its repository.
   License texts: [1] LICENSE-APACHE, [10] LICENSE-MIT
 
-itoa 1.0.18 (MIT OR Apache-2.0)
+itoa (MIT OR Apache-2.0)
   https://github.com/dtolnay/itoa
   License texts: [11] LICENSE-APACHE, [12] LICENSE-MIT
 
-js-sys 0.3.105 (MIT OR Apache-2.0)
+js-sys (MIT OR Apache-2.0)
   https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/js-sys
   License texts: [1] LICENSE-APACHE, [3] LICENSE-MIT
 
-libc 0.2.183 (MIT OR Apache-2.0)
+libc (MIT OR Apache-2.0)
   https://github.com/rust-lang/libc
   License texts: [11] LICENSE-APACHE, [13] LICENSE-MIT
 
-libloading 0.9.0 (ISC)
+libloading (ISC)
   https://github.com/nagisa/rust_libloading/
   License texts: [14] LICENSE
 
-memchr 2.8.0 (Unlicense OR MIT)
+memchr (Unlicense OR MIT)
   https://github.com/BurntSushi/memchr
   License texts: [15] COPYING, [16] LICENSE-MIT, [17] UNLICENSE
 
-napi 3.12.4 (MIT)
+napi (MIT)
   https://github.com/napi-rs/napi-rs
   The crate package ships no license file; texts taken from its repository.
   License texts: [18] LICENSE
 
-napi-sys 3.3.1 (MIT)
+napi-sys (MIT)
   https://github.com/napi-rs/napi-rs
   The crate package ships no license file; texts taken from its repository.
   License texts: [18] LICENSE
 
-nohash-hasher 0.2.0 (Apache-2.0 OR MIT)
+nohash-hasher (Apache-2.0 OR MIT)
   https://github.com/paritytech/nohash-hasher
   License texts: [19] LICENSE-APACHE, [20] LICENSE-MIT
 
-nucleo-matcher 0.3.1 (MPL-2.0)
+nucleo-matcher (MPL-2.0)
   https://github.com/helix-editor/nucleo
-  MPL-2.0: rapid-fuzzy uses nucleo-matcher 0.3.1 unmodified. Its Source Code Form is available
-  at https://crates.io/crates/nucleo-matcher/0.3.1 and https://github.com/helix-editor/nucleo.
+  MPL-2.0: rapid-fuzzy uses nucleo-matcher unmodified, in the version listed in the Cargo.lock
+  of the rapid-fuzzy release. Its Source Code Form is available at
+  https://crates.io/crates/nucleo-matcher and https://github.com/helix-editor/nucleo.
   License texts: [21] LICENSE
 
-once_cell 1.21.4 (MIT OR Apache-2.0)
+once_cell (MIT OR Apache-2.0)
   https://github.com/matklad/once_cell
   License texts: [1] LICENSE-APACHE, [12] LICENSE-MIT
 
-pin-project-lite 0.2.17 (Apache-2.0 OR MIT)
+pin-project-lite (Apache-2.0 OR MIT)
   https://github.com/taiki-e/pin-project-lite
   License texts: [22] LICENSE-APACHE, [12] LICENSE-MIT
 
-rapidfuzz 0.5.0 (MIT)
+rapidfuzz (MIT)
   https://github.com/maxbachmann/rapidfuzz-rs
   License texts: [11] LICENSE-APACHE, [23] LICENSE-MIT
 
-rayon 1.11.0 (MIT OR Apache-2.0)
+rayon (MIT OR Apache-2.0)
   https://github.com/rayon-rs/rayon
   License texts: [1] LICENSE-APACHE, [24] LICENSE-MIT
 
-rayon-core 1.13.0 (MIT OR Apache-2.0)
+rayon-core (MIT OR Apache-2.0)
   https://github.com/rayon-rs/rayon
   License texts: [1] LICENSE-APACHE, [24] LICENSE-MIT
 
-rustc-hash 2.1.1 (Apache-2.0 OR MIT)
+rustc-hash (Apache-2.0 OR MIT)
   https://github.com/rust-lang/rustc-hash
   License texts: [11] LICENSE-APACHE, [12] LICENSE-MIT
 
-serde 1.0.229 (MIT OR Apache-2.0)
+serde (MIT OR Apache-2.0)
   https://github.com/serde-rs/serde
   License texts: [11] LICENSE-APACHE, [12] LICENSE-MIT
 
-serde-wasm-bindgen 0.6.5 (MIT)
+serde-wasm-bindgen (MIT)
   https://github.com/RReverser/serde-wasm-bindgen
   License texts: [25] LICENSE
 
-serde_core 1.0.229 (MIT OR Apache-2.0)
+serde_core (MIT OR Apache-2.0)
   https://github.com/serde-rs/serde
   License texts: [11] LICENSE-APACHE, [12] LICENSE-MIT
 
-serde_json 1.0.149 (MIT OR Apache-2.0)
+serde_json (MIT OR Apache-2.0)
   https://github.com/serde-rs/json
   License texts: [11] LICENSE-APACHE, [12] LICENSE-MIT
 
-slab 0.4.12 (MIT)
+slab (MIT)
   https://github.com/tokio-rs/slab
   License texts: [26] LICENSE
 
-tsify 0.5.8 (MIT OR Apache-2.0)
+tsify (MIT OR Apache-2.0)
   https://github.com/madonoharu/tsify
   License texts: [11] LICENSE_APACHE, [27] LICENSE_MIT
 
-unicode-ident 1.0.24 ((MIT OR Apache-2.0) AND Unicode-3.0)
+unicode-ident ((MIT OR Apache-2.0) AND Unicode-3.0)
   https://github.com/dtolnay/unicode-ident
   License texts: [11] LICENSE-APACHE, [12] LICENSE-MIT, [28] LICENSE-UNICODE
 
-unicode-segmentation 1.12.0 (MIT OR Apache-2.0)
+unicode-segmentation (MIT OR Apache-2.0)
   https://github.com/unicode-rs/unicode-segmentation
   License texts: [29] COPYRIGHT, [1] LICENSE-APACHE, [30] LICENSE-MIT
 
-wasm-bindgen 0.2.128 (MIT OR Apache-2.0)
+wasm-bindgen (MIT OR Apache-2.0)
   https://github.com/wasm-bindgen/wasm-bindgen
   License texts: [1] LICENSE-APACHE, [3] LICENSE-MIT
 
-wasm-bindgen-shared 0.2.128 (MIT OR Apache-2.0)
+wasm-bindgen-shared (MIT OR Apache-2.0)
   https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/shared
   License texts: [1] LICENSE-APACHE, [3] LICENSE-MIT
 
-web-sys 0.3.105 (MIT OR Apache-2.0)
+web-sys (MIT OR Apache-2.0)
   https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/web-sys
   License texts: [1] LICENSE-APACHE, [3] LICENSE-MIT
 
-windows-link 0.2.1 (MIT OR Apache-2.0)
+windows-link (MIT OR Apache-2.0)
   https://github.com/microsoft/windows-rs
   License texts: [31] license-apache-2.0, [32] license-mit
 
-zmij 1.0.21 (MIT)
+zmij (MIT)
   https://github.com/dtolnay/zmij
   License texts: [12] LICENSE-MIT
 
@@ -211,7 +212,7 @@ wasi-libc (Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT)
   and musl-fts (BSD-3-Clause), whose notices are included below.
   License texts: [36] LICENSE, [12] LICENSE-MIT, [37] cloudlibc-LICENSE, [38] dlmalloc-NOTICE, [39] emmalloc-LICENSE, [40] musl-COPYRIGHT, [41] musl-fts-COPYING
 
-emnapi 2.0.0-alpha.5 (MIT)
+emnapi (MIT)
   https://github.com/toyobayashi/emnapi
   WASI build only: its C library implements Node-API inside the WebAssembly module.
   License texts: [42] LICENSE

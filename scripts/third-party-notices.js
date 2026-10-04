@@ -132,6 +132,33 @@ function shippedCrates() {
   return keys;
 }
 
+/**
+ * Merge the entries of a crate linked in more than one version when they are
+ * identical, which they are unless its license changed between versions;
+ * otherwise tell them apart by version.
+ *
+ * Entries carry no version so that the file, which CI checks, only changes
+ * when a crate is added or removed or its license text changes, and not with
+ * the version bumps of automated dependency updates.
+ * @param {Component[]} components  One per package, in the order of `packages`.
+ * @param {CargoPackage[]} packages
+ * @returns {Component[]}
+ */
+function withoutDuplicates(components, packages) {
+  /** @param {Component} c */
+  const key = (c) => JSON.stringify([c.license, c.url, c.notes, c.texts]);
+  return components.flatMap((c, i) => {
+    const same = components.filter((other) => other.title === c.title);
+    if (same.length === 1) {
+      return [c];
+    }
+    if (same.every((other) => key(other) === key(c))) {
+      return same[0] === c ? [c] : [];
+    }
+    return [{ ...c, title: `${c.title} ${packages[i]?.version}` }];
+  });
+}
+
 /** @returns {Component[]} */
 function crateComponents() {
   /** @type {{ packages: CargoPackage[] }} */
@@ -146,7 +173,7 @@ function crateComponents() {
   });
 
   // Plain code-unit order: locale-aware sorting could differ between machines.
-  return packages
+  const components = packages
     .sort((a, b) => compare(a.name, b.name) || compare(a.version, b.version))
     .map((p) => {
       const crateDir = path.dirname(p.manifest_path);
@@ -164,18 +191,22 @@ function crateComponents() {
       }
       if (/\bMPL-2\.0\b/.test(p.license ?? '')) {
         notes.push(
-          `MPL-2.0: rapid-fuzzy uses ${p.name} ${p.version} unmodified. Its Source Code Form is available`,
-          `at https://crates.io/crates/${p.name}/${p.version} and ${p.repository ?? 'its repository'}.`,
+          `MPL-2.0: rapid-fuzzy uses ${p.name} unmodified, in the version listed in the Cargo.lock`,
+          'of the rapid-fuzzy release. Its Source Code Form is available at',
+          `https://crates.io/crates/${p.name} and ${p.repository ?? 'its repository'}.`,
         );
       }
       return {
-        title: `${p.name} ${p.version}`,
+        // No version: the file would otherwise change with every routine
+        // dependency bump (see withoutDuplicates).
+        title: p.name,
         license: p.license ?? 'unknown',
         url: p.repository ?? `https://crates.io/crates/${p.name}`,
         notes,
         texts,
       };
     });
+  return withoutDuplicates(components, packages);
 }
 
 /**
@@ -200,7 +231,7 @@ function toolchainComponents() {
   if (!fs.existsSync(path.join(emnapiDir, 'package.json'))) {
     throw new Error('node_modules/emnapi is missing; run `pnpm install` first');
   }
-  /** @type {{ version: string, license: string }} */
+  /** @type {{ license: string }} */
   const emnapi = JSON.parse(fs.readFileSync(path.join(emnapiDir, 'package.json'), 'utf8'));
   return [
     {
@@ -226,7 +257,7 @@ function toolchainComponents() {
       texts: toolchainTexts('wasi-libc'),
     },
     {
-      title: `emnapi ${emnapi.version}`,
+      title: 'emnapi',
       license: emnapi.license,
       url: 'https://github.com/toyobayashi/emnapi',
       notes: ['WASI build only: its C library implements Node-API inside the WebAssembly module.'],
