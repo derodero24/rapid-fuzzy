@@ -23,4 +23,8 @@ jobs:
           token: ${{ secrets.RENOVATE_TOKEN }}
         env:
           RENOVATE_REPOSITORIES: ${{ github.repository }}
+          # Global (self-hosted) allow-list for renovate.json postUpgradeTasks;
+          # a repository config cannot grant this itself. Only the binaryen
+          # checksum refresh is allowed.
+          RENOVATE_ALLOWED_COMMANDS: '["^node \\.github/scripts/update-binaryen-sha256\\.cjs$"]'
           LOG_LEVEL: debug

@@ -1,6 +1,6 @@
 # Migrating from fuzzysort to rapid-fuzzy
 
-[fuzzysort](https://github.com/farzher/fuzzysort) is a fast fuzzy search library that uses substring matching and a custom scoring algorithm. rapid-fuzzy takes a different approach — it uses the nucleo fuzzy matching engine (same as the Helix editor) and adds 10 distance algorithms, query syntax, and batch APIs for broader use cases.
+[fuzzysort](https://github.com/farzher/fuzzysort) is a fast fuzzy search library written in pure JavaScript. Like rapid-fuzzy, it matches a query when its characters occur in the item in order, and ranks matches with its own scoring. rapid-fuzzy uses the nucleo matcher (the engine of the Helix editor) in a Rust core, and adds query syntax, weighted object search, distance functions and batch APIs. Scores and rankings differ between the two.
 
 ## Installation
 
@@ -32,18 +32,18 @@ console.log(results[0].item); // 'TypeScript'
 |---|---|---|
 | `fuzzysort.go(query, targets)` | `search(query, items)` | No constructor needed |
 | `fuzzysort.go(query, targets, { key })` | `searchObjects(query, items, { keys })` | See [Object Search](#object-search) |
-| `fuzzysort.highlight(result)` | `highlight(item, positions, '<b>', '</b>')` | Built-in highlight utility |
+| `result.highlight('<b>', '</b>')` | `highlight(item, positions, '<b>', '</b>')` | Built-in highlight utility |
 | `fuzzysort.prepare(target)` | `new FuzzyIndex(items)` | Persistent index, mutable |
 | `result.target` | `result.item` | Different property name |
 | `result.score` | `result.score` | Different scale (see below) |
 | `result.indexes` | `result.positions` | Character indices |
-| `options.threshold` | `{ minScore }` | Different scale (see below) |
+| `options.threshold` | `{ minScore }` | Same direction, different scores (see below) |
 | `options.limit` | `{ maxResults }` or pass a number | `search(q, items, 5)` |
 | `options.key` / `options.keys` | `searchObjects(q, items, { keys })` | See [Object Search](#object-search) |
 
 ## Score Direction
 
-**Important**: fuzzysort and rapid-fuzzy use very different scoring systems:
+**Important**: fuzzysort and rapid-fuzzy use different scoring systems. Both use 0–1 with higher = better, but the same match gets different scores (`tsc` → `TypeScript`: 0.74 in fuzzysort, 0.83 in rapid-fuzzy), so pick `minScore` from rapid-fuzzy's scores on your data:
 
 | | fuzzysort | rapid-fuzzy |
 |---|---|---|
@@ -125,8 +125,8 @@ searchObjects('john', users, {
 
 ```typescript
 // fuzzysort — built-in HTML highlight
-fuzzysort.highlight(result); // '<b>T</b>ypeScr<b>i</b>pt'
-fuzzysort.highlight(result, '<mark>', '</mark>');
+const [result] = fuzzysort.go('tsc', ['TypeScript']);
+result.highlight('<b>', '</b>'); // '<b>T</b>ype<b>Sc</b>ript'
 
 // rapid-fuzzy — highlight utility with positions
 import { search, highlight } from 'rapid-fuzzy';
@@ -159,30 +159,28 @@ index.destroy();
 
 ## Performance
 
-fuzzysort uses a substring-based matching algorithm that is extremely fast for raw search speed. rapid-fuzzy uses the nucleo fuzzy matching engine, which provides different (and often more flexible) matching behavior at a different performance profile:
+From the [README benchmarks](../../README.md#benchmarks) (Node.js 22, Linux x64, Intel Xeon @ 2.10GHz, 4 vCPUs; ops/s, higher is better; fuzzysort with prepared targets from 1K items on):
 
-| Dataset size | rapid-fuzzy | FuzzyIndex | fuzzysort |
+| Dataset size | rapid-fuzzy `search()` | `FuzzyIndex` | fuzzysort |
 |---|---:|---:|---:|
-| Small (20 items) | 279,509 ops/s | 395,932 ops/s | **1,661,273 ops/s** |
-| Medium (1K items) | 6,274 ops/s | **77,271 ops/s** | 58,123 ops/s |
-| Large (10K items) | 777 ops/s | **230,848 ops/s** | 25,315 ops/s |
+| Small (20 items) | 157,995 ops/s | 208,250 ops/s | **1,271,223 ops/s** |
+| Medium (1K items) | 3,502 ops/s | 50,318 ops/s | **54,110 ops/s** |
+| Large (10K items) | 508 ops/s | **4,803 ops/s** | 2,977 ops/s |
+| Large (10K items, rotating queries) | 451 ops/s | **4,644 ops/s** | 2,231 ops/s |
+| Huge (100K items) | — | **1,125 ops/s** | 231 ops/s |
 
-Measured on Apple M-series with Node.js v22.
-
-fuzzysort is faster on small datasets because it uses optimized substring matching — a fundamentally simpler operation than fuzzy matching with out-of-order support. However, with `FuzzyIndex`, rapid-fuzzy outperforms fuzzysort on medium-and-above datasets (1.3x at 1K, 9.1x at 10K) thanks to Rust-side indexing with incremental caching.
+fuzzysort was about 6x faster on 20 items and about as fast on 1K items. `FuzzyIndex` was 1.6-2.1x faster on 10K items, and about 5x faster on 100K items, where it scored candidates on 4 threads (about 1.6x faster on one thread). Standalone `search()` was slower than fuzzysort's prepared search at every size, because it converts every item on each call.
 
 ## Why Choose rapid-fuzzy Over fuzzysort?
 
-rapid-fuzzy with `FuzzyIndex` matches or exceeds fuzzysort's speed on real-world dataset sizes, while offering capabilities that fuzzysort does not:
+fuzzysort is an excellent choice for small and medium lists in the browser, with no native addon or WebAssembly module to load. rapid-fuzzy is worth it when you need:
 
-- **10 distance algorithms**: Levenshtein, Damerau-Levenshtein, Hamming, Jaro, Jaro-Winkler, Sorensen-Dice, and more — useful beyond search
+- **Distance functions**: Levenshtein, Damerau-Levenshtein, Hamming, Indel, Jaro, Jaro-Winkler, Sorensen-Dice, and token-based ratios — useful beyond search
 - **Query syntax**: Exclude (`!term`), prefix (`^term`), suffix (`term$`), exact (`'term`) operators
-- **Diacritics handling**: `cafe` matches `café`, `uber` matches `über` automatically
 - **Batch APIs**: `levenshteinBatch`, `jaroWinklerMany`, etc. for bulk operations
 - **Object search with weighted keys**: `searchObjects()` and `FuzzyObjectIndex` with per-key weights
-- **Out-of-order matching**: `john smith` matches "Smith, John" automatically
-- **Mutable persistent index**: `FuzzyIndex` supports `add()` / `remove()` without rebuilding
-- **WASM fallback**: Works in browsers, Deno, and Bun via automatic WASM fallback
+- **Mutable persistent index**: `FuzzyIndex` supports `add()` / `remove()` without rebuilding, and `serialize()` / `deserialize()`
+- **Large lists in Node.js**: native code that scales to 100K+ items
 
 ## Additional Capabilities
 
