@@ -700,7 +700,7 @@ impl Rng {
             }
         } else {
             for _ in 0..self.below(4) {
-                q.push_str(self.pick(ITEM_PIECES));
+                q.push_str(self.pick::<&str>(ITEM_PIECES));
             }
         }
         if self.chance(25) {

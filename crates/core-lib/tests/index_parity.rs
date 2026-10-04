@@ -207,7 +207,7 @@ fn derived_query(rng: &mut Rng, source: &str) -> String {
         1 => q.push('$'),
         2 => q.insert(0, '\''),
         3 => q.push_str(" !zz"),
-        4 => q.push_str(rng.pick(QUERY_PIECES)),
+        4 => q.push_str(rng.pick::<&str>(QUERY_PIECES)),
         _ => {}
     }
     q
