@@ -1,8 +1,8 @@
 /** A range within a string, indicating whether it was matched. */
 export interface HighlightRange {
-  /** Start index (inclusive). */
+  /** Start offset in UTF-16 code units (inclusive), for `item.slice(start, end)`. */
   start: number;
-  /** End index (exclusive). */
+  /** End offset in UTF-16 code units (exclusive). */
   end: number;
   /** Whether this range was part of the match. */
   matched: boolean;
@@ -22,6 +22,11 @@ export interface HighlightOptions {
  * Highlight matched characters in a search result string.
  *
  * Use with `SearchResult.positions` from a search with `includePositions: true`.
+ * Positions count characters the way search results do: an ASCII item by
+ * character, any other item by grapheme cluster (an emoji with its
+ * modifiers or a letter with its combining marks is one position), so a
+ * marker never splits one. Grapheme clusters are found with
+ * `Intl.Segmenter` (by code point where it is unavailable).
  * The result is a single string: the unmatched text, and the matched text
  * wrapped in the markers (or passed through the callback), joined together.
  *
@@ -65,7 +70,9 @@ export declare function highlight(
  * Convert matched positions into an array of ranges for custom rendering.
  *
  * Each range indicates a contiguous segment of the string and whether it was
- * part of the match. Useful for building custom highlight components, e.g.
+ * part of the match. `positions` are counted like in {@link highlight}; the
+ * ranges are UTF-16 offsets, so `item.slice(start, end)` is the segment.
+ * Useful for building custom highlight components, e.g.
  * React elements, where the framework takes care of escaping.
  *
  * @example

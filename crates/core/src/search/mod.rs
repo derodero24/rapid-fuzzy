@@ -58,8 +58,12 @@ pub struct SearchResult {
     pub score: f64,
     /// The index of the item in the original input array.
     pub index: u32,
-    /// Indices of matched characters in the item string.
-    /// Empty unless `includePositions` is set to true in SearchOptions.
+    /// Indices of the matched characters of the item, in ascending order.
+    /// An ASCII item is counted by character; any other item by grapheme
+    /// cluster (a user-perceived character, such as an emoji with its
+    /// modifiers or a letter with its combining marks), so these are not
+    /// UTF-16 string offsets. `highlight()` and `highlightRanges()` convert
+    /// them. Empty unless `includePositions` is set to true in SearchOptions.
     pub positions: Vec<u32>,
     /// How the query matched this item (Exact, Prefix, Contains, or Fuzzy).
     /// Only present when `includePositions` is set to true in SearchOptions.
@@ -89,8 +93,12 @@ pub struct IndexSearchResult {
     pub index: u32,
     /// The match score normalized to 0.0-1.0 range (1.0 is a perfect match).
     pub score: f64,
-    /// Indices of matched characters in the item string.
-    /// Empty unless `includePositions` is set to true in SearchOptions.
+    /// Indices of the matched characters of the item, in ascending order.
+    /// An ASCII item is counted by character; any other item by grapheme
+    /// cluster (a user-perceived character, such as an emoji with its
+    /// modifiers or a letter with its combining marks), so these are not
+    /// UTF-16 string offsets. `highlight()` and `highlightRanges()` convert
+    /// them. Empty unless `includePositions` is set to true in SearchOptions.
     pub positions: Vec<u32>,
     /// How the query matched this item (Exact, Prefix, Contains, or Fuzzy).
     /// Only present when `includePositions` is set to true in SearchOptions.

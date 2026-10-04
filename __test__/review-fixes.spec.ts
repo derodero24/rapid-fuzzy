@@ -3,6 +3,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { highlight, highlightRanges } from '../highlight.js';
 import * as napi from '../index.js';
 import { FuzzyObjectIndex as NodeFuzzyObjectIndex, searchObjects } from '../objects.js';
 
@@ -217,5 +218,80 @@ describe('FuzzyObjectIndex.deserialize() checks the keys against the native inde
     expect(restored.size).toBe(0);
     restored.add({ name: 'cherry', color: 'red' });
     expect(restored.search('red')[0]?.keyScores).toHaveLength(2);
+  });
+});
+
+describe('highlight() uses the position unit of search results', () => {
+  /** Highlight the best match of `query` in `item`, via search() and FuzzyIndex. */
+  function marked(query: string, item: string): string {
+    const [hit] = napi.search(query, [item], { includePositions: true });
+    const [indexed] = new napi.FuzzyIndex([item]).search(query, { includePositions: true });
+    expect(hit?.positions).toEqual(indexed?.positions);
+    return highlight(item, hit?.positions ?? [], '[', ']');
+  }
+
+  it('skips emoji and other characters outside the BMP before the match', () => {
+    expect(marked('apple', '🍎 apple pie')).toBe('🍎 [apple] pie');
+    expect(marked('abc', '😀abc')).toBe('😀[abc]');
+    expect(marked('pie', '🍎🍐 pie')).toBe('🍎🍐 [pie]');
+  });
+
+  it('never splits a surrogate pair or a combining sequence', () => {
+    const nfd = 'e\u0301abc'; // é as e + combining acute accent
+    expect(marked('abc', nfd)).toBe('e\u0301[abc]');
+    expect(marked('eab', nfd)).toBe('[e\u0301ab]c');
+    for (const [item, positions] of [
+      ['😀abc', [0, 1]],
+      ['a👍🏽b', [1]],
+      ['🇯🇵x', [0]],
+    ] as const) {
+      for (const range of highlightRanges(item, positions)) {
+        const text = item.slice(range.start, range.end);
+        const loneSurrogate =
+          /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+        expect(loneSurrogate.test(text), `${item} ${JSON.stringify(range)}`).toBe(false);
+      }
+    }
+    expect(highlight('a👍🏽b', [1], '[', ']')).toBe('a[👍🏽]b');
+    expect(highlight('🇯🇵x', [0], '[', ']')).toBe('[🇯🇵]x');
+  });
+
+  it('returns UTF-16 offsets from highlightRanges()', () => {
+    const item = '🍎 apple pie';
+    const [hit] = napi.search('apple', [item], { includePositions: true });
+    const matched = highlightRanges(item, hit?.positions ?? []).filter((r) => r.matched);
+    expect(matched.map((r) => item.slice(r.start, r.end))).toEqual(['apple']);
+    expect(highlightRanges('😀ab', [1])).toEqual([
+      { start: 0, end: 2, matched: false },
+      { start: 2, end: 3, matched: true },
+      { start: 3, end: 4, matched: false },
+    ]);
+  });
+
+  it('counts ASCII items by character, like the search', () => {
+    // An ASCII item is matched byte by byte: \r\n counts as two positions.
+    expect(marked('b', 'a\r\nb')).toBe('a\r\n[b]');
+    expect(highlightRanges('fuzzy', [0, 3, 4])).toEqual([
+      { start: 0, end: 1, matched: true },
+      { start: 1, end: 3, matched: false },
+      { start: 3, end: 5, matched: true },
+    ]);
+  });
+
+  it.skipIf(!wasmAvailable)('gives the same result with the WebAssembly build', async () => {
+    const b = await loadBrowser();
+    for (const [query, item] of [
+      ['apple', '🍎 apple pie'],
+      ['abc', 'e\u0301abc'],
+      ['tokyo', '東京 tokyo 🗼'],
+    ] as const) {
+      const [hit] = b.search(query, [item], { includePositions: true });
+      expect(hit?.positions).toEqual(
+        napi.search(query, [item], { includePositions: true })[0]?.positions,
+      );
+      expect(b.highlight(item, hit?.positions ?? [], '[', ']')).toBe(
+        highlight(item, hit?.positions ?? [], '[', ']'),
+      );
+    }
   });
 });

@@ -435,6 +435,8 @@ highlightRanges(item, positions);
 //    { start: 3, end: 5, matched: true }]
 ```
 
+`positions` count an ASCII item by character and any other item by grapheme cluster (an emoji with its modifiers, or a letter with its combining marks, is one position), so they are not string offsets for such items. Pass them to `highlight()` / `highlightRanges()`, which convert them: the ranges `highlightRanges()` returns are UTF-16 offsets for `item.slice(start, end)`.
+
 `highlight` and `highlightRanges` are also available from `rapid-fuzzy/highlight`, which does not load the native addon or the WebAssembly module.
 
 <details>
