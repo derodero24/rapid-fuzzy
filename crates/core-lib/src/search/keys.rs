@@ -351,11 +351,13 @@ pub(crate) fn keyed_search_core<C: KeyedCorpus>(
         // Item by item, so that items can be rejected early.
         let query_mask = plan.char_mask;
         'items: for i in 0..num_items {
-            // An item none of whose weighted keys can match (by character
-            // mask) scores 0.
-            if !active_keys
-                .iter()
-                .any(|&k| corpus.may_match(k, i, query_mask))
+            // Without min_score, reject items none of whose weighted keys
+            // can match (by character mask) in one tight check. With
+            // min_score the early exit below usually rejects them sooner.
+            if !early_exit
+                && !active_keys
+                    .iter()
+                    .any(|&k| corpus.may_match(k, i, query_mask))
             {
                 continue;
             }
@@ -370,7 +372,10 @@ pub(crate) fn keyed_search_core<C: KeyedCorpus>(
                     continue 'items;
                 }
             }
-            select(i, &item_scores);
+            // A weighted sum of 0 means a combined score of 0: not selected.
+            if weighted_sum > 0.0 {
+                select(i, &item_scores);
+            }
         }
     } else {
         // Key by key: one key over all items, then the next.
@@ -381,10 +386,15 @@ pub(crate) fn keyed_search_core<C: KeyedCorpus>(
                 .extend((0..num_items).map(|i| corpus.key_score(&plan, matcher, &mut buf, k, i)));
         }
         for i in 0..num_items {
+            let mut matched = false;
             for (j, score) in item_scores.iter_mut().enumerate() {
                 *score = columns[j * num_items + i];
+                matched |= *score > 0.0;
             }
-            select(i, &item_scores);
+            // Without a matching weighted key the combined score is 0.
+            if matched {
+                select(i, &item_scores);
+            }
         }
     }
 
