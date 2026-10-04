@@ -129,7 +129,12 @@ describe('deserializing corrupt data never crashes the process', () => {
     // The embedded KeyedFuzzyIndex payload ends the buffer.
     const indexStart = 4 + bytes.readUInt32LE(0);
     bytes.writeUInt32LE(U32_MAX, indexStart + KEYED_ITEMS_OFFSET);
-    expectCleanError('FuzzyObjectIndex', bytes, /^Invalid data: /);
+    // objects.js wraps the native error (kept as `cause`) with its own prefix.
+    expectCleanError(
+      'FuzzyObjectIndex',
+      bytes,
+      /^Invalid FuzzyObjectIndex data: Invalid data: 1 keys x 4294967295 items/,
+    );
   });
 });
 
