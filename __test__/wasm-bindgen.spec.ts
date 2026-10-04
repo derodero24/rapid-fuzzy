@@ -258,7 +258,13 @@ describe.skipIf(!wasmAvailable)('wasm-bindgen runtime', () => {
         expect(wasm.search('type', items, opts)).toEqual(napi.search('type', items, opts));
       }
       const all = { returnAllOnEmpty: true, maxResults: 3 };
-      expect(wasm.search('', items, all)).toEqual(napi.search('', items, all));
+      // Syntax-only and Unicode-whitespace queries count as empty, like in napi.
+      for (const query of ['', '^', "'", '!', '^$', '\u3000']) {
+        expect(wasm.search(query, items, all)).toEqual(napi.search(query, items, all));
+        const index = new wasm.FuzzyIndex(items);
+        expect(index.search(query, all)).toEqual(new napi.FuzzyIndex(items).search(query, all));
+        index.free();
+      }
     });
 
     it('omits matchType unless positions are requested', () => {

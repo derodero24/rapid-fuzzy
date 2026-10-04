@@ -202,7 +202,7 @@ pub fn search(
         opts.return_all_on_empty.unwrap_or(false),
     );
 
-    if return_all_on_empty && query.trim().is_empty() {
+    if return_all_on_empty && core::is_empty_query(&query) {
         let limit = max_results.unwrap_or(items.len() as u32) as usize;
         let results: Vec<SearchResult> = items
             .iter()
