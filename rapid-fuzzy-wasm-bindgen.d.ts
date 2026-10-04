@@ -217,10 +217,15 @@ export function search(query: string, items: string[], options?: SearchOptions |
  * `key_texts` is a JS Array of Arrays of strings (one inner array per key,
  * each inner array has one string per item).
  * `weights` is a JS Array of numbers specifying the relative importance of each key.
+ * `options` is a `SearchOptions` object or a number (maxResults).
  *
- * Returns results sorted by combined weighted score as a JS Array.
+ * Returns results sorted by combined weighted score as a JS Array, exactly
+ * like `KeyedFuzzyIndex.search` on the same key texts and weights. Throws an
+ * `Error` for invalid input (key texts of different lengths, a weight count
+ * that differs from the key count, negative, NaN or infinite weights, or
+ * weights summing to 0 or Infinity), like the `KeyedFuzzyIndex` constructor.
  */
-export function searchKeys(query: string, key_texts: any, weights: Float64Array, options?: SearchOptions | null): any;
+export function searchKeys(query: string, key_texts: any, weights: Float64Array, options?: number | SearchOptions | null): any;
 
 export function sorensenDice(a: string, b: string): number;
 

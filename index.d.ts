@@ -564,9 +564,24 @@ export declare function search(query: string, items: Array<string>, options?: nu
  * All inner arrays must have the same length (the number of items).
  * `weights` specifies the relative importance of each key.
  *
- * Returns results sorted by combined weighted score (best match first).
+ * Every key is scored like `search()` scores an item; `keyScores` holds
+ * these scores for every key, including keys whose weight is 0. The
+ * combined score is `sum(keyScore * weight) / sum(weights)`, and items
+ * whose combined score is 0 (no match on a key with a positive weight) are
+ * not returned.
+ *
+ * Returns results sorted by combined weighted score (best match first),
+ * then by the length of the best-matching key's text (shorter first, like
+ * `search()`), then by index. `new KeyedFuzzyIndex(keyTexts, weights)`
+ * returns exactly the same results.
+ *
+ * The fourth argument accepts either a number (maxResults) or a
+ * SearchOptions object. Throws when the key texts have different lengths,
+ * when there is not exactly one weight per key, or when a weight is
+ * negative, NaN or infinite, or the weights sum to 0 or to Infinity (the
+ * same errors as the `KeyedFuzzyIndex` constructor).
  */
-export declare function searchKeys(query: string, keyTexts: Array<Array<string>>, weights: Array<number>, options?: SearchOptions | undefined | null): Array<KeySearchResult>
+export declare function searchKeys(query: string, keyTexts: Array<Array<string>>, weights: Array<number>, options?: number | SearchOptions | undefined | null): Array<KeySearchResult>
 
 /** Options for the search function. */
 export interface SearchOptions {
