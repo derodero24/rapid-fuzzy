@@ -22,7 +22,7 @@ impl Task for BuildFuzzyIndexTask {
     }
 
     fn resolve(&mut self, env: Env, output: Self::Output) -> napi::Result<Self::JsValue> {
-        FuzzyIndex::from_core(output).with_reported_memory(&env)
+        FuzzyIndex::from_core(output).with_reported_memory(env)
     }
 }
 
@@ -57,7 +57,7 @@ impl FuzzyIndex {
         Self::from_core(FuzzyIndexCore::new(items))
     }
 
-    fn with_reported_memory(mut self, env: &Env) -> napi::Result<Self> {
+    fn with_reported_memory(mut self, env: Env) -> napi::Result<Self> {
         self.report_memory(env)?;
         Ok(self)
     }
@@ -69,7 +69,7 @@ impl FuzzyIndex {
     /// frees memory, and indexes that are never `destroy()`ed pile up.
     /// Called whenever the index's size changes; the finalizer releases the
     /// amount again.
-    fn report_memory(&mut self, env: &Env) -> napi::Result<()> {
+    fn report_memory(&mut self, env: Env) -> napi::Result<()> {
         let bytes = i64::try_from(self.core.heap_size()).unwrap_or(i64::MAX);
         let delta = bytes - self.reported_bytes;
         if delta != 0 {
@@ -94,7 +94,7 @@ impl FuzzyIndex {
     /// Create a new FuzzyIndex from an array of strings.
     #[napi(constructor)]
     pub fn create(env: Env, items: Vec<String>) -> napi::Result<Self> {
-        Self::new(items).with_reported_memory(&env)
+        Self::new(items).with_reported_memory(env)
     }
 
     /// Construct a FuzzyIndex on the libuv thread pool, returning a Promise.
@@ -235,14 +235,14 @@ impl FuzzyIndex {
     #[napi]
     pub fn add(&mut self, env: Env, item: String) -> napi::Result<()> {
         self.core.add(item);
-        self.report_memory(&env)
+        self.report_memory(env)
     }
 
     /// Add multiple items to the index at once.
     #[napi]
     pub fn add_many(&mut self, env: Env, items: Vec<String>) -> napi::Result<()> {
         self.core.add_many(items);
-        self.report_memory(&env)
+        self.report_memory(env)
     }
 
     /// Remove the item at the given index.
@@ -251,7 +251,7 @@ impl FuzzyIndex {
     #[napi]
     pub fn remove(&mut self, env: Env, index: u32) -> napi::Result<bool> {
         let removed = self.core.remove(index);
-        self.report_memory(&env)?;
+        self.report_memory(env)?;
         Ok(removed)
     }
 
@@ -259,7 +259,7 @@ impl FuzzyIndex {
     #[napi]
     pub fn destroy(&mut self, env: Env) -> napi::Result<()> {
         self.core.destroy();
-        self.report_memory(&env)
+        self.report_memory(env)
     }
 
     /// Serialize the index to a compact binary format.
@@ -280,7 +280,7 @@ impl FuzzyIndex {
     pub fn deserialize(env: Env, data: Buffer) -> napi::Result<Self> {
         Self::deserialize_impl(&data)
             .map_err(napi::Error::from_reason)?
-            .with_reported_memory(&env)
+            .with_reported_memory(env)
     }
 
     fn serialize_impl(&self) -> Vec<u8> {

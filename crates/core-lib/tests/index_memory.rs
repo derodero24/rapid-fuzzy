@@ -26,22 +26,22 @@ fn track(delta: isize) {
 // SAFETY: forwards every call to the system allocator unchanged.
 unsafe impl GlobalAlloc for CountingAlloc {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        track(layout.size() as isize);
+        track(layout.size().cast_signed());
         unsafe { System.alloc(layout) }
     }
 
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
-        track(layout.size() as isize);
+        track(layout.size().cast_signed());
         unsafe { System.alloc_zeroed(layout) }
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        track(-(layout.size() as isize));
+        track(-(layout.size().cast_signed()));
         unsafe { System.dealloc(ptr, layout) }
     }
 
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
-        track(new_size as isize - layout.size() as isize);
+        track(new_size.cast_signed() - layout.size().cast_signed());
         unsafe { System.realloc(ptr, layout, new_size) }
     }
 }
@@ -72,7 +72,7 @@ fn heap_size_is_exactly_what_the_index_owns() {
     warm_up();
     let before = live();
     let index = FuzzyIndexCore::new(items());
-    assert_eq!(live() - before, index.heap_size() as isize);
+    assert_eq!(live() - before, index.heap_size().cast_signed());
     drop(index);
     assert_eq!(live(), before);
 }
@@ -86,13 +86,13 @@ fn heap_size_tracks_add_remove_and_destroy() {
 
     index.add("café au lait".into());
     index.add_many(items());
-    assert_eq!(live() - base, index.heap_size() as isize);
+    assert_eq!(live() - base, index.heap_size().cast_signed());
 
     let size = index.heap_size();
     assert!(index.remove(0));
     assert!(index.remove(3));
     assert!(index.heap_size() < size);
-    assert_eq!(live() - base, index.heap_size() as isize);
+    assert_eq!(live() - base, index.heap_size().cast_signed());
 
     index.destroy();
     assert_eq!(index.heap_size(), 0);
@@ -123,6 +123,6 @@ fn searched_indexes_share_one_matcher() {
         index.destroy();
         assert_eq!(index.heap_size(), 0);
     }
-    let vec_bytes = (indexes.capacity() * size_of::<FuzzyIndexCore>()) as isize;
+    let vec_bytes = (indexes.capacity() * size_of::<FuzzyIndexCore>()).cast_signed();
     assert_eq!(live() - before, vec_bytes);
 }
