@@ -21,50 +21,66 @@ cfg-if 1.0.4 (MIT OR Apache-2.0)
   https://github.com/rust-lang/cfg-if
   License texts: [1] LICENSE-APACHE, [3] LICENSE-MIT
 
+crossbeam-deque 0.8.6 (MIT OR Apache-2.0)
+  https://github.com/crossbeam-rs/crossbeam
+  License texts: [1] LICENSE-APACHE, [4] LICENSE-MIT
+
+crossbeam-epoch 0.9.20 (MIT OR Apache-2.0)
+  https://github.com/crossbeam-rs/crossbeam
+  License texts: [1] LICENSE-APACHE, [4] LICENSE-MIT
+
+crossbeam-utils 0.8.21 (MIT OR Apache-2.0)
+  https://github.com/crossbeam-rs/crossbeam
+  License texts: [1] LICENSE-APACHE, [4] LICENSE-MIT
+
 ctor 1.0.7 (Apache-2.0 OR MIT)
   https://github.com/mmastrac/linktime
-  License texts: [4] LICENSE-APACHE, [5] LICENSE-MIT
+  License texts: [5] LICENSE-APACHE, [6] LICENSE-MIT
+
+either 1.15.0 (MIT OR Apache-2.0)
+  https://github.com/rayon-rs/either
+  License texts: [1] LICENSE-APACHE, [7] LICENSE-MIT
 
 futures 0.3.32 (MIT OR Apache-2.0)
   https://github.com/rust-lang/futures-rs
-  License texts: [6] LICENSE-APACHE, [7] LICENSE-MIT
+  License texts: [8] LICENSE-APACHE, [9] LICENSE-MIT
 
 futures-channel 0.3.32 (MIT OR Apache-2.0)
   https://github.com/rust-lang/futures-rs
-  License texts: [6] LICENSE-APACHE, [7] LICENSE-MIT
+  License texts: [8] LICENSE-APACHE, [9] LICENSE-MIT
 
 futures-core 0.3.32 (MIT OR Apache-2.0)
   https://github.com/rust-lang/futures-rs
-  License texts: [6] LICENSE-APACHE, [7] LICENSE-MIT
+  License texts: [8] LICENSE-APACHE, [9] LICENSE-MIT
 
 futures-executor 0.3.32 (MIT OR Apache-2.0)
   https://github.com/rust-lang/futures-rs
-  License texts: [6] LICENSE-APACHE, [7] LICENSE-MIT
+  License texts: [8] LICENSE-APACHE, [9] LICENSE-MIT
 
 futures-io 0.3.32 (MIT OR Apache-2.0)
   https://github.com/rust-lang/futures-rs
-  License texts: [6] LICENSE-APACHE, [7] LICENSE-MIT
+  License texts: [8] LICENSE-APACHE, [9] LICENSE-MIT
 
 futures-sink 0.3.32 (MIT OR Apache-2.0)
   https://github.com/rust-lang/futures-rs
-  License texts: [6] LICENSE-APACHE, [7] LICENSE-MIT
+  License texts: [8] LICENSE-APACHE, [9] LICENSE-MIT
 
 futures-task 0.3.32 (MIT OR Apache-2.0)
   https://github.com/rust-lang/futures-rs
-  License texts: [6] LICENSE-APACHE, [7] LICENSE-MIT
+  License texts: [8] LICENSE-APACHE, [9] LICENSE-MIT
 
 futures-util 0.3.32 (MIT OR Apache-2.0)
   https://github.com/rust-lang/futures-rs
-  License texts: [6] LICENSE-APACHE, [7] LICENSE-MIT
+  License texts: [8] LICENSE-APACHE, [9] LICENSE-MIT
 
 gloo-utils 0.2.0 (MIT OR Apache-2.0)
   https://github.com/rustwasm/gloo/tree/master/crates/utils
   The crate package ships no license file; texts taken from its repository.
-  License texts: [1] LICENSE-APACHE, [8] LICENSE-MIT
+  License texts: [1] LICENSE-APACHE, [10] LICENSE-MIT
 
 itoa 1.0.18 (MIT OR Apache-2.0)
   https://github.com/dtolnay/itoa
-  License texts: [9] LICENSE-APACHE, [10] LICENSE-MIT
+  License texts: [11] LICENSE-APACHE, [12] LICENSE-MIT
 
 js-sys 0.3.105 (MIT OR Apache-2.0)
   https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/js-sys
@@ -72,87 +88,91 @@ js-sys 0.3.105 (MIT OR Apache-2.0)
 
 libc 0.2.183 (MIT OR Apache-2.0)
   https://github.com/rust-lang/libc
-  License texts: [9] LICENSE-APACHE, [11] LICENSE-MIT
+  License texts: [11] LICENSE-APACHE, [13] LICENSE-MIT
 
 libloading 0.9.0 (ISC)
   https://github.com/nagisa/rust_libloading/
-  License texts: [12] LICENSE
+  License texts: [14] LICENSE
 
 memchr 2.8.0 (Unlicense OR MIT)
   https://github.com/BurntSushi/memchr
-  License texts: [13] COPYING, [14] LICENSE-MIT, [15] UNLICENSE
+  License texts: [15] COPYING, [16] LICENSE-MIT, [17] UNLICENSE
 
 napi 3.12.4 (MIT)
   https://github.com/napi-rs/napi-rs
   The crate package ships no license file; texts taken from its repository.
-  License texts: [16] LICENSE
+  License texts: [18] LICENSE
 
 napi-sys 3.3.1 (MIT)
   https://github.com/napi-rs/napi-rs
   The crate package ships no license file; texts taken from its repository.
-  License texts: [16] LICENSE
+  License texts: [18] LICENSE
 
 nohash-hasher 0.2.0 (Apache-2.0 OR MIT)
   https://github.com/paritytech/nohash-hasher
-  License texts: [17] LICENSE-APACHE, [18] LICENSE-MIT
+  License texts: [19] LICENSE-APACHE, [20] LICENSE-MIT
 
 nucleo-matcher 0.3.1 (MPL-2.0)
   https://github.com/helix-editor/nucleo
   MPL-2.0: rapid-fuzzy uses nucleo-matcher 0.3.1 unmodified. Its Source Code Form is available
   at https://crates.io/crates/nucleo-matcher/0.3.1 and https://github.com/helix-editor/nucleo.
-  License texts: [19] LICENSE
+  License texts: [21] LICENSE
 
 once_cell 1.21.4 (MIT OR Apache-2.0)
   https://github.com/matklad/once_cell
-  License texts: [1] LICENSE-APACHE, [10] LICENSE-MIT
+  License texts: [1] LICENSE-APACHE, [12] LICENSE-MIT
 
 pin-project-lite 0.2.17 (Apache-2.0 OR MIT)
   https://github.com/taiki-e/pin-project-lite
-  License texts: [20] LICENSE-APACHE, [10] LICENSE-MIT
+  License texts: [22] LICENSE-APACHE, [12] LICENSE-MIT
 
 rapidfuzz 0.5.0 (MIT)
   https://github.com/maxbachmann/rapidfuzz-rs
-  License texts: [9] LICENSE-APACHE, [21] LICENSE-MIT
+  License texts: [11] LICENSE-APACHE, [23] LICENSE-MIT
+
+rayon 1.11.0 (MIT OR Apache-2.0)
+  https://github.com/rayon-rs/rayon
+  License texts: [1] LICENSE-APACHE, [24] LICENSE-MIT
+
+rayon-core 1.13.0 (MIT OR Apache-2.0)
+  https://github.com/rayon-rs/rayon
+  License texts: [1] LICENSE-APACHE, [24] LICENSE-MIT
 
 rustc-hash 2.1.1 (Apache-2.0 OR MIT)
   https://github.com/rust-lang/rustc-hash
-  License texts: [9] LICENSE-APACHE, [10] LICENSE-MIT
+  License texts: [11] LICENSE-APACHE, [12] LICENSE-MIT
 
 serde 1.0.229 (MIT OR Apache-2.0)
   https://github.com/serde-rs/serde
-  License texts: [9] LICENSE-APACHE, [10] LICENSE-MIT
+  License texts: [11] LICENSE-APACHE, [12] LICENSE-MIT
 
 serde-wasm-bindgen 0.6.5 (MIT)
   https://github.com/RReverser/serde-wasm-bindgen
-  License texts: [22] LICENSE
+  License texts: [25] LICENSE
 
 serde_core 1.0.229 (MIT OR Apache-2.0)
   https://github.com/serde-rs/serde
-  License texts: [9] LICENSE-APACHE, [10] LICENSE-MIT
+  License texts: [11] LICENSE-APACHE, [12] LICENSE-MIT
 
 serde_json 1.0.149 (MIT OR Apache-2.0)
   https://github.com/serde-rs/json
-  License texts: [9] LICENSE-APACHE, [10] LICENSE-MIT
+  License texts: [11] LICENSE-APACHE, [12] LICENSE-MIT
 
 slab 0.4.12 (MIT)
   https://github.com/tokio-rs/slab
-  License texts: [23] LICENSE
-
-strsim 0.11.1 (MIT)
-  https://github.com/rapidfuzz/strsim-rs
-  License texts: [24] LICENSE
+  License texts: [26] LICENSE
 
 tsify 0.5.8 (MIT OR Apache-2.0)
   https://github.com/madonoharu/tsify
-  License texts: [9] LICENSE_APACHE, [25] LICENSE_MIT
+  License texts: [11] LICENSE_APACHE, [27] LICENSE_MIT
 
 unicode-ident 1.0.24 ((MIT OR Apache-2.0) AND Unicode-3.0)
   https://github.com/dtolnay/unicode-ident
-  License texts: [9] LICENSE-APACHE, [10] LICENSE-MIT, [26] LICENSE-UNICODE
+  License texts: [11] LICENSE-APACHE, [12] LICENSE-MIT, [28] LICENSE-UNICODE
 
 unicode-segmentation 1.12.0 (MIT OR Apache-2.0)
   https://github.com/unicode-rs/unicode-segmentation
-  License texts: [27] COPYRIGHT, [1] LICENSE-APACHE, [28] LICENSE-MIT
+  License texts: [29] COPYRIGHT, [1] LICENSE-APACHE, [30] LICENSE-MIT
 
 wasm-bindgen 0.2.128 (MIT OR Apache-2.0)
   https://github.com/wasm-bindgen/wasm-bindgen
@@ -168,11 +188,11 @@ web-sys 0.3.105 (MIT OR Apache-2.0)
 
 windows-link 0.2.1 (MIT OR Apache-2.0)
   https://github.com/microsoft/windows-rs
-  License texts: [29] license-apache-2.0, [30] license-mit
+  License texts: [31] license-apache-2.0, [32] license-mit
 
 zmij 1.0.21 (MIT)
   https://github.com/dtolnay/zmij
-  License texts: [10] LICENSE-MIT
+  License texts: [12] LICENSE-MIT
 
 Toolchain components
 --------------------
@@ -192,7 +212,7 @@ wasi-libc (Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT)
 emnapi 2.0.0-alpha.5 (MIT)
   https://github.com/toyobayashi/emnapi
   WASI build only: its C library implements Node-API inside the WebAssembly module.
-  License texts: [31] LICENSE
+  License texts: [33] LICENSE
 
 License texts
 -------------
@@ -462,6 +482,37 @@ DEALINGS IN THE SOFTWARE.
 
 [4]
 --------------------------------------------------------------------------------
+The MIT License (MIT)
+
+Copyright (c) 2019 The Crossbeam Project Developers
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+--------------------------------------------------------------------------------
+
+[5]
+--------------------------------------------------------------------------------
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -665,7 +716,7 @@ Apache License
    limitations under the License.
 --------------------------------------------------------------------------------
 
-[5]
+[6]
 --------------------------------------------------------------------------------
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
@@ -674,7 +725,36 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 --------------------------------------------------------------------------------
 
-[6]
+[7]
+--------------------------------------------------------------------------------
+Copyright (c) 2015
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+--------------------------------------------------------------------------------
+
+[8]
 --------------------------------------------------------------------------------
                               Apache License
                         Version 2.0, January 2004
@@ -880,7 +960,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 --------------------------------------------------------------------------------
 
-[7]
+[9]
 --------------------------------------------------------------------------------
 Copyright (c) 2016 Alex Crichton
 Copyright (c) 2017 The Tokio Authors
@@ -910,7 +990,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 --------------------------------------------------------------------------------
 
-[8]
+[10]
 --------------------------------------------------------------------------------
 Copyright (c) 2019 Rust and WebAssembly Working Group
 
@@ -939,7 +1019,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 --------------------------------------------------------------------------------
 
-[9]
+[11]
 --------------------------------------------------------------------------------
                               Apache License
                         Version 2.0, January 2004
@@ -1119,7 +1199,7 @@ TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
 END OF TERMS AND CONDITIONS
 --------------------------------------------------------------------------------
 
-[10]
+[12]
 --------------------------------------------------------------------------------
 Permission is hereby granted, free of charge, to any
 person obtaining a copy of this software and associated
@@ -1146,7 +1226,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 --------------------------------------------------------------------------------
 
-[11]
+[13]
 --------------------------------------------------------------------------------
 Copyright (c) The Rust Project Developers
 
@@ -1175,7 +1255,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 --------------------------------------------------------------------------------
 
-[12]
+[14]
 --------------------------------------------------------------------------------
 Copyright © 2015, Simonas Kazlauskas
 
@@ -1191,14 +1271,14 @@ NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE US
 THIS SOFTWARE.
 --------------------------------------------------------------------------------
 
-[13]
+[15]
 --------------------------------------------------------------------------------
 This project is dual-licensed under the Unlicense and MIT licenses.
 
 You may use this code under the terms of either license.
 --------------------------------------------------------------------------------
 
-[14]
+[16]
 --------------------------------------------------------------------------------
 The MIT License (MIT)
 
@@ -1223,7 +1303,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 --------------------------------------------------------------------------------
 
-[15]
+[17]
 --------------------------------------------------------------------------------
 This is free and unencumbered software released into the public domain.
 
@@ -1251,7 +1331,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 For more information, please refer to <http://unlicense.org/>
 --------------------------------------------------------------------------------
 
-[16]
+[18]
 --------------------------------------------------------------------------------
 MIT License
 
@@ -1298,7 +1378,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 --------------------------------------------------------------------------------
 
-[17]
+[19]
 --------------------------------------------------------------------------------
 
                                  Apache License
@@ -1504,7 +1584,7 @@ SOFTWARE.
    limitations under the License.
 --------------------------------------------------------------------------------
 
-[18]
+[20]
 --------------------------------------------------------------------------------
 Copyright 2018 Parity Technologies (UK) Ltd.
 
@@ -1526,7 +1606,7 @@ WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 --------------------------------------------------------------------------------
 
-[19]
+[21]
 --------------------------------------------------------------------------------
 Mozilla Public License Version 2.0
 ==================================
@@ -1903,7 +1983,7 @@ Exhibit B - "Incompatible With Secondary Licenses" Notice
   defined by the Mozilla Public License, v. 2.0.
 --------------------------------------------------------------------------------
 
-[20]
+[22]
 --------------------------------------------------------------------------------
 
                                  Apache License
@@ -2084,7 +2164,7 @@ Exhibit B - "Incompatible With Secondary Licenses" Notice
    END OF TERMS AND CONDITIONS
 --------------------------------------------------------------------------------
 
-[21]
+[23]
 --------------------------------------------------------------------------------
 Permission is hereby granted, free of charge, to any person obtaining
 a copy of this software and associated documentation files (the
@@ -2106,7 +2186,36 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 --------------------------------------------------------------------------------
 
-[22]
+[24]
+--------------------------------------------------------------------------------
+Copyright (c) 2010 The Rust Project Developers
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+--------------------------------------------------------------------------------
+
+[25]
 --------------------------------------------------------------------------------
 MIT License
 
@@ -2131,7 +2240,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 --------------------------------------------------------------------------------
 
-[23]
+[26]
 --------------------------------------------------------------------------------
 Copyright (c) 2019 Carl Lerche
 
@@ -2160,34 +2269,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 --------------------------------------------------------------------------------
 
-[24]
---------------------------------------------------------------------------------
-The MIT License (MIT)
-
-Copyright (c) 2015 Danny Guo
-Copyright (c) 2016 Titus Wormer <tituswormer@gmail.com>
-Copyright (c) 2018 Akash Kurdekar
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
---------------------------------------------------------------------------------
-
-[25]
+[27]
 --------------------------------------------------------------------------------
 Copyright (c) 2018 Madono Haru <madonoharu@gmail.com>
 
@@ -2216,7 +2298,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 --------------------------------------------------------------------------------
 
-[26]
+[28]
 --------------------------------------------------------------------------------
 UNICODE LICENSE V3
 
@@ -2259,7 +2341,7 @@ dealings in these Data Files or Software without prior written
 authorization of the copyright holder.
 --------------------------------------------------------------------------------
 
-[27]
+[29]
 --------------------------------------------------------------------------------
 Licensed under the Apache License, Version 2.0
 <LICENSE-APACHE or
@@ -2270,7 +2352,7 @@ notice may not be copied, modified, or distributed except
 according to those terms.
 --------------------------------------------------------------------------------
 
-[28]
+[30]
 --------------------------------------------------------------------------------
 Copyright (c) 2015 The Rust Project Developers
 
@@ -2299,7 +2381,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 --------------------------------------------------------------------------------
 
-[29]
+[31]
 --------------------------------------------------------------------------------
                                  Apache License
                            Version 2.0, January 2004
@@ -2504,7 +2586,7 @@ DEALINGS IN THE SOFTWARE.
    limitations under the License.
 --------------------------------------------------------------------------------
 
-[30]
+[32]
 --------------------------------------------------------------------------------
     MIT License
 
@@ -2529,7 +2611,7 @@ DEALINGS IN THE SOFTWARE.
     SOFTWARE
 --------------------------------------------------------------------------------
 
-[31]
+[33]
 --------------------------------------------------------------------------------
 MIT License
 
