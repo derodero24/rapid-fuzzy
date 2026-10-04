@@ -142,8 +142,8 @@ test.describe('many functions', () => {
     const result = await page.evaluate(() => window.__results.hammingMany);
     expect(result).toHaveLength(3);
     expect(result[0]).toBe(0);
-    // serde_wasm_bindgen serializes None as undefined in arrays; Playwright preserves it
-    expect(result[2]).toBeUndefined();
+    // Length mismatches are null, as in the Node.js binding
+    expect(result[2]).toBeNull();
   });
 
   test('indelMany', async ({ page }) => {
@@ -163,8 +163,8 @@ test.describe('many functions', () => {
     const result = await page.evaluate(() => window.__results.normalizedHammingMany);
     expect(result).toHaveLength(3);
     expect(result[0]).toBe(1.0);
-    // serde_wasm_bindgen serializes None as undefined in arrays; Playwright preserves it
-    expect(result[2]).toBeUndefined();
+    // Length mismatches are null, as in the Node.js binding
+    expect(result[2]).toBeNull();
   });
 });
 

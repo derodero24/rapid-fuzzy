@@ -113,8 +113,8 @@ describe('WASM on Bun (wasm-bindgen)', () => {
       const result = wasm.normalizedHammingMany('hello', ['hello', 'world', 'hi']);
       expect(result).toHaveLength(3);
       expect(result[0]).toBe(1.0);
-      // wasm-bindgen serializes None as undefined inside arrays (not null)
-      expect(result[2]).toBeUndefined();
+      // Length mismatches are null, as in the Node.js binding
+      expect(result[2]).toBeNull();
     });
   });
 
@@ -150,8 +150,8 @@ describe('WASM on Bun (wasm-bindgen)', () => {
       expect(result).not.toBeNull();
     });
 
-    test('closest returns undefined for empty items', () => {
-      expect(wasm.closest('hello', [])).toBeUndefined();
+    test('closest returns null for empty items', () => {
+      expect(wasm.closest('hello', [])).toBeNull();
     });
   });
 

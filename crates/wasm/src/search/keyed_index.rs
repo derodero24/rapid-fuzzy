@@ -1,9 +1,11 @@
 use rapid_fuzzy_core::search::KeyedFuzzyIndexCore;
 use rapid_fuzzy_core::search::serialization::{deserialize_keyed_index, serialize_keyed_index};
+use tsify::Ts;
 use wasm_bindgen::prelude::*;
 
 use super::keys::KeySearchResult;
-use super::{SearchOptions, resolve_case_matching, to_js};
+use super::{SearchOptions, resolve_case_matching};
+use crate::convert::{error, from_js, or_null, string_matrix_from_js, to_js};
 
 /// A persistent multi-key fuzzy search index backed by Rust-side data.
 ///
@@ -17,16 +19,19 @@ pub struct KeyedFuzzyIndex {
 impl KeyedFuzzyIndex {
     /// Create a new KeyedFuzzyIndex.
     ///
-    /// `key_texts` is a JS Array of Arrays of strings (one inner array per key,
-    /// each inner array has one string per item).
-    /// `weights` is a JS Array of numbers.
+    /// `keyTexts[k]` is an array of strings for key `k`, one per item.
+    /// All inner arrays must have the same length (the number of items).
+    /// `weights` holds one finite, non-negative weight per key.
     #[wasm_bindgen(constructor)]
-    pub fn new(key_texts: JsValue, weights: Vec<f64>) -> Result<KeyedFuzzyIndex, JsValue> {
-        let key_texts: Vec<Vec<String>> = serde_wasm_bindgen::from_value(key_texts)
-            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    pub fn new(
+        #[wasm_bindgen(js_name = "keyTexts", unchecked_param_type = "string[][]")]
+        key_texts: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "ArrayLike<number>")] weights: Vec<f64>,
+    ) -> Result<KeyedFuzzyIndex, JsValue> {
+        let key_texts = string_matrix_from_js(key_texts, "keyTexts")?;
         KeyedFuzzyIndexCore::new(key_texts, weights)
             .map(|core| Self { core })
-            .map_err(|e| JsValue::from_str(&e))
+            .map_err(|e| error(&e))
     }
 
     /// Return the number of items in the index.
@@ -37,22 +42,20 @@ impl KeyedFuzzyIndex {
 
     /// Search the index for items matching the query.
     ///
-    /// Returns results sorted by combined weighted score as a JS Array.
-    pub fn search(&self, query: String, options: Option<SearchOptions>) -> JsValue {
-        let (max_results, min_score, case_matching, return_all_on_empty) = match &options {
-            Some(opts) => (
-                opts.max_results,
-                opts.min_score,
-                resolve_case_matching(opts.is_case_sensitive),
-                opts.return_all_on_empty.unwrap_or(false),
-            ),
-            None => (
-                None,
-                None,
-                nucleo_matcher::pattern::CaseMatching::Smart,
-                false,
-            ),
-        };
+    /// Returns results sorted by combined weighted score (best match first).
+    #[wasm_bindgen(unchecked_return_type = "KeySearchResult[]")]
+    pub fn search(
+        &self,
+        query: String,
+        options: Option<Ts<SearchOptions>>,
+    ) -> Result<JsValue, JsValue> {
+        let opts = SearchOptions::from_ts(options)?;
+        let (max_results, min_score, case_matching, return_all_on_empty) = (
+            opts.max_results,
+            opts.min_score,
+            resolve_case_matching(opts.is_case_sensitive),
+            opts.return_all_on_empty.unwrap_or(false),
+        );
 
         let results: Vec<KeySearchResult> = self
             .core
@@ -70,7 +73,15 @@ impl KeyedFuzzyIndex {
     }
 
     /// Find the index of the closest matching item.
-    pub fn closest(&self, query: String, min_score: Option<f64>) -> Option<u32> {
+    ///
+    /// Returns the index of the best match, or null if no match is found.
+    /// If `minScore` is provided, returns null when the best match scores below the threshold.
+    #[wasm_bindgen(unchecked_return_type = "number | null")]
+    pub fn closest(
+        &self,
+        query: String,
+        #[wasm_bindgen(js_name = "minScore")] min_score: Option<f64>,
+    ) -> JsValue {
         let results = self.core.search(
             &query,
             Some(1),
@@ -78,27 +89,34 @@ impl KeyedFuzzyIndex {
             nucleo_matcher::pattern::CaseMatching::Smart,
             false,
         );
-        results.into_iter().next().map(|r| r.index)
+        or_null(results.into_iter().next().map(|r| r.index))
     }
 
     /// Add a single item to the index.
     ///
-    /// `key_values` must be a JS Array of strings with one value per key.
-    pub fn add(&mut self, key_values: JsValue) -> Result<(), JsValue> {
-        let key_values: Vec<String> = serde_wasm_bindgen::from_value(key_values)
-            .map_err(|e| JsValue::from_str(&e.to_string()))?;
-        self.core.add(key_values).map_err(|e| JsValue::from_str(&e))
+    /// `keyValues` must have the same length as the number of keys.
+    /// Throws if the length does not match.
+    pub fn add(
+        &mut self,
+        #[wasm_bindgen(js_name = "keyValues", unchecked_param_type = "string[]")]
+        key_values: JsValue,
+    ) -> Result<(), JsValue> {
+        let key_values: Vec<String> = from_js(key_values, "keyValues")?;
+        self.core.add(key_values).map_err(|e| error(&e))
     }
 
     /// Add multiple items to the index at once.
     ///
-    /// `items_key_values` is a JS Array where each element is an Array of strings
-    /// (one per key). Throws if any element has the wrong number of key values.
+    /// Each element of `itemsKeyValues` is an array of key values for one item.
+    /// Throws if any element has the wrong number of key values.
     #[wasm_bindgen(js_name = "addMany")]
-    pub fn add_many(&mut self, items_key_values: JsValue) -> Result<(), JsValue> {
-        let items: Vec<Vec<String>> = serde_wasm_bindgen::from_value(items_key_values)
-            .map_err(|e| JsValue::from_str(&e.to_string()))?;
-        self.core.add_many(items).map_err(|e| JsValue::from_str(&e))
+    pub fn add_many(
+        &mut self,
+        #[wasm_bindgen(js_name = "itemsKeyValues", unchecked_param_type = "string[][]")]
+        items_key_values: JsValue,
+    ) -> Result<(), JsValue> {
+        let items = string_matrix_from_js(items_key_values, "itemsKeyValues")?;
+        self.core.add_many(items).map_err(|e| error(&e))
     }
 
     /// Remove the item at the given index.
@@ -122,6 +140,6 @@ impl KeyedFuzzyIndex {
     pub fn deserialize(data: &[u8]) -> Result<KeyedFuzzyIndex, JsValue> {
         deserialize_keyed_index(data)
             .map(|core| Self { core })
-            .map_err(|e| JsValue::from_str(&e))
+            .map_err(|e| error(&e))
     }
 }

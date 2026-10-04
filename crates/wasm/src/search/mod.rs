@@ -12,10 +12,18 @@ use serde::{Deserialize, Serialize};
 use tsify::Tsify;
 use wasm_bindgen::prelude::*;
 
+use crate::convert::{from_js, or_null, to_js};
+
 // ─── Shared wasm types ──────────────────────────────────────────────────────
 
 /// Classification of how a query matched an item.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// Derived from the matched character positions:
+/// - **Exact**: all positions consecutive from index 0, covering every character in the item.
+/// - **Prefix**: all positions consecutive from index 0, but the item is longer.
+/// - **Contains**: all positions consecutive (a substring match), not starting at 0.
+/// - **Fuzzy**: positions have gaps (character-level fuzzy match).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Tsify)]
 pub enum MatchType {
     Exact,
     Prefix,
@@ -35,13 +43,21 @@ impl From<core::MatchType> for MatchType {
 }
 
 /// A single fuzzy search result with the matched item and its score.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Tsify)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchResult {
+    /// The original string that matched.
     pub item: String,
+    /// The match score normalized to 0.0-1.0 range (1.0 is a perfect match).
     pub score: f64,
+    /// The index of the item in the original input array.
     pub index: u32,
+    /// Indices of matched characters in the item string.
+    /// Empty unless `includePositions` is set to true in SearchOptions.
     pub positions: Vec<u32>,
+    /// How the query matched this item (Exact, Prefix, Contains, or Fuzzy).
+    /// Only present when `includePositions` is set to true in SearchOptions.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub match_type: Option<MatchType>,
 }
 
@@ -57,13 +73,20 @@ impl From<core::SearchResult> for SearchResult {
     }
 }
 
-/// A lightweight search result containing only index and score.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// A lightweight search result containing only index and score (no item string).
+#[derive(Debug, Clone, Serialize, Tsify)]
 #[serde(rename_all = "camelCase")]
 pub struct IndexSearchResult {
+    /// The index of the item in the original input array.
     pub index: u32,
+    /// The match score normalized to 0.0-1.0 range (1.0 is a perfect match).
     pub score: f64,
+    /// Indices of matched characters in the item string.
+    /// Empty unless `includePositions` is set to true in SearchOptions.
     pub positions: Vec<u32>,
+    /// How the query matched this item (Exact, Prefix, Contains, or Fuzzy).
+    /// Only present when `includePositions` is set to true in SearchOptions.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub match_type: Option<MatchType>,
 }
 
@@ -79,19 +102,56 @@ impl From<core::IndexSearchResult> for IndexSearchResult {
 }
 
 /// Options for search functions.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, Tsify)]
+#[derive(Debug, Clone, Default, Deserialize, Tsify)]
 #[serde(rename_all = "camelCase")]
-#[tsify(from_wasm_abi)]
 pub struct SearchOptions {
+    /// Maximum number of results to return.
+    #[tsify(optional)]
+    #[serde(default)]
     pub max_results: Option<u32>,
+    /// Minimum normalized score (0.0-1.0) to include in results.
+    #[tsify(optional)]
+    #[serde(default)]
     pub min_score: Option<f64>,
+    /// If true, include matched character positions in results.
+    #[tsify(optional)]
+    #[serde(default)]
     pub include_positions: Option<bool>,
+    /// If true, matching is case-sensitive. Default is smart case
+    /// (case-insensitive unless the query contains uppercase characters).
+    #[tsify(optional)]
+    #[serde(default)]
     pub is_case_sensitive: Option<bool>,
+    /// If true, return all items when the query is empty (or whitespace-only).
+    /// Useful for filter-as-you-type UIs where the full list should appear
+    /// before the user starts typing. Default is false.
+    #[tsify(optional)]
+    #[serde(default)]
     pub return_all_on_empty: Option<bool>,
 }
 
-pub(crate) fn to_js<T: Serialize>(value: &T) -> JsValue {
-    serde_wasm_bindgen::to_value(value).unwrap_or(JsValue::NULL)
+impl SearchOptions {
+    /// Read the `options` argument of `search`, `FuzzyIndex.search` and
+    /// `FuzzyIndex.searchIndices`: `undefined`/`null`, a number (shorthand for
+    /// `{ maxResults }`, as in the Node.js binding) or a `SearchOptions` object.
+    pub(crate) fn from_js_or_max_results(options: Option<JsValue>) -> Result<Self, JsValue> {
+        match options {
+            None => Ok(Self::default()),
+            Some(max_results) if max_results.as_f64().is_some() => Ok(Self {
+                max_results: Some(from_js(max_results, "maxResults")?),
+                ..Self::default()
+            }),
+            Some(options) => from_js(options, "SearchOptions"),
+        }
+    }
+
+    /// Read an optional `SearchOptions` argument.
+    pub(crate) fn from_ts(options: Option<tsify::Ts<Self>>) -> Result<Self, JsValue> {
+        options.map_or_else(
+            || Ok(Self::default()),
+            |opts| from_js(opts.into(), "SearchOptions"),
+        )
+    }
 }
 
 pub(crate) use rapid_fuzzy_core::search::resolve_case_matching;
@@ -123,9 +183,17 @@ pub(crate) fn search_impl(
 ///
 /// Returns matches sorted by score (best match first).
 /// Scores are normalized to a 0.0-1.0 range where 1.0 is a perfect match.
-#[wasm_bindgen]
-pub fn search(query: String, items: Vec<String>, options: Option<SearchOptions>) -> JsValue {
-    let opts = options.unwrap_or_default();
+///
+/// The third argument accepts either a number (maxResults for backward
+/// compatibility) or a SearchOptions object.
+#[wasm_bindgen(unchecked_return_type = "SearchResult[]")]
+pub fn search(
+    query: String,
+    items: Vec<String>,
+    #[wasm_bindgen(unchecked_optional_param_type = "number | SearchOptions | null")]
+    options: Option<JsValue>,
+) -> Result<JsValue, JsValue> {
+    let opts = SearchOptions::from_js_or_max_results(options)?;
     let (max_results, min_score, include_positions, case_matching, return_all_on_empty) = (
         opts.max_results,
         opts.min_score,
@@ -165,8 +233,13 @@ pub fn search(query: String, items: Vec<String>, options: Option<SearchOptions>)
 /// Find the closest matching string from a list.
 ///
 /// Returns the best match, or null if no match is found.
-#[wasm_bindgen]
-pub fn closest(query: String, items: Vec<String>, min_score: Option<f64>) -> Option<String> {
+/// If `minScore` is provided, returns null when the best match scores below the threshold.
+#[wasm_bindgen(unchecked_return_type = "string | null")]
+pub fn closest(
+    query: String,
+    items: Vec<String>,
+    #[wasm_bindgen(js_name = "minScore")] min_score: Option<f64>,
+) -> JsValue {
     let results = search_impl(query, items, Some(1), min_score, false, CaseMatching::Smart);
-    results.into_iter().next().map(|r| r.item)
+    or_null(results.into_iter().next().map(|r| r.item))
 }

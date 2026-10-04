@@ -434,6 +434,16 @@ jobs:
         run: bash scripts/install-binaryen.sh
       - name: Build wasm-bindgen
         run: pnpm run build:wasm-bindgen
+      # Same check as release.yml, so stale glue fails the PR instead of the release.
+      - name: Verify generated wasm-bindgen glue is up to date
+        run: git diff --exit-code rapid-fuzzy-wasm-bindgen.js rapid-fuzzy-wasm-bindgen_bg.js rapid-fuzzy-wasm-bindgen.d.ts rapid-fuzzy-wasm-bindgen_bg.wasm.d.ts
+      # The wasm-bindgen spec compares results against the native binding.
+      - name: Build native binding (debug)
+        run: pnpm run build:debug && node scripts/patch-binding.js
+      - name: Test wasm-bindgen build
+        run: pnpm exec vitest run __test__/wasm-bindgen.spec.ts
+        env:
+          RAPID_FUZZY_REQUIRE_WASM_BINDGEN: '1'
       - name: Upload wasm-bindgen artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
