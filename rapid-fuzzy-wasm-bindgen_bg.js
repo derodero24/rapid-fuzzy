@@ -931,21 +931,37 @@ export function search(query, items, options) {
  * `key_texts` is a JS Array of Arrays of strings (one inner array per key,
  * each inner array has one string per item).
  * `weights` is a JS Array of numbers specifying the relative importance of each key.
+ * `options` is a `SearchOptions` object or a number (maxResults).
  *
- * Returns results sorted by combined weighted score as a JS Array.
+ * Returns results sorted by combined weighted score as a JS Array, exactly
+ * like `KeyedFuzzyIndex.search` on the same key texts and weights. Throws an
+ * `Error` for invalid input (key texts of different lengths, a weight count
+ * that differs from the key count, negative, NaN or infinite weights, or
+ * weights summing to 0 or Infinity), like the `KeyedFuzzyIndex` constructor.
  * @param {string} query
  * @param {any} key_texts
  * @param {Float64Array} weights
- * @param {SearchOptions | null} [options]
+ * @param {number | SearchOptions | null} [options]
  * @returns {any}
  */
 export function searchKeys(query, key_texts, weights, options) {
-    const ptr0 = passStringToWasm0(query, wasm.__wbindgen_export, wasm.__wbindgen_export2);
-    const len0 = WASM_VECTOR_LEN;
-    const ptr1 = passArrayF64ToWasm0(weights, wasm.__wbindgen_export);
-    const len1 = WASM_VECTOR_LEN;
-    const ret = wasm.searchKeys(ptr0, len0, addHeapObject(key_texts), ptr1, len1, isLikeNone(options) ? 0 : addHeapObject(options));
-    return takeObject(ret);
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passStringToWasm0(query, wasm.__wbindgen_export, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArrayF64ToWasm0(weights, wasm.__wbindgen_export);
+        const len1 = WASM_VECTOR_LEN;
+        wasm.searchKeys(retptr, ptr0, len0, addHeapObject(key_texts), ptr1, len1, isLikeNone(options) ? 0 : addHeapObject(options));
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        if (r2) {
+            throw takeObject(r1);
+        }
+        return takeObject(r0);
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
 }
 
 /**
@@ -1298,6 +1314,10 @@ export function __wbg_length_4e1adc0d42e23620(arg0) {
 }
 export function __wbg_new_1da3429bc3c4541c(arg0) {
     const ret = new Uint8Array(getObject(arg0));
+    return addHeapObject(ret);
+}
+export function __wbg_new_a32a1ab6c6655abe(arg0, arg1) {
+    const ret = new Error(getStringFromWasm0(arg0, arg1));
     return addHeapObject(ret);
 }
 export function __wbg_new_bebc3f4757acf305() {

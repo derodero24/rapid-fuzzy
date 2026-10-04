@@ -1,7 +1,10 @@
+use napi::Status;
 use napi_derive::napi;
 use rapid_fuzzy_core::search::SearchKeysOptions;
 
+#[cfg(test)]
 use super::SearchOptions;
+use super::SearchOptionsArg;
 
 // Re-export CaseMatching so tests can access it via `use super::*`.
 #[cfg(test)]
@@ -35,31 +38,98 @@ impl From<rapid_fuzzy_core::search::KeySearchResult> for KeySearchResult {
 /// All inner arrays must have the same length (the number of items).
 /// `weights` specifies the relative importance of each key.
 ///
-/// Returns results sorted by combined weighted score (best match first).
+/// Every key is scored like `search()` scores an item; `keyScores` holds
+/// these scores for every key, including keys whose weight is 0. The
+/// combined score is `sum(keyScore * weight) / sum(weights)`, and items
+/// whose combined score is 0 (no match on a key with a positive weight) are
+/// not returned.
+///
+/// Returns results sorted by combined weighted score (best match first),
+/// then by the length of the best-matching key's text (shorter first, like
+/// `search()`), then by index. `new KeyedFuzzyIndex(keyTexts, weights)`
+/// returns exactly the same results.
+///
+/// The fourth argument accepts either a number (maxResults) or a
+/// SearchOptions object. Throws when the key texts have different lengths,
+/// when there is not exactly one weight per key, or when a weight is
+/// negative, NaN or infinite, or the weights sum to 0 or to Infinity (the
+/// same errors as the `KeyedFuzzyIndex` constructor).
 #[napi]
 pub fn search_keys(
     query: String,
     key_texts: Vec<Vec<String>>,
     weights: Vec<f64>,
-    options: Option<SearchOptions>,
-) -> Vec<KeySearchResult> {
-    let core_opts = options.map(|opts| SearchKeysOptions {
-        max_results: opts.max_results,
-        min_score: opts.min_score,
-        is_case_sensitive: opts.is_case_sensitive,
-        return_all_on_empty: opts.return_all_on_empty,
-    });
+    #[napi(ts_arg_type = "number | SearchOptions | undefined | null")] options: Option<
+        SearchOptionsArg,
+    >,
+) -> napi::Result<Vec<KeySearchResult>> {
+    search_keys_inner(&query, &key_texts, &weights, options)
+        .map_err(|message| napi::Error::new(Status::InvalidArg, message))
+}
 
-    rapid_fuzzy_core::search::search_keys_impl(&query, &key_texts, &weights, core_opts)
-        .unwrap_or_default()
-        .into_iter()
-        .map(KeySearchResult::from)
-        .collect()
+/// [`search_keys`] without the napi error type (which cannot be created
+/// outside a Node.js process, e.g. in unit tests).
+fn search_keys_inner(
+    query: &str,
+    key_texts: &[Vec<String>],
+    weights: &[f64],
+    options: Option<SearchOptionsArg>,
+) -> Result<Vec<KeySearchResult>, String> {
+    let core_opts = match options {
+        Some(SearchOptionsArg::Options(opts)) => SearchKeysOptions {
+            max_results: opts.max_results,
+            min_score: opts.min_score,
+            is_case_sensitive: opts.is_case_sensitive,
+            return_all_on_empty: opts.return_all_on_empty,
+        },
+        Some(SearchOptionsArg::MaxResults(max_results)) => SearchKeysOptions {
+            max_results,
+            min_score: None,
+            is_case_sensitive: None,
+            return_all_on_empty: None,
+        },
+        None => SearchKeysOptions {
+            max_results: None,
+            min_score: None,
+            is_case_sensitive: None,
+            return_all_on_empty: None,
+        },
+    };
+
+    Ok(
+        rapid_fuzzy_core::search::search_keys_impl(query, key_texts, weights, Some(core_opts))?
+            .into_iter()
+            .map(KeySearchResult::from)
+            .collect(),
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn try_search_keys(
+        query: String,
+        key_texts: Vec<Vec<String>>,
+        weights: Vec<f64>,
+        options: Option<SearchOptions>,
+    ) -> Result<Vec<KeySearchResult>, String> {
+        search_keys_inner(
+            &query,
+            &key_texts,
+            &weights,
+            options.map(SearchOptionsArg::Options),
+        )
+    }
+
+    fn search_keys(
+        query: String,
+        key_texts: Vec<Vec<String>>,
+        weights: Vec<f64>,
+        options: Option<SearchOptions>,
+    ) -> Vec<KeySearchResult> {
+        try_search_keys(query, key_texts, weights, options).expect("valid input")
+    }
 
     #[test]
     fn test_basic_multi_key_search() {
@@ -118,40 +188,40 @@ mod tests {
             vec!["c".to_string()], // different length
         ];
         let weights = vec![1.0, 1.0];
-        let results = search_keys("a".to_string(), key_texts, weights, None);
-        assert!(results.is_empty());
+        let results = try_search_keys("a".to_string(), key_texts, weights, None);
+        assert!(results.is_err());
     }
 
     #[test]
     fn test_mismatched_weights() {
         let key_texts = vec![vec!["a".to_string()]];
         let weights = vec![1.0, 2.0]; // more weights than keys
-        let results = search_keys("a".to_string(), key_texts, weights, None);
-        assert!(results.is_empty());
+        let results = try_search_keys("a".to_string(), key_texts, weights, None);
+        assert!(results.is_err());
     }
 
     #[test]
     fn test_negative_weight_rejected() {
         let key_texts = vec![vec!["apple".to_string()]];
         let weights = vec![-1.0];
-        let results = search_keys("apple".to_string(), key_texts, weights, None);
-        assert!(results.is_empty());
+        let results = try_search_keys("apple".to_string(), key_texts, weights, None);
+        assert!(results.is_err());
     }
 
     #[test]
     fn test_nan_weight_rejected() {
         let key_texts = vec![vec!["apple".to_string()]];
         let weights = vec![f64::NAN];
-        let results = search_keys("apple".to_string(), key_texts, weights, None);
-        assert!(results.is_empty());
+        let results = try_search_keys("apple".to_string(), key_texts, weights, None);
+        assert!(results.is_err());
     }
 
     #[test]
     fn test_infinity_weight_rejected() {
         let key_texts = vec![vec!["apple".to_string()]];
         let weights = vec![f64::INFINITY];
-        let results = search_keys("apple".to_string(), key_texts, weights, None);
-        assert!(results.is_empty());
+        let results = try_search_keys("apple".to_string(), key_texts, weights, None);
+        assert!(results.is_err());
     }
 
     #[test]
