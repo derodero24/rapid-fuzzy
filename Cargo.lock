@@ -858,6 +858,7 @@ version = "0.0.0"
 dependencies = [
  "codspeed-criterion-compat",
  "nucleo-matcher",
+ "rapid-fuzzy-core",
  "rapidfuzz",
  "strsim",
 ]

@@ -3,48 +3,27 @@ name: CI
 on:
   push:
     branches: [develop]
-    paths:
-      - 'crates/**'
-      - '__test__/**'
-      - 'e2e/**'
-      - 'src/**'
-      - 'package.json'
-      - 'pnpm-lock.yaml'
-      - 'pnpm-workspace.yaml'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - 'tsconfig.json'
-      - 'biome.json'
-      - 'playwright.config.ts'
-      - '.github/workflows/ci.yml'
-      - 'deny.toml'
-      - 'rust-toolchain.toml'
-      - 'scripts/**'
-      - 'vitest.config.mts'
-      - 'codecov.yml'
+    # A deny-list rather than an allow-list: every file that ships in the npm
+    # package or feeds a build or test (root *.js/*.mjs/*.d.ts loaders, npm/,
+    # scripts/, e2e/, .cargo/, .nvmrc, ...) must trigger CI, including files
+    # added later. Only paths that cannot affect any job are skipped. Keep
+    # this list in sync with the pull_request one below.
+    paths-ignore:
+      - '**/*.md'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/assets/**'
+      - '.github/CODEOWNERS'
+      - '.github/FUNDING.yml'
   pull_request:
     branches: [develop]
     # "labeled" lets the ci-full label re-run the plan job on an open PR.
     types: [opened, synchronize, reopened, labeled]
-    paths:
-      - 'crates/**'
-      - '__test__/**'
-      - 'e2e/**'
-      - 'src/**'
-      - 'package.json'
-      - 'pnpm-lock.yaml'
-      - 'pnpm-workspace.yaml'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - 'tsconfig.json'
-      - 'biome.json'
-      - 'playwright.config.ts'
-      - '.github/workflows/ci.yml'
-      - 'deny.toml'
-      - 'rust-toolchain.toml'
-      - 'scripts/**'
-      - 'vitest.config.mts'
-      - 'codecov.yml'
+    paths-ignore:
+      - '**/*.md'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/assets/**'
+      - '.github/CODEOWNERS'
+      - '.github/FUNDING.yml'
 
 permissions:
   contents: read
@@ -58,8 +37,8 @@ concurrency:
 jobs:
   # Decide how much of the build matrix a run needs. Pushes to develop always
   # build every target. Pull requests only build the targets the test jobs
-  # consume unless they touch the Rust sources, the Cargo manifests or this
-  # workflow, which keeps dependency-only PRs cheap.
+  # consume unless they touch the Rust sources, the Cargo manifests or
+  # config, or this workflow, which keeps dependency-only PRs cheap.
   plan:
     name: Plan
     # Label events only matter for ci-full; other labels must not rerun CI.
@@ -97,7 +76,7 @@ jobs:
             labels=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.labels[].name')
             # Add the "ci-full" label to a PR to force every target.
             if ! grep -qx 'ci-full' <<< "$labels" \
-              && ! grep -Eq '^(crates/|Cargo\.toml$|Cargo\.lock$|rust-toolchain\.toml$|deny\.toml$|scripts/|\.github/workflows/ci\.yml$)' <<< "$files"; then
+              && ! grep -Eq '^(crates/|\.cargo/|Cargo\.toml$|Cargo\.lock$|rust-toolchain\.toml$|deny\.toml$|scripts/|\.github/workflows/ci\.yml$)' <<< "$files"; then
               matrix="$reduced"
             fi
           fi
@@ -123,11 +102,35 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       - run: pnpm install --frozen-lockfile
       - run: pnpm run check
+      - name: Verify THIRD_PARTY_NOTICES is up to date
+        run: |
+          cargo fetch --locked
+          node scripts/third-party-notices.js --check
+      - name: Verify every platform package carries the root LICENSE
+        run: |
+          for dir in npm/*/; do
+            cmp LICENSE "${dir}LICENSE"
+          done
       - run: pnpm run build
       - name: Verify generated binding files are up to date
         run: git diff --exit-code index.js index.d.ts browser.js
       - run: pnpm run typecheck
       - run: pnpm run publint
+
+  workflow-lint:
+    name: Workflow Lint
+    # Label events only matter for ci-full; other labels must not rerun CI.
+    if: ${{ github.event.action != 'labeled' || github.event.label.name == 'ci-full' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      # The image bundles shellcheck, so `run:` scripts are checked as well.
+      - name: actionlint
+        uses: docker://rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: -color
 
   audit:
     name: Dependency Audit
@@ -144,8 +147,11 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # The published package has no runtime dependencies, so `--prod` could
+      # never fail. Audit everything that runs in CI and on contributors'
+      # machines instead; pnpm-workspace.yaml overrides patch transitive ones.
       - name: Audit npm dependencies
-        run: pnpm audit --prod
+        run: pnpm audit --audit-level=high
       - name: Audit Rust dependencies
         uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2
 
@@ -162,8 +168,10 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-      - run: cargo fmt -- --check
-      - run: cargo clippy -- -W clippy::all
+      - run: cargo fmt --all -- --check
+      # Lint levels live in [workspace.lints] (root Cargo.toml); -D warnings
+      # turns every warning, rustc's included, into a failure.
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
   rust-test:
     name: Rust Test
@@ -176,7 +184,41 @@ jobs:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-      - run: cargo test
+      - run: cargo test --workspace --locked
+
+  msrv:
+    name: Rust MSRV
+    # Label events only matter for ci-full; other labels must not rerun CI.
+    if: ${{ github.event.action != 'labeled' || github.event.label.name == 'ci-full' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      # Check with exactly the toolchain declared as `rust-version` in the root
+      # Cargo.toml. RUSTUP_TOOLCHAIN overrides rust-toolchain.toml (which pins
+      # stable) for every later step, the cache key included.
+      - name: Read MSRV from Cargo.toml
+        id: msrv
+        run: |
+          msrv=$(sed -n 's/^rust-version = "\(.*\)"$/\1/p' Cargo.toml)
+          if [ -z "$msrv" ]; then
+            echo "::error::rust-version not found in Cargo.toml"
+            exit 1
+          fi
+          echo "MSRV: $msrv"
+          echo "version=$msrv" >> "$GITHUB_OUTPUT"
+          echo "RUSTUP_TOOLCHAIN=$msrv" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
+        with:
+          toolchain: ${{ steps.msrv.outputs.version }}
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          shared-key: msrv
+      - name: Check the workspace with the MSRV toolchain
+        run: |
+          rustc --version
+          cargo check --workspace --all-targets --locked
 
   build:
     name: Build - ${{ matrix.settings.target }}
@@ -210,7 +252,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu
-          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
 
       - name: Install cross-compilation tools (x86_64-musl)
         if: matrix.settings.target == 'x86_64-unknown-linux-musl'
@@ -223,7 +265,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu musl-tools
-          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
 
       - name: Build native
         if: matrix.settings.target != 'wasm32-wasip1-threads'
@@ -334,7 +376,7 @@ jobs:
         with:
           components: llvm-tools-preview
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-      - uses: taiki-e/install-action@f8b8d555f84da49ac7e1e22379742eb1b8ded407
+      - uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
         with:
           tool: cargo-llvm-cov
       - name: Rust coverage
@@ -385,7 +427,9 @@ jobs:
           shared-key: build-wasm-bindgen
       - run: pnpm install --frozen-lockfile
       - name: Install wasm-pack
-        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+        uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
+        with:
+          tool: wasm-pack@0.13.1
       - name: Install binaryen
         run: bash scripts/install-binaryen.sh
       - name: Build wasm-bindgen

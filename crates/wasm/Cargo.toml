@@ -3,6 +3,9 @@ name = "rapid-fuzzy-wasm"
 version = "1.1.1"
 edition.workspace = true
 license.workspace = true
+rust-version.workspace = true
+# Not published to crates.io: the crates ship only inside the npm packages.
+publish = false
 repository.workspace = true
 
 [lib]
@@ -21,3 +24,52 @@ rapidfuzz = { workspace = true }
 
 [package.metadata.wasm-pack.profile.release]
 wasm-opt = false
+
+# TODO(#717): replace both tables with `[lints] workspace = true` once the
+# deprecated `#[tsify(from_wasm_abi)]` in src/search/mod.rs is gone. Cargo
+# cannot extend the workspace lint table per crate, so until then this is a
+# copy of [workspace.lints] in the root Cargo.toml plus `deprecated = "allow"`,
+# which keeps `cargo clippy -- -D warnings` green. Keep the two in sync.
+[lints.rust]
+deprecated = "allow"
+unsafe_op_in_unsafe_fn = "deny"
+rust_2018_idioms = { level = "warn", priority = -1 }
+trivial_numeric_casts = "warn"
+unused_lifetimes = "warn"
+redundant_lifetimes = "warn"
+unit_bindings = "warn"
+non_ascii_idents = "warn"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+cast_possible_wrap = "warn"
+checked_conversions = "warn"
+cloned_instead_of_copied = "warn"
+copy_iterator = "warn"
+implicit_clone = "warn"
+index_refutable_slice = "warn"
+inefficient_to_string = "warn"
+invalid_upcast_comparisons = "warn"
+iter_filter_is_ok = "warn"
+iter_filter_is_some = "warn"
+large_stack_arrays = "warn"
+large_types_passed_by_value = "warn"
+manual_is_variant_and = "warn"
+maybe_infinite_iter = "warn"
+mut_mut = "warn"
+naive_bytecount = "warn"
+option_option = "warn"
+ref_option = "warn"
+stable_sort_primitive = "warn"
+trivially_copy_pass_by_ref = "warn"
+unnecessary_box_returns = "warn"
+unnecessary_join = "warn"
+zero_sized_map_values = "warn"
+dbg_macro = "warn"
+lossy_float_literal = "warn"
+mem_forget = "warn"
+print_stderr = "warn"
+print_stdout = "warn"
+rc_buffer = "warn"
+todo = "warn"
+unimplemented = "warn"

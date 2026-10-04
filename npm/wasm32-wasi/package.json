@@ -8,7 +8,9 @@
     "rapid-fuzzy.wasi.d.cts",
     "rapid-fuzzy.wasi-browser.js",
     "wasi-worker.mjs",
-    "wasi-worker-browser.mjs"
+    "wasi-worker-browser.mjs",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES"
   ],
   "description": "Rust-powered fuzzy search and string distance for JavaScript/TypeScript. Up to 15,000x faster than fuse.js with indexed mode.",
   "keywords": [

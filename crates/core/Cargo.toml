@@ -3,6 +3,9 @@ name = "rapid-fuzzy"
 version = "2.1.1"
 edition.workspace = true
 license.workspace = true
+rust-version.workspace = true
+# Not published to crates.io: the crates ship only inside the npm packages.
+publish = false
 repository.workspace = true
 
 [lib]
@@ -21,3 +24,6 @@ proptest = "1"
 
 [build-dependencies]
 napi-build = { workspace = true }
+
+[lints]
+workspace = true

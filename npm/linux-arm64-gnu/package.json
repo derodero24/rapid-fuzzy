@@ -6,7 +6,9 @@
   ],
   "main": "rapid-fuzzy.linux-arm64-gnu.node",
   "files": [
-    "rapid-fuzzy.linux-arm64-gnu.node"
+    "rapid-fuzzy.linux-arm64-gnu.node",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES"
   ],
   "description": "Rust-powered fuzzy search and string distance for JavaScript/TypeScript. Up to 15,000x faster than fuse.js with indexed mode.",
   "keywords": [
