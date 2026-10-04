@@ -636,3 +636,105 @@ export function weightedRatioBatch(pairs: string[][]): Float64Array;
  * If `minSimilarity` is provided, candidates scoring below the threshold return `0.0`.
  */
 export function weightedRatioMany(reference: string, candidates: string[], minSimilarity?: number | null): Float64Array;
+
+export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
+
+export interface InitOutput {
+    readonly memory: WebAssembly.Memory;
+    readonly __wbg_fuzzyindex_free: (a: number, b: number) => void;
+    readonly __wbg_keyedfuzzyindex_free: (a: number, b: number) => void;
+    readonly closest: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
+    readonly damerauLevenshtein: (a: number, b: number, c: number, d: number) => number;
+    readonly damerauLevenshteinBatch: (a: number, b: number) => void;
+    readonly damerauLevenshteinMany: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+    readonly fuzzyindex_add: (a: number, b: number, c: number) => void;
+    readonly fuzzyindex_addMany: (a: number, b: number, c: number) => void;
+    readonly fuzzyindex_closest: (a: number, b: number, c: number, d: number, e: number) => number;
+    readonly fuzzyindex_deserialize: (a: number, b: number, c: number) => void;
+    readonly fuzzyindex_destroy: (a: number) => void;
+    readonly fuzzyindex_fromAsync: (a: number, b: number) => number;
+    readonly fuzzyindex_new: (a: number, b: number) => number;
+    readonly fuzzyindex_remove: (a: number, b: number) => number;
+    readonly fuzzyindex_search: (a: number, b: number, c: number, d: number, e: number) => void;
+    readonly fuzzyindex_searchIndices: (a: number, b: number, c: number, d: number, e: number) => void;
+    readonly fuzzyindex_serialize: (a: number, b: number) => void;
+    readonly fuzzyindex_size: (a: number) => number;
+    readonly hamming: (a: number, b: number, c: number, d: number) => number;
+    readonly hammingBatch: (a: number, b: number) => void;
+    readonly hammingMany: (a: number, b: number, c: number, d: number, e: number) => number;
+    readonly indel: (a: number, b: number, c: number, d: number) => number;
+    readonly indelBatch: (a: number, b: number) => void;
+    readonly indelMany: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+    readonly jaro: (a: number, b: number, c: number, d: number) => number;
+    readonly jaroBatch: (a: number, b: number) => void;
+    readonly jaroMany: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
+    readonly jaroWinkler: (a: number, b: number, c: number, d: number) => number;
+    readonly jaroWinklerBatch: (a: number, b: number) => void;
+    readonly jaroWinklerMany: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
+    readonly keyedfuzzyindex_add: (a: number, b: number, c: number) => void;
+    readonly keyedfuzzyindex_addMany: (a: number, b: number, c: number) => void;
+    readonly keyedfuzzyindex_closest: (a: number, b: number, c: number, d: number, e: number) => number;
+    readonly keyedfuzzyindex_deserialize: (a: number, b: number, c: number) => void;
+    readonly keyedfuzzyindex_destroy: (a: number) => void;
+    readonly keyedfuzzyindex_new: (a: number, b: number, c: number, d: number) => void;
+    readonly keyedfuzzyindex_remove: (a: number, b: number) => number;
+    readonly keyedfuzzyindex_search: (a: number, b: number, c: number, d: number, e: number) => void;
+    readonly keyedfuzzyindex_serialize: (a: number, b: number) => void;
+    readonly keyedfuzzyindex_size: (a: number) => number;
+    readonly levenshtein: (a: number, b: number, c: number, d: number) => number;
+    readonly levenshteinBatch: (a: number, b: number) => void;
+    readonly levenshteinMany: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+    readonly normalizedHamming: (a: number, b: number, c: number, d: number) => number;
+    readonly normalizedHammingBatch: (a: number, b: number) => void;
+    readonly normalizedHammingMany: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
+    readonly normalizedIndel: (a: number, b: number, c: number, d: number) => number;
+    readonly normalizedIndelBatch: (a: number, b: number) => void;
+    readonly normalizedIndelMany: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
+    readonly normalizedLevenshtein: (a: number, b: number, c: number, d: number) => number;
+    readonly normalizedLevenshteinBatch: (a: number, b: number) => void;
+    readonly normalizedLevenshteinMany: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
+    readonly partialRatio: (a: number, b: number, c: number, d: number) => number;
+    readonly partialRatioBatch: (a: number, b: number) => void;
+    readonly partialRatioMany: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
+    readonly search: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+    readonly searchKeys: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
+    readonly sorensenDice: (a: number, b: number, c: number, d: number) => number;
+    readonly sorensenDiceBatch: (a: number, b: number) => void;
+    readonly sorensenDiceMany: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
+    readonly tokenSetRatio: (a: number, b: number, c: number, d: number) => number;
+    readonly tokenSetRatioBatch: (a: number, b: number) => void;
+    readonly tokenSetRatioMany: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
+    readonly tokenSortRatio: (a: number, b: number, c: number, d: number) => number;
+    readonly tokenSortRatioBatch: (a: number, b: number) => void;
+    readonly tokenSortRatioMany: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
+    readonly weightedRatio: (a: number, b: number, c: number, d: number) => number;
+    readonly weightedRatioBatch: (a: number, b: number) => void;
+    readonly weightedRatioMany: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
+    readonly __wbindgen_export: (a: number, b: number) => number;
+    readonly __wbindgen_export2: (a: number, b: number, c: number, d: number) => number;
+    readonly __wbindgen_export3: (a: number) => void;
+    readonly __wbindgen_add_to_stack_pointer: (a: number) => number;
+    readonly __wbindgen_export4: (a: number, b: number, c: number) => void;
+}
+
+export type SyncInitInput = BufferSource | WebAssembly.Module;
+
+/**
+ * Instantiates the given `module`, which can either be bytes or
+ * a precompiled `WebAssembly.Module`.
+ *
+ * @param {{ module: SyncInitInput }} module - Passing `SyncInitInput` directly is deprecated.
+ *
+ * @returns {InitOutput}
+ */
+export function initSync(module: { module: SyncInitInput } | SyncInitInput): InitOutput;
+
+/**
+ * If `module_or_path` is {RequestInfo} or {URL}, makes a request and
+ * for everything else, calls `WebAssembly.instantiate` directly.
+ *
+ * @param {{ module_or_path: InitInput | Promise<InitInput> }} module_or_path - Passing `InitInput` directly is deprecated.
+ *
+ * @returns {Promise<InitOutput>}
+ */
+export default function __wbg_init (module_or_path?: { module_or_path: InitInput | Promise<InitInput> } | InitInput | Promise<InitInput>): Promise<InitOutput>;

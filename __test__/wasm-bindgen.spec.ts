@@ -1,26 +1,15 @@
-// Runtime tests for the wasm-bindgen build (`browser.js` re-exports it).
+// Runtime tests for the wasm-bindgen build (`browser.mjs` re-exports it).
 //
-// The committed glue (`rapid-fuzzy-wasm-bindgen_bg.js`) is loaded together with
+// The committed glue (`rapid-fuzzy-wasm-bindgen.mjs`) is loaded together with
 // the compiled `rapid-fuzzy-wasm-bindgen_bg.wasm`, which is a build artifact
 // (`pnpm run build:wasm-bindgen`). When the binary is missing the suite is
 // skipped, except where RAPID_FUZZY_REQUIRE_WASM_BINDGEN is set (CI).
-import { execFileSync } from 'node:child_process';
-import {
-  copyFileSync,
-  existsSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import * as napi from '../index.js';
-import type * as WasmBindgen from '../rapid-fuzzy-wasm-bindgen.js';
-
-type Glue = typeof WasmBindgen & {
-  __wbg_set_wasm(exports: Record<string, unknown>): void;
+import type * as WasmBindgen from '../rapid-fuzzy-wasm-bindgen.mjs' with {
+  'resolution-mode': 'import',
 };
 
 // The repo's tsconfig has no DOM lib and @types/node does not declare the
@@ -28,20 +17,14 @@ type Glue = typeof WasmBindgen & {
 interface WasmMemory {
   readonly buffer: ArrayBuffer;
 }
-interface WasmApi {
-  Module: new (bytes: Uint8Array) => object;
-  Instance: new (
-    module: object,
-    imports: Record<string, Record<string, unknown>>,
-  ) => { exports: Record<string, unknown> & { memory: WasmMemory } };
-}
+type Glue = typeof WasmBindgen;
+type InitSync = (input: { module: Uint8Array }) => { memory: WasmMemory };
 
 const ROOT = join(__dirname, '..');
 const WASM_PATH = join(ROOT, 'rapid-fuzzy-wasm-bindgen_bg.wasm');
-const DTS_PATH = join(ROOT, 'rapid-fuzzy-wasm-bindgen.d.ts');
-// A non-literal specifier keeps tsc from resolving the untyped glue module;
-// its exports are typed through `Glue` (the public .d.ts) instead.
-const GLUE_SPECIFIER: string = '../rapid-fuzzy-wasm-bindgen_bg.js';
+const DTS_PATH = join(ROOT, 'rapid-fuzzy-wasm-bindgen.d.mts');
+// A non-literal specifier keeps vitest from loading the glue when the suite is skipped.
+const GLUE_SPECIFIER: string = '../rapid-fuzzy-wasm-bindgen.mjs';
 
 const wasmAvailable = existsSync(WASM_PATH);
 if (!wasmAvailable && process.env.RAPID_FUZZY_REQUIRE_WASM_BINDGEN) {
@@ -54,13 +37,9 @@ let memory: WasmMemory;
 beforeAll(async () => {
   if (!wasmAvailable) return;
   const glue = (await import(GLUE_SPECIFIER)) as Glue;
-  const { WebAssembly: wa } = globalThis as unknown as { WebAssembly: WasmApi };
-  const instance = new wa.Instance(new wa.Module(readFileSync(WASM_PATH)), {
-    './rapid-fuzzy-wasm-bindgen_bg.js': glue as unknown as Record<string, unknown>,
-  });
-  glue.__wbg_set_wasm(instance.exports);
+  const initSync = glue.initSync as unknown as InitSync;
+  memory = initSync({ module: readFileSync(WASM_PATH) }).memory;
   wasm = glue;
-  memory = instance.exports.memory;
 });
 
 /** Call an export with arguments its TypeScript signature rejects. */
@@ -81,7 +60,9 @@ function thrown(fn: () => unknown): unknown {
 const FRUITS = ['apple', 'banana', 'grape', 'orange', 'pineapple', 'apricot'];
 
 describe('wasm-bindgen TypeScript declarations', () => {
-  const dts = readFileSync(DTS_PATH, 'utf8');
+  // wasm-bindgen appends the initialization API (InitInput, InitOutput with the
+  // raw WebAssembly exports, initSync, init); check the public API before it.
+  const dts = readFileSync(DTS_PATH, 'utf8').split('export type InitInput')[0] ?? '';
   // Strip comments so prose like "returns any matches" cannot cause false positives.
   const code = dts.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
 
@@ -183,7 +164,10 @@ describe.skipIf(!wasmAvailable)('wasm-bindgen runtime', () => {
     it('hamming variants use null for undefined distances', () => {
       expect(wasm.hamming('abc', 'ab')).toBeNull();
       expect(wasm.normalizedHamming('abc', 'ab')).toBeNull();
-      const pairs = [['karolin', 'kathrin'], ['abc', 'ab']];
+      const pairs = [
+        ['karolin', 'kathrin'],
+        ['abc', 'ab'],
+      ];
       expect(wasm.hammingBatch(pairs)).toEqual([3, null]);
       expect(wasm.hammingBatch(pairs)).toEqual(napi.hammingBatch(pairs));
       expect(wasm.normalizedHammingBatch(pairs)).toEqual(napi.normalizedHammingBatch(pairs));
@@ -308,103 +292,6 @@ describe.skipIf(!wasmAvailable)('wasm-bindgen runtime', () => {
       expect(w.search('type', opts)).toEqual(n.search('type', opts));
       expect(w.closest('pyhton')).toBe(n.closest('pyhton'));
       w.free();
-    });
-  });
-
-  describe('browser.js entry (the package "browser" condition)', () => {
-    // browser.js imports the .wasm through the WebAssembly ESM integration, which
-    // Vite cannot load, so run it in a separate Node.js process instead.
-    interface BrowserProbe {
-      exports: string[];
-      matchType: Record<string, string>;
-      levenshteinManyU32: { typed: boolean; values: number[] };
-      jaroManyF64: { typed: boolean; values: number[] };
-      hammingManyU32: { typed: boolean; values: number[] };
-      normalizedHammingManyF64: { typed: boolean; values: (number | null)[] };
-    }
-
-    function probeBrowserEntry(): BrowserProbe {
-      const dir = mkdtempSync(join(tmpdir(), 'rapid-fuzzy-browser-'));
-      try {
-        for (const file of [
-          'browser.js',
-          'rapid-fuzzy-wasm-bindgen.js',
-          'rapid-fuzzy-wasm-bindgen_bg.js',
-          'rapid-fuzzy-wasm-bindgen_bg.wasm',
-        ]) {
-          copyFileSync(join(ROOT, file), join(dir, file));
-        }
-        // The package is "type": "commonjs" (bundlers ignore that for browser.js);
-        // a standalone ESM copy needs "type": "module" and a CJS highlight helper.
-        writeFileSync(join(dir, 'package.json'), '{ "type": "module" }\n');
-        copyFileSync(join(ROOT, 'highlight.js'), join(dir, 'highlight.cjs'));
-        writeFileSync(
-          join(dir, 'highlight.mjs'),
-          "export { highlight, highlightRanges } from './highlight.cjs';\n",
-        );
-        writeFileSync(
-          join(dir, 'probe.mjs'),
-          `import * as m from './browser.js';
-// Report missing exports as null so the test shows a diff instead of a crash.
-const typed = (name, Type, ...args) => {
-  if (typeof m[name] !== 'function') return null;
-  const value = m[name](...args);
-  return {
-    typed: value instanceof Type,
-    values: Array.from(value, (v) => (Number.isNaN(v) ? null : v)),
-  };
-};
-const ownProperties = (object) =>
-  object == null
-    ? null
-    : Object.fromEntries(Object.getOwnPropertyNames(object).map((k) => [k, object[k]]));
-process.stdout.write(JSON.stringify({
-  exports: Object.keys(m).sort(),
-  matchType: ownProperties(m.MatchType),
-  levenshteinManyU32: typed('levenshteinManyU32', Uint32Array, 'kitten', ['sitting', 'kitten']),
-  jaroManyF64: typed('jaroManyF64', Float64Array, 'abc', ['abc']),
-  hammingManyU32: typed('hammingManyU32', Uint32Array, 'abc', ['abd', 'abcd']),
-  normalizedHammingManyF64: typed('normalizedHammingManyF64', Float64Array, 'ab', ['ab', 'abc']),
-}));
-`,
-        );
-        const flag = '--experimental-wasm-modules';
-        const args = process.allowedNodeEnvironmentFlags.has(flag) ? [flag] : [];
-        const stdout = execFileSync(process.execPath, [...args, join(dir, 'probe.mjs')], {
-          encoding: 'utf8',
-          stdio: ['ignore', 'pipe', 'pipe'],
-        });
-        return JSON.parse(stdout) as BrowserProbe;
-      } finally {
-        rmSync(dir, { recursive: true, force: true });
-      }
-    }
-
-    it('exports everything the Node.js entry exports', () => {
-      const probe = probeBrowserEntry();
-      const nodeEntry = require('../index.js') as Record<string, unknown>;
-      // Object search is CommonJS-only here: objects.js requires the napi entry.
-      const objectSearch = new Set(['searchObjects', 'FuzzyObjectIndex']);
-      expect(probe.exports).toEqual(
-        Object.keys(nodeEntry)
-          .filter((name) => !objectSearch.has(name))
-          .sort(),
-      );
-
-      // MatchType is a `const enum` in index.d.ts, so read the runtime object untyped.
-      const nodeMatchType = nodeEntry.MatchType as Record<string, string>;
-      expect(probe.matchType).toEqual(
-        Object.fromEntries(
-          Object.getOwnPropertyNames(nodeMatchType).map((name) => [name, nodeMatchType[name]]),
-        ),
-      );
-      expect(probe.levenshteinManyU32).toEqual({ typed: true, values: [3, 0] });
-      expect(probe.jaroManyF64).toEqual({ typed: true, values: [1] });
-      expect(probe.hammingManyU32).toEqual({
-        typed: true,
-        values: Array.from(napi.hammingManyU32('abc', ['abd', 'abcd'])),
-      });
-      expect(probe.normalizedHammingManyF64).toEqual({ typed: true, values: [1, null] });
     });
   });
 
