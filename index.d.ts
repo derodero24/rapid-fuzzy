@@ -106,8 +106,10 @@ export declare class FuzzyIndex {
  * Holds key text arrays and weights in memory on the Rust side,
  * avoiding repeated FFI overhead for applications that search the
  * same dataset multiple times with multiple keys.
- * Pre-computes Utf32String representations and reuses the Matcher
- * instance for optimal repeated-search performance.
+ * Pre-computes the search representation of every key text, eliminating
+ * per-search string conversion overhead.
+ * Memory is freed when the JavaScript garbage collector collects the instance
+ * or when `destroy()` is called explicitly.
  *
  * Typically wrapped by a JS-side `FuzzyObjectIndex` class that maps
  * results back to original objects.

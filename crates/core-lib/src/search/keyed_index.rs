@@ -1,10 +1,17 @@
-use std::cell::RefCell;
-
+use nucleo_matcher::Utf32String;
 use nucleo_matcher::pattern::CaseMatching;
-use nucleo_matcher::{Config, Matcher, Utf32String};
 
 use super::keys::{IndexedKeys, KeyedSearchParams, keyed_search_core, validate_keyed_input};
-use super::{KeySearchResult, compute_char_mask};
+use super::{KeySearchResult, compute_char_mask, with_matcher};
+
+/// Heap bytes of a `Utf32String`: one per character for ASCII text (stored
+/// as its bytes), four per character otherwise.
+fn utf32_heap_bytes(s: &Utf32String) -> usize {
+    match s {
+        Utf32String::Ascii(bytes) => bytes.len(),
+        Utf32String::Unicode(chars) => chars.len() * size_of::<char>(),
+    }
+}
 
 fn to_utf32(texts: &[String]) -> Vec<Utf32String> {
     texts
@@ -17,13 +24,16 @@ fn to_utf32(texts: &[String]) -> Vec<Utf32String> {
 ///
 /// This struct contains all platform-independent state and methods.
 /// Binding crates (napi, wasm) wrap this with their own FFI layer.
+///
+/// Like `FuzzyIndexCore`, the index owns no nucleo matcher (searches use the
+/// shared per-thread one, see [`with_matcher`]), so
+/// [`destroy`](Self::destroy) frees all of its item data.
 pub struct KeyedFuzzyIndexCore {
     key_texts: Vec<Vec<String>>,
     utf32_keys: Vec<Vec<Utf32String>>,
     key_char_masks: Vec<Vec<u64>>,
     weights: Vec<f64>,
     total_weight: f64,
-    matcher: RefCell<Matcher>,
 }
 
 impl KeyedFuzzyIndexCore {
@@ -45,7 +55,6 @@ impl KeyedFuzzyIndexCore {
             key_char_masks,
             weights,
             total_weight,
-            matcher: RefCell::new(Matcher::new(Config::DEFAULT)),
         })
     }
 
@@ -62,7 +71,6 @@ impl KeyedFuzzyIndexCore {
             key_char_masks: Vec::new(),
             weights: Vec::new(),
             total_weight: 0.0,
-            matcher: RefCell::new(Matcher::new(Config::DEFAULT)),
         }
     }
 
@@ -81,6 +89,40 @@ impl KeyedFuzzyIndexCore {
         &self.weights
     }
 
+    /// Approximate number of heap bytes the index owns: its key texts, their
+    /// pre-computed search data and the vectors holding them.
+    ///
+    /// Bindings report this to their JavaScript engine so that its garbage
+    /// collector accounts for the index's native memory.
+    pub fn heap_size(&self) -> usize {
+        let columns = self.key_texts.capacity() * size_of::<Vec<String>>()
+            + self.utf32_keys.capacity() * size_of::<Vec<Utf32String>>()
+            + self.key_char_masks.capacity() * size_of::<Vec<u64>>()
+            + self.weights.capacity() * size_of::<f64>();
+        let texts: usize = self
+            .key_texts
+            .iter()
+            .map(|col| {
+                col.capacity() * size_of::<String>()
+                    + col.iter().map(String::capacity).sum::<usize>()
+            })
+            .sum();
+        let haystacks: usize = self
+            .utf32_keys
+            .iter()
+            .map(|col| {
+                col.capacity() * size_of::<Utf32String>()
+                    + col.iter().map(utf32_heap_bytes).sum::<usize>()
+            })
+            .sum();
+        let masks: usize = self
+            .key_char_masks
+            .iter()
+            .map(|col| col.capacity() * size_of::<u64>())
+            .sum();
+        columns + texts + haystacks + masks
+    }
+
     /// Search the index for items matching the query.
     ///
     /// Returns results sorted by combined weighted score (best match first),
@@ -94,23 +136,25 @@ impl KeyedFuzzyIndexCore {
         case_matching: CaseMatching,
         return_all_on_empty: bool,
     ) -> Vec<KeySearchResult> {
-        keyed_search_core(
-            query,
-            &IndexedKeys {
-                key_texts: &self.key_texts,
-                haystacks: &self.utf32_keys,
-                char_masks: &self.key_char_masks,
-            },
-            &self.weights,
-            self.total_weight,
-            KeyedSearchParams {
-                max_results,
-                min_score,
-                case_matching,
-                return_all_on_empty,
-            },
-            &mut self.matcher.borrow_mut(),
-        )
+        with_matcher(|matcher| {
+            keyed_search_core(
+                query,
+                &IndexedKeys {
+                    key_texts: &self.key_texts,
+                    haystacks: &self.utf32_keys,
+                    char_masks: &self.key_char_masks,
+                },
+                &self.weights,
+                self.total_weight,
+                KeyedSearchParams {
+                    max_results,
+                    min_score,
+                    case_matching,
+                    return_all_on_empty,
+                },
+                matcher,
+            )
+        })
     }
 
     /// Add a single item to the index.

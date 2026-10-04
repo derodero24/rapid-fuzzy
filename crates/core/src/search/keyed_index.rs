@@ -1,4 +1,5 @@
-use napi::bindgen_prelude::Buffer;
+use napi::Env;
+use napi::bindgen_prelude::{Buffer, ObjectFinalize};
 use napi_derive::napi;
 use nucleo_matcher::pattern::CaseMatching;
 use rapid_fuzzy_core::search::KeyedFuzzyIndexCore;
@@ -12,14 +13,56 @@ use super::{ResolvedSearchOptions, SearchOptionsArg};
 /// Holds key text arrays and weights in memory on the Rust side,
 /// avoiding repeated FFI overhead for applications that search the
 /// same dataset multiple times with multiple keys.
-/// Pre-computes Utf32String representations and reuses the Matcher
-/// instance for optimal repeated-search performance.
+/// Pre-computes the search representation of every key text, eliminating
+/// per-search string conversion overhead.
+/// Memory is freed when the JavaScript garbage collector collects the instance
+/// or when `destroy()` is called explicitly.
 ///
 /// Typically wrapped by a JS-side `FuzzyObjectIndex` class that maps
 /// results back to original objects.
-#[napi]
+#[napi(custom_finalize)]
 pub struct KeyedFuzzyIndex {
     core: KeyedFuzzyIndexCore,
+    /// Native heap bytes currently reported to the JavaScript engine (see
+    /// [`KeyedFuzzyIndex::report_memory`]).
+    reported_bytes: i64,
+}
+
+impl KeyedFuzzyIndex {
+    fn from_core(core: KeyedFuzzyIndexCore) -> Self {
+        Self {
+            core,
+            reported_bytes: 0,
+        }
+    }
+
+    fn with_reported_memory(mut self, env: Env) -> napi::Result<Self> {
+        self.report_memory(env)?;
+        Ok(self)
+    }
+
+    /// Tell the JavaScript engine how much native memory this index holds,
+    /// like `FuzzyIndex` does: without it the garbage collector does not know
+    /// that collecting an unreachable index frees memory. Called whenever the
+    /// index's size changes; the finalizer releases the amount again.
+    fn report_memory(&mut self, env: Env) -> napi::Result<()> {
+        let bytes = i64::try_from(self.core.heap_size()).unwrap_or(i64::MAX);
+        let delta = bytes - self.reported_bytes;
+        if delta != 0 {
+            env.adjust_external_memory(delta)?;
+            self.reported_bytes = bytes;
+        }
+        Ok(())
+    }
+}
+
+impl ObjectFinalize for KeyedFuzzyIndex {
+    fn finalize(self, env: Env) -> napi::Result<()> {
+        if self.reported_bytes != 0 {
+            env.adjust_external_memory(-self.reported_bytes)?;
+        }
+        Ok(())
+    }
 }
 
 #[napi]
@@ -29,12 +72,14 @@ impl KeyedFuzzyIndex {
     /// `keyTexts[k]` is an array of strings for key `k`, one per item.
     /// All inner arrays must have the same length (the number of items).
     #[napi(constructor)]
-    pub fn new(key_texts: Vec<Vec<String>>, weights: Vec<f64>) -> napi::Result<Self> {
-        Self::new_impl(key_texts, weights).map_err(napi::Error::from_reason)
+    pub fn new(env: Env, key_texts: Vec<Vec<String>>, weights: Vec<f64>) -> napi::Result<Self> {
+        Self::new_impl(key_texts, weights)
+            .map_err(napi::Error::from_reason)?
+            .with_reported_memory(env)
     }
 
     fn new_impl(key_texts: Vec<Vec<String>>, weights: Vec<f64>) -> Result<Self, String> {
-        KeyedFuzzyIndexCore::new(key_texts, weights).map(|core| Self { core })
+        KeyedFuzzyIndexCore::new(key_texts, weights).map(Self::from_core)
     }
 
     /// Return the number of items in the index.
@@ -98,8 +143,11 @@ impl KeyedFuzzyIndex {
     /// `keyValues` must have the same length as the number of keys.
     /// Throws if the length does not match.
     #[napi]
-    pub fn add(&mut self, key_values: Vec<String>) -> napi::Result<()> {
-        self.core.add(key_values).map_err(napi::Error::from_reason)
+    pub fn add(&mut self, env: Env, key_values: Vec<String>) -> napi::Result<()> {
+        self.core
+            .add(key_values)
+            .map_err(napi::Error::from_reason)?;
+        self.report_memory(env)
     }
 
     /// Add multiple items to the index at once.
@@ -108,18 +156,21 @@ impl KeyedFuzzyIndex {
     /// Throws if any element has the wrong number of key values; every element
     /// is checked first, so on error no item is added.
     #[napi]
-    pub fn add_many(&mut self, items_key_values: Vec<Vec<String>>) -> napi::Result<()> {
+    pub fn add_many(&mut self, env: Env, items_key_values: Vec<Vec<String>>) -> napi::Result<()> {
         self.core
             .add_many(items_key_values)
-            .map_err(napi::Error::from_reason)
+            .map_err(napi::Error::from_reason)?;
+        self.report_memory(env)
     }
 
     /// Remove the item at the given index.
     ///
     /// Uses swap-remove for O(1) performance. Returns false if out of bounds.
     #[napi]
-    pub fn remove(&mut self, index: u32) -> bool {
-        self.core.remove(index)
+    pub fn remove(&mut self, env: Env, index: u32) -> napi::Result<bool> {
+        let removed = self.core.remove(index);
+        self.report_memory(env)?;
+        Ok(removed)
     }
 
     /// Free the internal data. After calling this, the index is empty.
@@ -127,8 +178,9 @@ impl KeyedFuzzyIndex {
     /// The key configuration is kept, so the index stays usable: it behaves
     /// as an empty index and `add()` / `addMany()` work as before.
     #[napi]
-    pub fn destroy(&mut self) {
+    pub fn destroy(&mut self, env: Env) -> napi::Result<()> {
         self.core.destroy();
+        self.report_memory(env)
     }
 
     /// Serialize the index to a compact binary format.
@@ -143,8 +195,10 @@ impl KeyedFuzzyIndex {
 
     /// Reconstruct a KeyedFuzzyIndex from a previously serialized Buffer.
     #[napi(factory)]
-    pub fn deserialize(data: Buffer) -> napi::Result<Self> {
-        Self::deserialize_impl(&data).map_err(napi::Error::from_reason)
+    pub fn deserialize(env: Env, data: Buffer) -> napi::Result<Self> {
+        Self::deserialize_impl(&data)
+            .map_err(napi::Error::from_reason)?
+            .with_reported_memory(env)
     }
 }
 
@@ -155,7 +209,7 @@ impl KeyedFuzzyIndex {
     }
 
     fn deserialize_impl(bytes: &[u8]) -> Result<Self, String> {
-        deserialize_keyed_index(bytes).map(|core| Self { core })
+        deserialize_keyed_index(bytes).map(Self::from_core)
     }
 }
 
@@ -253,15 +307,15 @@ mod tests {
     #[test]
     fn test_remove() {
         let mut index = make_index();
-        assert!(index.remove(1)); // Remove Jane Doe
+        assert!(index.core.remove(1)); // Remove Jane Doe
         assert_eq!(index.size(), 2);
-        assert!(!index.remove(10)); // Out of bounds
+        assert!(!index.core.remove(10)); // Out of bounds
     }
 
     #[test]
     fn test_destroy() {
         let mut index = make_index();
-        index.destroy();
+        index.core.destroy();
         assert_eq!(index.size(), 0);
     }
 

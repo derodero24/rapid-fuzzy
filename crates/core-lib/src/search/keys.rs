@@ -19,13 +19,14 @@
 //!   is the one contributing the most to the combined score (`key_score *
 //!   weight`); on a tie, the first such key.
 
-use std::cell::RefCell;
 use std::cmp::Ordering;
 
 use nucleo_matcher::pattern::{CaseMatching, Pattern};
-use nucleo_matcher::{Config, Matcher, Utf32Str, Utf32String};
+use nucleo_matcher::{Matcher, Utf32Str, Utf32String};
 
-use super::{KeySearchResult, QueryPlan, is_empty_query, resolve_case_matching, utf32_haystack};
+use super::{
+    KeySearchResult, QueryPlan, is_empty_query, resolve_case_matching, utf32_haystack, with_matcher,
+};
 
 /// Search options for the `search_keys_impl` function.
 pub struct SearchKeysOptions {
@@ -33,12 +34,6 @@ pub struct SearchKeysOptions {
     pub min_score: Option<f64>,
     pub is_case_sensitive: Option<bool>,
     pub return_all_on_empty: Option<bool>,
-}
-
-thread_local! {
-    /// Reusable Matcher for standalone `search_keys_impl` calls, so that
-    /// nucleo's scoring matrices are not reallocated on every call.
-    static KEYS_MATCHER: RefCell<Matcher> = RefCell::new(Matcher::new(Config::DEFAULT));
 }
 
 /// Validate multi-key search input and return the total weight.
@@ -477,14 +472,14 @@ pub fn search_keys_impl(
         },
     };
 
-    Ok(KEYS_MATCHER.with(|cell| {
+    Ok(with_matcher(|matcher| {
         keyed_search_core(
             query,
             &KeyTexts(key_texts),
             weights,
             total_weight,
             params,
-            &mut cell.borrow_mut(),
+            matcher,
         )
     }))
 }

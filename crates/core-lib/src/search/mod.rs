@@ -109,7 +109,8 @@ pub fn resolve_case_matching(is_case_sensitive: Option<bool>) -> CaseMatching {
 
 thread_local! {
     /// The nucleo `Matcher` of this thread, shared by every search running on
-    /// it: standalone `search`/`closest` and every `FuzzyIndex`.
+    /// it: standalone `search`/`closest`/`searchKeys` and every `FuzzyIndex`
+    /// and `KeyedFuzzyIndex`.
     ///
     /// A matcher owns a ~130 KB scratch slab. Sharing one per thread instead
     /// of allocating one per index keeps small indexes small, and freeing an
