@@ -104,7 +104,6 @@ describe('package.json', () => {
       expect(Object.keys(conditions), subpath).toEqual([
         'workerd',
         'browser',
-        'deno',
         'import',
         'require',
         'default',
@@ -112,7 +111,7 @@ describe('package.json', () => {
       // require() callers (e.g. Jest with jest-environment-jsdom, which sets the
       // "browser" condition) keep the CommonJS entry: the WebAssembly build is
       // ES-module-only (top-level await).
-      for (const condition of ['browser', 'deno']) {
+      for (const condition of ['browser']) {
         const target = conditions[condition];
         expect(
           typeof target === 'object' && Object.keys(target),
@@ -126,13 +125,16 @@ describe('package.json', () => {
     }
   });
 
-  it('resolves browsers, Deno and Cloudflare Workers to the WebAssembly build', () => {
+  it('resolves browsers and Cloudflare Workers to the WebAssembly build', () => {
     const cases: Array<[string, string[], 'import' | 'require', string]> = [
       ['rapid-fuzzy', [], 'import', 'index.mjs'],
       ['rapid-fuzzy', [], 'require', 'index.js'],
       ['rapid-fuzzy', ['browser'], 'import', 'browser.mjs'],
       ['rapid-fuzzy', ['browser'], 'require', 'index.js'],
-      ['rapid-fuzzy', ['deno'], 'import', 'browser.mjs'],
+      // Deno keeps the Node.js entry (the native addon); --conditions=browser opts in.
+      ['rapid-fuzzy', ['deno', 'node'], 'import', 'index.mjs'],
+      ['rapid-fuzzy', ['deno', 'node', 'browser'], 'import', 'browser.mjs'],
+      ['rapid-fuzzy/objects', ['deno', 'node'], 'import', 'objects.mjs'],
       ['rapid-fuzzy', ['workerd', 'worker', 'browser'], 'import', 'workerd.mjs'],
       ['rapid-fuzzy/highlight', [], 'import', 'highlight.mjs'],
       ['rapid-fuzzy/highlight', ['browser'], 'import', 'highlight.browser.mjs'],

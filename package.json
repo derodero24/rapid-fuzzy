@@ -55,16 +55,6 @@
           "default": "./browser.mjs"
         }
       },
-      "deno": {
-        "require": {
-          "types": "./index.d.ts",
-          "default": "./index.js"
-        },
-        "default": {
-          "types": "./browser.d.mts",
-          "default": "./browser.mjs"
-        }
-      },
       "import": {
         "types": "./index.d.mts",
         "default": "./index.mjs"
@@ -93,16 +83,6 @@
           "default": "./highlight.browser.mjs"
         }
       },
-      "deno": {
-        "require": {
-          "types": "./highlight.d.ts",
-          "default": "./highlight.js"
-        },
-        "default": {
-          "types": "./highlight.d.mts",
-          "default": "./highlight.browser.mjs"
-        }
-      },
       "import": {
         "types": "./highlight.d.mts",
         "default": "./highlight.mjs"
@@ -122,16 +102,6 @@
         "default": "./workerd.mjs"
       },
       "browser": {
-        "require": {
-          "types": "./objects.d.ts",
-          "default": "./objects.js"
-        },
-        "default": {
-          "types": "./objects.browser.d.mts",
-          "default": "./browser.mjs"
-        }
-      },
-      "deno": {
         "require": {
           "types": "./objects.d.ts",
           "default": "./objects.js"
@@ -224,7 +194,7 @@
     "test:wasm": "vitest run __test__/wasm.spec.ts",
     "test:browser": "playwright test",
     "test:bun": "bun test --conditions=browser e2e/wasm-bun.test.ts",
-    "test:deno": "deno test --allow-read --allow-env --allow-net --node-modules-dir=auto --no-check e2e/wasm-deno.test.ts",
+    "test:deno": "deno test --conditions=browser --allow-read --allow-env --allow-net --node-modules-dir=auto --no-check e2e/wasm-deno.test.ts",
     "test:watch": "vitest watch",
     "bench": "vitest bench",
     "bench:ci": "vitest bench __test__/distance.bench.ts __test__/similarity.bench.ts __test__/ratio.bench.ts __test__/batch.bench.ts __test__/search.bench.ts",

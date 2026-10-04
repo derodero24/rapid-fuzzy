@@ -1,8 +1,9 @@
 import { assert, assertEquals, assertNotEquals } from 'jsr:@std/assert';
 
-// The package imports itself by name: Deno resolves it through the "deno" export
-// condition to the WebAssembly build (browser.mjs), which reads the .wasm file
-// (--allow-read). `pnpm run test:deno` passes --no-check: Deno type-checks a
+// The package imports itself by name: with --conditions=browser (see
+// `pnpm run test:deno`) Deno resolves it to the WebAssembly build (browser.mjs),
+// which reads the .wasm file (--allow-read). Without it Deno loads the Node.js
+// entry and its native addon. `pnpm run test:deno` passes --no-check: Deno type-checks a
 // self-referenced package as local files, not with the npm resolution users get
 // for `npm:rapid-fuzzy` (whose declarations __test__/types/browser.types.ts covers).
 import * as wasm from 'rapid-fuzzy';

@@ -52,7 +52,7 @@ pnpm add rapid-fuzzy
 
 - **Node.js** (>=22): Uses native bindings via napi-rs for best performance. On a platform without a prebuilt binary, install the WASI fallback alongside the package (`npm install rapid-fuzzy rapid-fuzzy-wasm32-wasi`, requires Node 22.13+ or 23.5+); the loader picks it up automatically, or set `NAPI_RS_FORCE_WASI=true` to prefer it over the native binding.
 - **Bun**: Uses native napi-rs bindings. The WASM build is available with `--conditions=browser` — see [Bun section](#bun) below.
-- **Browsers / CDN / Cloudflare Workers / Deno**: Use the wasm-bindgen WASM build (a ~500 KB `.wasm` file, ~185 KB gzipped, plus ~80 KB of JS glue, ~10 KB gzipped), selected automatically through the package's `browser`, `workerd` and `deno` export conditions. No `SharedArrayBuffer` or COOP/COEP headers required.
+- **Browsers / CDN / Cloudflare Workers**: Use the wasm-bindgen WASM build (a ~500 KB `.wasm` file, ~185 KB gzipped, plus ~80 KB of JS glue, ~10 KB gzipped), selected automatically through the package's `browser` and `workerd` export conditions. Deno uses the native addon by default and the WASM build with `--conditions=browser` (see [Deno](#deno)). No `SharedArrayBuffer` or COOP/COEP headers required.
 
 ### Framework Integration (SSR)
 
@@ -159,7 +159,7 @@ See [`examples/cloudflare-workers/`](examples/cloudflare-workers/) for a complet
 
 #### Deno
 
-Use rapid-fuzzy via the `npm:` specifier. Deno resolves the `deno` export condition to the WASM build, which reads its `.wasm` file from the npm cache, so run with `--allow-read`:
+Use rapid-fuzzy via the `npm:` specifier:
 
 ```ts
 import { search } from 'npm:rapid-fuzzy';
@@ -168,8 +168,16 @@ const results = search('typscript', ['TypeScript', 'JavaScript', 'Python']);
 console.log(results[0].item); // 'TypeScript'
 ```
 
+By default Deno loads the Node.js entry, which uses the native addon (the full Node.js API, including `FuzzyObjectIndex` serialization) and needs `--allow-ffi`:
+
 ```bash
-deno run --allow-read main.ts
+deno run --allow-read --allow-env --allow-ffi main.ts
+```
+
+To use the WebAssembly build instead (no FFI permission; the API of the browser build), add the `browser` condition. It reads its `.wasm` file from the npm cache, so it needs `--allow-read`:
+
+```bash
+deno run --conditions=browser --allow-read main.ts
 ```
 
 #### Bun
