@@ -6,8 +6,9 @@
  *
  * Holds items in memory on the Rust side, avoiding repeated FFI overhead
  * for applications that search the same dataset multiple times.
- * Pre-computes Utf32String representations for each item, eliminating
- * per-search string conversion overhead.
+ * Pre-computes the search representation of each item (a character mask,
+ * plus the UTF-32 text of non-ASCII items), eliminating per-search string
+ * conversion overhead.
  * Memory is freed when the JavaScript garbage collector collects the instance
  * or when `destroy()` is called explicitly.
  */
@@ -79,7 +80,7 @@ export declare class FuzzyIndex {
   /**
    * Reconstruct a FuzzyIndex from a previously serialized Buffer.
    *
-   * Pre-computes Utf32String and character masks from the stored items,
+   * Pre-computes the search representation of the stored items,
    * so the returned index is immediately ready for searching.
    */
   static deserialize(data: Buffer): FuzzyIndex
