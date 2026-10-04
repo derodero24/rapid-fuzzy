@@ -2,6 +2,14 @@
 /* eslint-disable */
 
 /**
+ * Which binding artifact the generated loader actually loaded: `'native'` for
+ * a native addon, otherwise the `platformArchABI` of the WASI flavor. Every
+ * flavor napi-rs can build is listed, because `NAPI_RS_NATIVE_LIBRARY_PATH`
+ * can point the loader at a WASI artifact this package does not build itself.
+ */
+export declare const __napiBindingTarget: 'native' | 'wasm32-wasi' | 'wasm32-wasip1'
+
+/**
  * A persistent fuzzy search index backed by Rust-side data.
  *
  * Holds items in memory on the Rust side, avoiding repeated FFI overhead
