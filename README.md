@@ -288,6 +288,8 @@ searchObjects('john', users, {
 searchObjects('new york', items, { keys: ['address.city'] });
 ```
 
+The combined score is the weighted average of the per-key scores (`keyScores`, one per key, each computed like `search()` scores a string). A key with weight `0` is still scored in `keyScores` but never selects an item on its own. Ties are broken like `search()`: the item whose best-matching key text is shorter comes first, then the lower index. The low-level `searchKeys()` and `KeyedFuzzyIndex.search()` return identical results for the same key texts and weights.
+
 ### Persistent Index
 
 For applications that search the same dataset repeatedly (autocomplete, file finders, etc.), use `FuzzyIndex` or `FuzzyObjectIndex` to keep data on the Rust side and eliminate per-search FFI overhead.
@@ -612,6 +614,7 @@ Serialized indexes use a compact binary format suitable for disk or IndexedDB st
 - `closest()` returns `null` if no match meets the `minScore` threshold (or if the item list is empty).
 - Calling methods on a `FuzzyIndex` or `FuzzyObjectIndex` after `.destroy()` throws an error.
 - `searchObjects()` and `FuzzyObjectIndex` throw a `TypeError` if `options.keys` is missing or empty.
+- `searchKeys()`, `searchObjects()`, `KeyedFuzzyIndex` and `FuzzyObjectIndex` throw if a weight is negative, `NaN` or infinite, if the weights sum to 0 or overflow to `Infinity`, or (for the low-level APIs) if the key text arrays have different lengths or the number of weights differs from the number of keys.
 
 ## Benchmarks
 
