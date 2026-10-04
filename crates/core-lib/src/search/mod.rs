@@ -9,7 +9,6 @@ pub use keys::{SearchKeysOptions, search_keys_impl};
 
 use std::borrow::Cow;
 use std::cell::RefCell;
-use std::cmp::Ordering;
 
 use nucleo_matcher::pattern::{Atom, CaseMatching, Normalization, Pattern};
 use nucleo_matcher::{Config, Matcher, Utf32Str, chars};
@@ -464,6 +463,32 @@ pub(crate) struct SearchParams {
     pub include_positions: bool,
 }
 
+/// Sort key of a match: score descending, then item length ascending, then
+/// index ascending.
+///
+/// Scores are finite and non-negative, so the order of their bit patterns is
+/// their numeric order; inverting the bits makes higher scores sort first.
+/// Comparing keys is much cheaper than comparing scores and looking up item
+/// lengths, which dominated the ranking of large result sets. (Lengths
+/// saturate at 4 GiB, beyond the longest string JavaScript can create.)
+#[inline]
+fn rank_key(index: u32, score: f64, item_len: usize) -> u128 {
+    debug_assert!(score.is_finite() && score.is_sign_positive());
+    let len = u32::try_from(item_len).unwrap_or(u32::MAX);
+    (u128::from(!score.to_bits()) << 64) | (u128::from(len) << 32) | u128::from(index)
+}
+
+/// The `(index, score)` a [`rank_key`] was built from.
+#[inline]
+fn decode_rank_key(key: u128) -> (u32, f64) {
+    (key as u32, f64::from_bits(!((key >> 64) as u64)))
+}
+
+/// Sort rank keys ascending (best match first).
+fn sort_keys(keys: &mut [u128]) {
+    keys.sort_unstable();
+}
+
 /// The search algorithm shared by standalone search and `FuzzyIndex`.
 ///
 /// When `candidates` is set, only those items (ascending indices) are scored.
@@ -522,25 +547,27 @@ pub(crate) fn search_core(
     let all_matching = (collect_matching && scored.len() < items.len() / 2)
         .then(|| scored.iter().map(|&(index, _)| index).collect());
 
-    // Sort by score descending, with shorter items first as tiebreaker,
-    // then by original index for fully deterministic ordering.
-    let cmp = |a: &(u32, f64), b: &(u32, f64)| {
-        b.1.partial_cmp(&a.1)
-            .unwrap_or(Ordering::Equal)
-            .then_with(|| items[a.0 as usize].len().cmp(&items[b.0 as usize].len()))
-            .then_with(|| a.0.cmp(&b.0))
-    };
+    // Rank by score descending, with shorter items first as tiebreaker,
+    // then by original index for fully deterministic ordering. Every match
+    // gets a distinct sort key, so the order is total and independent of the
+    // sorting algorithm.
+    let mut keys: Vec<u128> = scored
+        .iter()
+        .map(|&(index, score)| rank_key(index, score, items[index as usize].len()))
+        .collect();
+    drop(scored);
 
     // Top-k selection: quickselect O(n) + sort O(k log k) instead of a full
     // O(n log n) sort when maxResults is set.
     if let Some(max) = max_results {
         let k = max as usize;
-        if scored.len() > k {
-            scored.select_nth_unstable_by(k, cmp);
-            scored.truncate(k);
+        if keys.len() > k {
+            keys.select_nth_unstable(k);
+            keys.truncate(k);
         }
     }
-    scored.sort_unstable_by(cmp);
+    sort_keys(&mut keys);
+    let scored: Vec<(u32, f64)> = keys.into_iter().map(decode_rank_key).collect();
 
     // Pass 2: positions only for the final top-k items.
     let matches = scored
