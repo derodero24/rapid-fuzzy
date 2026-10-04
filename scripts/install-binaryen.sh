@@ -6,10 +6,10 @@
 # the upstream release tarball and verifies it against the published checksum.
 set -euo pipefail
 
-BINARYEN_VERSION="version_132"
+BINARYEN_VERSION="version_133"
 # SHA-256 of binaryen-${BINARYEN_VERSION}-x86_64-linux.tar.gz, taken from the
 # .sha256 asset of the GitHub release. Update it together with the version.
-BINARYEN_SHA256="195ddc94f9bc89f45abdabb0b9eea86023d727ba90eac8b35b80f2544fc30572"
+BINARYEN_SHA256="2dc9c7813f5375db93d96ead4b78222fcc3e2677bbb832297af4797782a37489"
 ARCHIVE="binaryen-${BINARYEN_VERSION}-x86_64-linux.tar.gz"
 BASE_URL="https://github.com/WebAssembly/binaryen/releases/download/${BINARYEN_VERSION}"
 INSTALL_DIR="${RUNNER_TEMP:-/tmp}/binaryen"
