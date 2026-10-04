@@ -9,10 +9,9 @@ pub use keys::{SearchKeysOptions, search_keys_impl};
 
 use std::borrow::Cow;
 use std::cell::RefCell;
-use std::cmp::Ordering;
 
 use nucleo_matcher::pattern::{Atom, CaseMatching, Normalization, Pattern};
-use nucleo_matcher::{Config, Matcher, Utf32Str, Utf32String, chars};
+use nucleo_matcher::{Config, Matcher, Utf32Str, chars};
 
 /// Classification of how a query matched an item.
 ///
@@ -109,10 +108,25 @@ pub fn resolve_case_matching(is_case_sensitive: Option<bool>) -> CaseMatching {
 }
 
 thread_local! {
-    /// Reusable Matcher for standalone search/closest calls.
-    /// Avoids allocating internal scoring matrices on every invocation.
-    /// FuzzyIndex has its own Matcher, so this is only for the standalone path.
-    static STANDALONE_MATCHER: RefCell<Matcher> = RefCell::new(Matcher::new(Config::DEFAULT));
+    /// The nucleo `Matcher` of this thread, shared by every search running on
+    /// it: standalone `search`/`closest` and every `FuzzyIndex`.
+    ///
+    /// A matcher owns a ~130 KB scratch slab. Sharing one per thread instead
+    /// of allocating one per index keeps small indexes small, and freeing an
+    /// index frees all of its memory. Scores never depend on a matcher's
+    /// previous use: nucleo sets its configuration before every match.
+    static MATCHER: RefCell<Matcher> = RefCell::new(Matcher::new(Config::DEFAULT));
+}
+
+/// Run `f` with this thread's shared nucleo `Matcher`.
+///
+/// A re-entrant call, made while the shared matcher is in use, gets a
+/// temporary matcher instead of panicking.
+pub fn with_matcher<R>(f: impl FnOnce(&mut Matcher) -> R) -> R {
+    MATCHER.with(|cell| match cell.try_borrow_mut() {
+        Ok(mut matcher) => f(&mut matcher),
+        Err(_) => f(&mut Matcher::new(Config::DEFAULT)),
+    })
 }
 
 // ─── Query parsing ──────────────────────────────────────────────────────────
@@ -352,9 +366,9 @@ pub fn compute_query_mask(query: &str) -> u64 {
 
 /// Convert an item to the haystack nucleo matches against.
 ///
-/// Produces the same representation as `Utf32String::from` (which
-/// `FuzzyIndex` stores): ASCII text as bytes, anything else as the first
-/// codepoint of each grapheme. `Utf32Str::new` differs for non-ASCII text
+/// Produces the same representation as `Utf32String::from` (and as the
+/// haystacks `FuzzyIndex` stores): ASCII text as bytes, anything else as the
+/// first codepoint of each grapheme. `Utf32Str::new` differs for non-ASCII text
 /// whose graphemes all start with an ASCII character (e.g. NFD `école`): it
 /// returns the raw UTF-8 bytes, so positions and scores would count the
 /// bytes of combining marks.
@@ -370,16 +384,28 @@ pub fn utf32_haystack<'a>(s: &'a str, buf: &'a mut Vec<char>) -> Utf32Str<'a> {
 
 // ─── Search ─────────────────────────────────────────────────────────────────
 
+/// Haystack of an item stored in an index: `None` for ASCII items, which
+/// nucleo matches as their own bytes, otherwise the first codepoint of each
+/// grapheme (exactly what [`utf32_haystack`] and `Utf32String::from`
+/// produce).
+///
+/// Indexes keep their items as `String`s anyway, so storing only the
+/// non-ASCII haystacks avoids keeping a second copy of every ASCII item.
+pub(crate) fn index_haystack(item: &str) -> Option<Box<[char]>> {
+    (!item.is_ascii()).then(|| chars::graphemes(item).collect())
+}
+
 /// The items a search runs over.
 #[derive(Clone, Copy)]
 pub(crate) enum Corpus<'a> {
     /// Plain strings (standalone `search`), converted to haystacks on the fly.
     Strings(&'a [String]),
-    /// Pre-converted haystacks and character masks (`FuzzyIndex`); items
-    /// whose mask lacks a bit of the query's mask are never scored.
+    /// An index (`FuzzyIndex`): items with their pre-converted haystacks (see
+    /// [`index_haystack`]) and character masks; items whose mask lacks a bit
+    /// of the query's mask are never scored.
     Indexed {
         items: &'a [String],
-        haystacks: &'a [Utf32String],
+        haystacks: &'a [Option<Box<[char]>>],
         char_masks: &'a [u64],
     },
 }
@@ -391,13 +417,22 @@ impl<'a> Corpus<'a> {
         }
     }
 
+    #[inline]
     fn haystack<'b>(self, index: usize, buf: &'b mut Vec<char>) -> Utf32Str<'b>
     where
         'a: 'b,
     {
         match self {
             Corpus::Strings(items) => utf32_haystack(&items[index], buf),
-            Corpus::Indexed { haystacks, .. } => haystacks[index].slice(..),
+            Corpus::Indexed {
+                items, haystacks, ..
+            } => match &haystacks[index] {
+                Some(chars) => Utf32Str::Unicode(chars),
+                None => {
+                    debug_assert!(items[index].is_ascii());
+                    Utf32Str::Ascii(items[index].as_bytes())
+                }
+            },
         }
     }
 }
@@ -428,12 +463,295 @@ pub(crate) struct SearchParams {
     pub include_positions: bool,
 }
 
+/// Number of items a search pass times to estimate its cost (native builds
+/// only).
+#[cfg(not(target_family = "wasm"))]
+const PARALLEL_SAMPLE: usize = 64;
+
+/// Smallest input a search pass considers splitting across threads (native
+/// builds only).
+#[cfg(not(target_family = "wasm"))]
+const PARALLEL_MIN_LEN: usize = 1024;
+
+/// Estimated work, in nanoseconds, above which a search pass is split across
+/// threads (native builds only; WebAssembly builds always search on the
+/// calling thread).
+///
+/// The cost of scoring an item varies by two orders of magnitude with the
+/// item's length and content and with the query, so neither the number of
+/// items nor their total length predicts whether parallelism pays off. Each
+/// pass over at least [`PARALLEL_MIN_LEN`] items therefore first times
+/// [`PARALLEL_SAMPLE`] items spread evenly over its input, and only hands the
+/// input to rayon's thread pool when the whole pass would take longer than
+/// this on the calling thread.
+///
+/// Parallel and sequential passes return identical results: chunk outputs are
+/// concatenated in input order, and matches are ranked with the same total
+/// order either way. The `RAYON_NUM_THREADS` environment variable caps the
+/// number of threads (`RAYON_NUM_THREADS=1` disables parallel searching).
+#[cfg(not(target_family = "wasm"))]
+const PARALLEL_MIN_NANOS: u128 = 250_000;
+
+/// Run `work` over `input`, returning the concatenation of its outputs.
+///
+/// `work(chunk, out)` must append the outputs for `chunk` to `out` in order.
+/// On native targets, inputs that are expensive enough are split across
+/// threads (see [`PARALLEL_MIN_NANOS`]); the result is the same either way.
+fn split_work<T: Copy + Sync, R: Send>(
+    input: &[T],
+    work: impl Fn(&[T], &mut Vec<R>) + Sync,
+) -> Vec<R> {
+    let mut out = Vec::new();
+    #[cfg(not(target_family = "wasm"))]
+    if input.len() >= PARALLEL_MIN_LEN && parallel::available() {
+        // Time an evenly spread sample: inputs are often far from uniform
+        // (sorted lists, short names first, ...). Its outputs are discarded.
+        let stride = input.len() / PARALLEL_SAMPLE;
+        let sample: Vec<T> = input.iter().step_by(stride).copied().collect();
+        let start = std::time::Instant::now();
+        work(&sample, &mut out);
+        let estimate = start.elapsed().as_nanos() * input.len() as u128 / sample.len() as u128;
+        out.clear();
+        if estimate >= PARALLEL_MIN_NANOS {
+            parallel::extend(input, &work, &mut out);
+            return out;
+        }
+    }
+    work(input, &mut out);
+    out
+}
+
+/// Score the items at `indices`, appending those scoring at or above
+/// `threshold` to `out` in the order of `indices`.
+fn score_items(
+    plan: &QueryPlan,
+    corpus: Corpus<'_>,
+    threshold: f64,
+    indices: &[u32],
+    out: &mut Vec<(u32, f64)>,
+) {
+    with_matcher(|matcher| {
+        let mut buf = Vec::new();
+        for &index in indices {
+            let haystack = corpus.haystack(index as usize, &mut buf);
+            if let Some(raw_score) = plan.pattern.score(haystack, matcher) {
+                let score = plan.normalize(raw_score);
+                if score >= threshold {
+                    out.push((index, score));
+                }
+            }
+        }
+    });
+}
+
+/// Ascending indices of the items whose character mask contains every bit of
+/// `query_mask`.
+fn mask_survivors(char_masks: &[u64], query_mask: u64) -> Vec<u32> {
+    char_masks
+        .iter()
+        .enumerate()
+        .filter(|&(_, &mask)| mask & query_mask == query_mask)
+        .map(|(index, _)| index as u32)
+        .collect()
+}
+
+/// Pass 1 of a search: `(index, score)` of every item scoring at or above
+/// `threshold`, in ascending index order.
+///
+/// When `candidates` is set, only those items (ascending indices) are scored.
+fn score_corpus(
+    plan: &QueryPlan,
+    corpus: Corpus<'_>,
+    candidates: Option<&[u32]>,
+    threshold: f64,
+) -> Vec<(u32, f64)> {
+    let query_mask = plan.char_mask;
+    // The items to score: those whose character mask contains the query's.
+    let to_score: Cow<'_, [u32]> = match (corpus, candidates) {
+        (Corpus::Indexed { char_masks, .. }, None) => {
+            Cow::Owned(mask_survivors(char_masks, query_mask))
+        }
+        (Corpus::Indexed { char_masks, .. }, Some(candidates)) => Cow::Owned(
+            candidates
+                .iter()
+                .copied()
+                .filter(|&index| char_masks[index as usize] & query_mask == query_mask)
+                .collect(),
+        ),
+        (Corpus::Strings(_), Some(candidates)) => Cow::Borrowed(candidates),
+        (Corpus::Strings(items), None) => Cow::Owned((0..items.len() as u32).collect()),
+    };
+    split_work(&to_score, |indices, out| {
+        score_items(plan, corpus, threshold, indices, out);
+    })
+}
+
+/// Pass 2 of a search: turn ranked `(index, score)` pairs into matches,
+/// computing positions and match types when requested.
+fn rank_matches(
+    plan: &QueryPlan,
+    corpus: Corpus<'_>,
+    scored: &[(u32, f64)],
+    include_positions: bool,
+) -> Vec<RankedMatch> {
+    if !include_positions {
+        return scored
+            .iter()
+            .map(|&(index, score)| RankedMatch {
+                index,
+                score,
+                positions: Vec::new(),
+                match_type: None,
+            })
+            .collect();
+    }
+    split_work(scored, |scored, out| {
+        matches_with_positions(plan, corpus, scored, out);
+    })
+}
+
+/// Append the matches of `scored` with their positions and match types to
+/// `out`, in the order of `scored`.
+fn matches_with_positions(
+    plan: &QueryPlan,
+    corpus: Corpus<'_>,
+    scored: &[(u32, f64)],
+    out: &mut Vec<RankedMatch>,
+) {
+    with_matcher(|matcher| {
+        let mut buf = Vec::new();
+        out.extend(scored.iter().map(|&(index, score)| {
+            let haystack = corpus.haystack(index as usize, &mut buf);
+            let mut positions = Vec::new();
+            plan.pattern.indices(haystack, matcher, &mut positions);
+            positions.sort_unstable();
+            positions.dedup();
+            let match_type = classify_match(&positions, haystack.len());
+            RankedMatch {
+                index,
+                score,
+                positions,
+                match_type: Some(match_type),
+            }
+        }));
+    });
+}
+
+/// Rayon-based execution of the parallel search passes (native builds only).
+#[cfg(not(target_family = "wasm"))]
+mod parallel {
+    use std::sync::OnceLock;
+
+    use rayon::prelude::*;
+    use rayon::{ThreadPool, ThreadPoolBuilder};
+
+    /// The thread pool parallel searches run on, created on first use.
+    ///
+    /// It is separate from rayon's global pool so that the host application's
+    /// own use of rayon is unaffected, and a failure to start threads only
+    /// disables parallel searching. Its size follows rayon's defaults: the
+    /// `RAYON_NUM_THREADS` environment variable, else the number of CPUs.
+    fn pool() -> Option<&'static ThreadPool> {
+        static POOL: OnceLock<Option<ThreadPool>> = OnceLock::new();
+        POOL.get_or_init(|| {
+            ThreadPoolBuilder::new()
+                .thread_name(|i| format!("rapid-fuzzy-search-{i}"))
+                .build()
+                .ok()
+                .filter(|pool| pool.current_num_threads() > 1)
+        })
+        .as_ref()
+    }
+
+    /// Whether more than one thread is available for parallel work.
+    pub(super) fn available() -> bool {
+        pool().is_some()
+    }
+
+    /// Run `work` over chunks of `input` in parallel, appending the outputs
+    /// to `out` in input order.
+    ///
+    /// The input is split into several chunks per thread so that work
+    /// stealing evens out items of very different cost.
+    pub(super) fn extend<T: Sync, R: Send>(
+        input: &[T],
+        work: &(impl Fn(&[T], &mut Vec<R>) + Sync),
+        out: &mut Vec<R>,
+    ) {
+        let Some(pool) = pool() else {
+            work(input, out);
+            return;
+        };
+        let chunk_len = input
+            .len()
+            .div_ceil(pool.current_num_threads() * 8)
+            .max(super::PARALLEL_MIN_LEN / 4);
+        let chunks: Vec<Vec<R>> = pool.install(|| {
+            input
+                .par_chunks(chunk_len)
+                .map(|chunk| {
+                    let mut chunk_out = Vec::new();
+                    work(chunk, &mut chunk_out);
+                    chunk_out
+                })
+                .collect()
+        });
+        out.reserve(chunks.iter().map(Vec::len).sum());
+        for chunk_out in chunks {
+            out.extend(chunk_out);
+        }
+    }
+
+    /// Sort `keys` in parallel.
+    pub(super) fn sort(keys: &mut [u128]) {
+        match pool() {
+            Some(pool) => pool.install(|| keys.par_sort_unstable()),
+            None => keys.sort_unstable(),
+        }
+    }
+}
+
+/// Sort key of a match: score descending, then item length ascending, then
+/// index ascending.
+///
+/// Scores are finite and non-negative, so the order of their bit patterns is
+/// their numeric order; inverting the bits makes higher scores sort first.
+/// Comparing keys is much cheaper than comparing scores and looking up item
+/// lengths, which dominated the ranking of large result sets. (Lengths
+/// saturate at 4 GiB, beyond the longest string JavaScript can create.)
+#[inline]
+fn rank_key(index: u32, score: f64, item_len: usize) -> u128 {
+    debug_assert!(score.is_finite() && score.is_sign_positive());
+    let len = u32::try_from(item_len).unwrap_or(u32::MAX);
+    (u128::from(!score.to_bits()) << 64) | (u128::from(len) << 32) | u128::from(index)
+}
+
+/// The `(index, score)` a [`rank_key`] was built from.
+#[inline]
+fn decode_rank_key(key: u128) -> (u32, f64) {
+    (key as u32, f64::from_bits(!((key >> 64) as u64)))
+}
+
+/// Sort rank keys ascending (best match first).
+fn sort_keys(keys: &mut [u128]) {
+    #[cfg(not(target_family = "wasm"))]
+    if keys.len() >= PARALLEL_MIN_SORT {
+        parallel::sort(keys);
+        return;
+    }
+    keys.sort_unstable();
+}
+
+/// Number of matches above which they are ranked in parallel (native builds
+/// only). Keys are distinct, so the result does not depend on the algorithm.
+#[cfg(not(target_family = "wasm"))]
+const PARALLEL_MIN_SORT: usize = 32_768;
+
 /// The search algorithm shared by standalone search and `FuzzyIndex`.
 ///
 /// When `candidates` is set, only those items (ascending indices) are scored.
 pub(crate) fn search_core(
     plan: &QueryPlan,
-    matcher: &mut Matcher,
     corpus: Corpus<'_>,
     candidates: Option<&[u32]>,
     params: SearchParams,
@@ -445,40 +763,9 @@ pub(crate) fn search_core(
         include_positions,
     } = params;
     let items = corpus.items();
-    let threshold = min_score.unwrap_or(0.0);
-    let mut buf = Vec::new();
 
     // Pass 1: score items, keeping only (index, score) — no String cloning.
-    let mut scored: Vec<(u32, f64)> = Vec::new();
-    let mut score_item = |index: u32| {
-        let haystack = corpus.haystack(index as usize, &mut buf);
-        if let Some(raw_score) = plan.pattern.score(haystack, matcher) {
-            let score = plan.normalize(raw_score);
-            if score >= threshold {
-                scored.push((index, score));
-            }
-        }
-    };
-    let query_mask = plan.char_mask;
-    match (corpus, candidates) {
-        (Corpus::Indexed { char_masks, .. }, None) => {
-            // A tight loop over the masks: they usually reject most items.
-            for (index, &mask) in char_masks.iter().enumerate() {
-                if mask & query_mask == query_mask {
-                    score_item(index as u32);
-                }
-            }
-        }
-        (Corpus::Indexed { char_masks, .. }, Some(candidates)) => {
-            for &index in candidates {
-                if char_masks[index as usize] & query_mask == query_mask {
-                    score_item(index);
-                }
-            }
-        }
-        (Corpus::Strings(_), Some(candidates)) => candidates.iter().for_each(|&i| score_item(i)),
-        (Corpus::Strings(items), None) => (0..items.len() as u32).for_each(score_item),
-    }
+    let scored = score_corpus(plan, corpus, candidates, min_score.unwrap_or(0.0));
 
     // Matching indices for the incremental cache, only when the match set is
     // meaningfully smaller than the dataset: when most items match (e.g.
@@ -486,49 +773,30 @@ pub(crate) fn search_core(
     let all_matching = (collect_matching && scored.len() < items.len() / 2)
         .then(|| scored.iter().map(|&(index, _)| index).collect());
 
-    // Sort by score descending, with shorter items first as tiebreaker,
-    // then by original index for fully deterministic ordering.
-    let cmp = |a: &(u32, f64), b: &(u32, f64)| {
-        b.1.partial_cmp(&a.1)
-            .unwrap_or(Ordering::Equal)
-            .then_with(|| items[a.0 as usize].len().cmp(&items[b.0 as usize].len()))
-            .then_with(|| a.0.cmp(&b.0))
-    };
+    // Rank by score descending, with shorter items first as tiebreaker,
+    // then by original index for fully deterministic ordering. Every match
+    // gets a distinct sort key, so the order is total and independent of the
+    // sorting algorithm.
+    let mut keys: Vec<u128> = scored
+        .iter()
+        .map(|&(index, score)| rank_key(index, score, items[index as usize].len()))
+        .collect();
+    drop(scored);
 
     // Top-k selection: quickselect O(n) + sort O(k log k) instead of a full
     // O(n log n) sort when maxResults is set.
     if let Some(max) = max_results {
         let k = max as usize;
-        if scored.len() > k {
-            scored.select_nth_unstable_by(k, cmp);
-            scored.truncate(k);
+        if keys.len() > k {
+            keys.select_nth_unstable(k);
+            keys.truncate(k);
         }
     }
-    scored.sort_unstable_by(cmp);
+    sort_keys(&mut keys);
+    let scored: Vec<(u32, f64)> = keys.into_iter().map(decode_rank_key).collect();
 
     // Pass 2: positions only for the final top-k items.
-    let matches = scored
-        .into_iter()
-        .map(|(index, score)| {
-            let (positions, match_type) = if include_positions {
-                let haystack = corpus.haystack(index as usize, &mut buf);
-                let mut positions = Vec::new();
-                plan.pattern.indices(haystack, matcher, &mut positions);
-                positions.sort_unstable();
-                positions.dedup();
-                let match_type = classify_match(&positions, haystack.len());
-                (positions, Some(match_type))
-            } else {
-                (Vec::new(), None)
-            };
-            RankedMatch {
-                index,
-                score,
-                positions,
-                match_type,
-            }
-        })
-        .collect();
+    let matches = rank_matches(plan, corpus, &scored, include_positions);
 
     SearchOutcome {
         matches,
@@ -551,34 +819,30 @@ pub fn search_over_items(
     if items.is_empty() {
         return Vec::new();
     }
-    STANDALONE_MATCHER.with(|cell| {
-        let mut matcher = cell.borrow_mut();
-        let Some(plan) = QueryPlan::new(query, case_matching, &mut matcher) else {
-            return Vec::new();
-        };
-        search_core(
-            &plan,
-            &mut matcher,
-            Corpus::Strings(items),
-            None,
-            SearchParams {
-                max_results,
-                min_score,
-                include_positions,
-            },
-            false,
-        )
-        .matches
-        .into_iter()
-        .map(|m| SearchResult {
-            item: items[m.index as usize].clone(),
-            score: m.score,
-            index: m.index,
-            positions: m.positions,
-            match_type: m.match_type,
-        })
-        .collect()
+    let Some(plan) = with_matcher(|matcher| QueryPlan::new(query, case_matching, matcher)) else {
+        return Vec::new();
+    };
+    search_core(
+        &plan,
+        Corpus::Strings(items),
+        None,
+        SearchParams {
+            max_results,
+            min_score,
+            include_positions,
+        },
+        false,
+    )
+    .matches
+    .into_iter()
+    .map(|m| SearchResult {
+        item: items[m.index as usize].clone(),
+        score: m.score,
+        index: m.index,
+        positions: m.positions,
+        match_type: m.match_type,
     })
+    .collect()
 }
 
 /// Internal search implementation used by both the napi export and tests.

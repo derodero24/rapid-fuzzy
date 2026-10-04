@@ -1,11 +1,11 @@
 use std::cell::RefCell;
 
 use nucleo_matcher::pattern::CaseMatching;
-use nucleo_matcher::{Config, Matcher, Utf32String, chars};
+use nucleo_matcher::{Utf32Str, chars};
 
 use super::{
     Corpus, IndexSearchResult, QueryPlan, RankedMatch, SearchParams, SearchResult,
-    haystack_char_mask, normalize_query_whitespace, search_core,
+    haystack_char_mask, index_haystack, normalize_query_whitespace, search_core, with_matcher,
 };
 
 /// Matches of the last unfiltered search, reused to narrow the next one.
@@ -43,6 +43,12 @@ fn refines(old: &str, new: &str) -> bool {
             .all(|c| c.is_ascii() || chars::normalize(c) == c)
 }
 
+/// Heap bytes owned by one item: its string and, for non-ASCII items, its
+/// haystack.
+fn item_heap_bytes(item: &String, haystack: Option<&[char]>) -> usize {
+    item.capacity() + haystack.map_or(0, size_of_val)
+}
+
 /// Core state and logic for a persistent fuzzy search index.
 ///
 /// This struct contains all platform-independent state and methods.
@@ -51,15 +57,22 @@ fn refines(old: &str, new: &str) -> bool {
 /// Searches return exactly what the standalone `search` returns for the same
 /// items; the index only avoids work (pre-converted haystacks, a character
 /// mask pre-filter and an incremental cache for type-ahead queries).
+///
+/// The index owns no nucleo matcher (searches use the shared per-thread one,
+/// see [`with_matcher`]), so [`destroy`](Self::destroy) frees all of its heap
+/// memory.
 pub struct FuzzyIndexCore {
     items: Vec<String>,
-    haystacks: Vec<Utf32String>,
+    /// Haystack of every non-ASCII item; `None` for ASCII items, which are
+    /// matched as their own bytes instead of being stored twice.
+    haystacks: Vec<Option<Box<[char]>>>,
     char_masks: Vec<u64>,
     /// Union of the character masks of every item ever added since the last
     /// `destroy` (removals do not clear bits, so it may over-approximate).
     /// A query needing a character no item has cannot match anything.
     union_mask: u64,
-    matcher: RefCell<Matcher>,
+    /// Sum of [`item_heap_bytes`] over all items, for [`Self::heap_size`].
+    item_bytes: usize,
     cache: RefCell<Option<SearchCache>>,
 }
 
@@ -68,10 +81,10 @@ impl FuzzyIndexCore {
     pub fn new(items: Vec<String>) -> Self {
         let mut index = Self {
             items: Vec::new(),
-            haystacks: Vec::with_capacity(items.len()),
-            char_masks: Vec::with_capacity(items.len()),
+            haystacks: Vec::new(),
+            char_masks: Vec::new(),
             union_mask: 0,
-            matcher: RefCell::new(Matcher::new(Config::DEFAULT)),
+            item_bytes: 0,
             cache: RefCell::new(None),
         };
         index.extend(items);
@@ -80,9 +93,22 @@ impl FuzzyIndexCore {
 
     /// Append items, computing their haystacks and character masks.
     fn extend(&mut self, items: Vec<String>) {
+        // A new index gets exactly the capacity it needs; additions grow
+        // geometrically so that repeated `add` calls stay amortized O(1).
+        if self.items.is_empty() {
+            self.haystacks.reserve_exact(items.len());
+            self.char_masks.reserve_exact(items.len());
+        } else {
+            self.haystacks.reserve(items.len());
+            self.char_masks.reserve(items.len());
+        }
         for item in &items {
-            let haystack = Utf32String::from(item.as_str());
-            let mask = haystack_char_mask(haystack.slice(..));
+            let haystack = index_haystack(item);
+            let mask = haystack_char_mask(match &haystack {
+                Some(chars) => Utf32Str::Unicode(chars),
+                None => Utf32Str::Ascii(item.as_bytes()),
+            });
+            self.item_bytes += item_heap_bytes(item, haystack.as_deref());
             self.union_mask |= mask;
             self.char_masks.push(mask);
             self.haystacks.push(haystack);
@@ -104,6 +130,19 @@ impl FuzzyIndexCore {
         &self.items
     }
 
+    /// Approximate number of heap bytes the index owns: its items, their
+    /// pre-computed search data and the vectors holding them. The transient
+    /// incremental-search cache is not included.
+    ///
+    /// Bindings report this to their JavaScript engine so that its garbage
+    /// collector accounts for the index's native memory.
+    pub fn heap_size(&self) -> usize {
+        self.item_bytes
+            + self.items.capacity() * size_of::<String>()
+            + self.haystacks.capacity() * size_of::<Option<Box<[char]>>>()
+            + self.char_masks.capacity() * size_of::<u64>()
+    }
+
     /// Run a search, narrowing it with the incremental cache when sound.
     fn search_ranked(
         &self,
@@ -112,8 +151,8 @@ impl FuzzyIndexCore {
         case_matching: CaseMatching,
     ) -> Vec<RankedMatch> {
         let query = normalize_query_whitespace(query);
-        let mut matcher = self.matcher.borrow_mut();
-        let Some(plan) = QueryPlan::new(&query, case_matching, &mut matcher) else {
+        let Some(plan) = with_matcher(|matcher| QueryPlan::new(&query, case_matching, matcher))
+        else {
             return Vec::new();
         };
         if self.union_mask & plan.char_mask != plan.char_mask {
@@ -140,7 +179,7 @@ impl FuzzyIndexCore {
                         && refines(&cache.query, &query)
                 })
                 .map(|cache| cache.matching.as_slice());
-            search_core(&plan, &mut matcher, corpus, candidates, params, unfiltered)
+            search_core(&plan, corpus, candidates, params, unfiltered)
         };
 
         if unfiltered {
@@ -223,9 +262,10 @@ impl FuzzyIndexCore {
     pub fn remove(&mut self, index: u32) -> bool {
         let idx = index as usize;
         if idx < self.items.len() {
-            self.items.swap_remove(idx);
-            self.haystacks.swap_remove(idx);
+            let item = self.items.swap_remove(idx);
+            let haystack = self.haystacks.swap_remove(idx);
             self.char_masks.swap_remove(idx);
+            self.item_bytes -= item_heap_bytes(&item, haystack.as_deref());
             self.invalidate_cache();
             true
         } else {
@@ -233,12 +273,14 @@ impl FuzzyIndexCore {
         }
     }
 
-    /// Free the internal data. After calling this, the index is empty.
+    /// Free the internal data. After calling this, the index is empty and
+    /// owns no heap memory.
     pub fn destroy(&mut self) {
         self.items = Vec::new();
         self.haystacks = Vec::new();
         self.char_masks = Vec::new();
         self.union_mask = 0;
+        self.item_bytes = 0;
         self.invalidate_cache();
     }
 
