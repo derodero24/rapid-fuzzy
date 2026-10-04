@@ -310,7 +310,7 @@ jobs:
       - name: Build wasm-bindgen
         run: pnpm run build:wasm-bindgen
       - name: Verify generated wasm-bindgen glue is up to date
-        run: git diff --exit-code rapid-fuzzy-wasm-bindgen.js rapid-fuzzy-wasm-bindgen_bg.js rapid-fuzzy-wasm-bindgen.d.ts rapid-fuzzy-wasm-bindgen_bg.wasm.d.ts
+        run: git diff --exit-code rapid-fuzzy-wasm-bindgen.mjs rapid-fuzzy-wasm-bindgen.d.mts browser.mjs browser.d.mts browser-api.mjs workerd.mjs highlight.browser.mjs objects.browser.mjs objects.browser.d.mts
       - name: Upload wasm-bindgen artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -361,11 +361,15 @@ jobs:
         run: pnpm napi artifacts --output-dir artifacts
 
       # `napi artifacts` rewrites the root loader files from its templates,
-      # which drops the wasm-bindgen browser entry and the appended JS
-      # utilities. The committed files are the source of truth (CI verifies
-      # they match the build output), so restore them before publishing.
+      # which drops the appended JS utilities, and writes a WASI browser.js
+      # loader. The committed files are the source of truth (CI verifies they
+      # match the build output), so restore them before publishing; the
+      # package's browser entry is the committed browser.mjs.
       - name: Restore committed binding files
-        run: git checkout -- index.js index.d.ts browser.js
+        run: |
+          git checkout -- index.js index.d.ts
+          rm -f browser.js
+          git diff --exit-code browser.mjs browser.d.mts browser-api.mjs workerd.mjs highlight.browser.mjs objects.browser.mjs objects.browser.d.mts
 
       # The binaries statically link third-party code, so every package ships
       # the notices next to its LICENSE (committed in each npm/* directory).

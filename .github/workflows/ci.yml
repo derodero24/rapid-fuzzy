@@ -113,7 +113,7 @@ jobs:
           done
       - run: pnpm run build
       - name: Verify generated binding files are up to date
-        run: git diff --exit-code index.js index.d.ts browser.js
+        run: git diff --exit-code index.js index.d.ts browser.mjs browser.d.mts browser-api.mjs workerd.mjs highlight.browser.mjs objects.browser.mjs objects.browser.d.mts
       - run: pnpm run typecheck
       - run: pnpm run publint
 
@@ -436,12 +436,12 @@ jobs:
         run: pnpm run build:wasm-bindgen
       # Same check as release.yml, so stale glue fails the PR instead of the release.
       - name: Verify generated wasm-bindgen glue is up to date
-        run: git diff --exit-code rapid-fuzzy-wasm-bindgen.js rapid-fuzzy-wasm-bindgen_bg.js rapid-fuzzy-wasm-bindgen.d.ts rapid-fuzzy-wasm-bindgen_bg.wasm.d.ts
+        run: git diff --exit-code rapid-fuzzy-wasm-bindgen.mjs rapid-fuzzy-wasm-bindgen.d.mts browser.mjs browser.d.mts browser-api.mjs workerd.mjs highlight.browser.mjs objects.browser.mjs objects.browser.d.mts
       # The wasm-bindgen spec compares results against the native binding.
       - name: Build native binding (debug)
         run: pnpm run build:debug && node scripts/patch-binding.js
       - name: Test wasm-bindgen build
-        run: pnpm exec vitest run __test__/wasm-bindgen.spec.ts
+        run: pnpm exec vitest run __test__/wasm-bindgen.spec.ts __test__/browser-packaging.spec.ts
         env:
           RAPID_FUZZY_REQUIRE_WASM_BINDGEN: '1'
       - name: Upload wasm-bindgen artifact
