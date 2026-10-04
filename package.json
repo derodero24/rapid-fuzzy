@@ -1,7 +1,7 @@
 {
   "name": "rapid-fuzzy",
   "version": "2.1.1",
-  "description": "Rust-powered fuzzy search and string distance for JavaScript/TypeScript. Up to 15,000x faster than fuse.js with indexed mode.",
+  "description": "Rust-powered fuzzy search and string distance for JavaScript/TypeScript, with native Node.js bindings and a WebAssembly build for browsers, Deno and Workers.",
   "license": "MIT",
   "author": "derodero24",
   "repository": {
