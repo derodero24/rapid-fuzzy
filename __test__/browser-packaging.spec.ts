@@ -94,7 +94,9 @@ function nodeResolve(specifier: string, conditions: string[], mode: 'import' | '
     ],
     { cwd: ROOT, encoding: 'utf8' },
   );
-  return resolved.slice(resolved.lastIndexOf('/') + 1);
+  // require.resolve returns a native path (backslashes on Windows);
+  // import.meta.resolve returns a file: URL.
+  return resolved.split(/[\\/]/).at(-1) ?? resolved;
 }
 
 describe('package.json', () => {
