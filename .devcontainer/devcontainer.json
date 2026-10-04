@@ -6,7 +6,7 @@
       "version": "24"
     }
   },
-  "postCreateCommand": "corepack enable && pnpm install --ignore-scripts && pnpm run build",
+  "postCreateCommand": "corepack enable && pnpm install --ignore-scripts && pnpm exec lefthook install && cargo install --locked cargo-deny && pnpm run build",
   "customizations": {
     "vscode": {
       "extensions": ["rust-lang.rust-analyzer", "biomejs.biome"]

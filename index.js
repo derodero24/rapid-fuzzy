@@ -705,68 +705,78 @@ module.exports.closest = nativeBinding.closest
 module.exports.damerauLevenshtein = nativeBinding.damerauLevenshtein
 module.exports.damerauLevenshteinBatch = nativeBinding.damerauLevenshteinBatch
 module.exports.damerauLevenshteinMany = nativeBinding.damerauLevenshteinMany
+module.exports.damerauLevenshteinManyU32 = nativeBinding.damerauLevenshteinManyU32
 module.exports.hamming = nativeBinding.hamming
 module.exports.hammingBatch = nativeBinding.hammingBatch
 module.exports.hammingMany = nativeBinding.hammingMany
+module.exports.hammingManyU32 = nativeBinding.hammingManyU32
 module.exports.indel = nativeBinding.indel
 module.exports.indelBatch = nativeBinding.indelBatch
 module.exports.indelMany = nativeBinding.indelMany
+module.exports.indelManyU32 = nativeBinding.indelManyU32
 module.exports.jaro = nativeBinding.jaro
 module.exports.jaroBatch = nativeBinding.jaroBatch
 module.exports.jaroMany = nativeBinding.jaroMany
+module.exports.jaroManyF64 = nativeBinding.jaroManyF64
 module.exports.jaroWinkler = nativeBinding.jaroWinkler
 module.exports.jaroWinklerBatch = nativeBinding.jaroWinklerBatch
 module.exports.jaroWinklerMany = nativeBinding.jaroWinklerMany
+module.exports.jaroWinklerManyF64 = nativeBinding.jaroWinklerManyF64
 module.exports.levenshtein = nativeBinding.levenshtein
 module.exports.levenshteinBatch = nativeBinding.levenshteinBatch
 module.exports.levenshteinMany = nativeBinding.levenshteinMany
+module.exports.levenshteinManyU32 = nativeBinding.levenshteinManyU32
 module.exports.MatchType = nativeBinding.MatchType
 module.exports.normalizedHamming = nativeBinding.normalizedHamming
 module.exports.normalizedHammingBatch = nativeBinding.normalizedHammingBatch
 module.exports.normalizedHammingMany = nativeBinding.normalizedHammingMany
+module.exports.normalizedHammingManyF64 = nativeBinding.normalizedHammingManyF64
 module.exports.normalizedIndel = nativeBinding.normalizedIndel
 module.exports.normalizedIndelBatch = nativeBinding.normalizedIndelBatch
 module.exports.normalizedIndelMany = nativeBinding.normalizedIndelMany
+module.exports.normalizedIndelManyF64 = nativeBinding.normalizedIndelManyF64
 module.exports.normalizedLevenshtein = nativeBinding.normalizedLevenshtein
 module.exports.normalizedLevenshteinBatch = nativeBinding.normalizedLevenshteinBatch
 module.exports.normalizedLevenshteinMany = nativeBinding.normalizedLevenshteinMany
+module.exports.normalizedLevenshteinManyF64 = nativeBinding.normalizedLevenshteinManyF64
 module.exports.partialRatio = nativeBinding.partialRatio
 module.exports.partialRatioBatch = nativeBinding.partialRatioBatch
 module.exports.partialRatioMany = nativeBinding.partialRatioMany
+module.exports.partialRatioManyF64 = nativeBinding.partialRatioManyF64
 module.exports.search = nativeBinding.search
 module.exports.searchKeys = nativeBinding.searchKeys
 module.exports.sorensenDice = nativeBinding.sorensenDice
 module.exports.sorensenDiceBatch = nativeBinding.sorensenDiceBatch
 module.exports.sorensenDiceMany = nativeBinding.sorensenDiceMany
+module.exports.sorensenDiceManyF64 = nativeBinding.sorensenDiceManyF64
 module.exports.tokenSetRatio = nativeBinding.tokenSetRatio
 module.exports.tokenSetRatioBatch = nativeBinding.tokenSetRatioBatch
 module.exports.tokenSetRatioMany = nativeBinding.tokenSetRatioMany
+module.exports.tokenSetRatioManyF64 = nativeBinding.tokenSetRatioManyF64
 module.exports.tokenSortRatio = nativeBinding.tokenSortRatio
 module.exports.tokenSortRatioBatch = nativeBinding.tokenSortRatioBatch
 module.exports.tokenSortRatioMany = nativeBinding.tokenSortRatioMany
+module.exports.tokenSortRatioManyF64 = nativeBinding.tokenSortRatioManyF64
 module.exports.weightedRatio = nativeBinding.weightedRatio
 module.exports.weightedRatioBatch = nativeBinding.weightedRatioBatch
 module.exports.weightedRatioMany = nativeBinding.weightedRatioMany
+module.exports.weightedRatioManyF64 = nativeBinding.weightedRatioManyF64
 
 // --- JS utilities (appended by scripts/patch-binding.js) ---
 const _hl = require('./highlight.js');
 module.exports.highlight = _hl.highlight;
 module.exports.highlightRanges = _hl.highlightRanges;
-// TypedArray variants — return Uint32Array / Float64Array instead of Array<number>
-module.exports.levenshteinManyU32 = (r, c, d) => new Uint32Array(nativeBinding.levenshteinMany(r, c, d));
-module.exports.damerauLevenshteinManyU32 = (r, c, d) => new Uint32Array(nativeBinding.damerauLevenshteinMany(r, c, d));
-module.exports.indelManyU32 = (r, c, d) => new Uint32Array(nativeBinding.indelMany(r, c, d));
-module.exports.jaroManyF64 = (r, c, s) => new Float64Array(nativeBinding.jaroMany(r, c, s));
-module.exports.jaroWinklerManyF64 = (r, c, s) => new Float64Array(nativeBinding.jaroWinklerMany(r, c, s));
-module.exports.sorensenDiceManyF64 = (r, c, s) => new Float64Array(nativeBinding.sorensenDiceMany(r, c, s));
-module.exports.normalizedLevenshteinManyF64 = (r, c, s) => new Float64Array(nativeBinding.normalizedLevenshteinMany(r, c, s));
-module.exports.normalizedIndelManyF64 = (r, c, s) => new Float64Array(nativeBinding.normalizedIndelMany(r, c, s));
-module.exports.tokenSortRatioManyF64 = (r, c, s) => new Float64Array(nativeBinding.tokenSortRatioMany(r, c, s));
-module.exports.tokenSetRatioManyF64 = (r, c, s) => new Float64Array(nativeBinding.tokenSetRatioMany(r, c, s));
-module.exports.partialRatioManyF64 = (r, c, s) => new Float64Array(nativeBinding.partialRatioMany(r, c, s));
-module.exports.weightedRatioManyF64 = (r, c, s) => new Float64Array(nativeBinding.weightedRatioMany(r, c, s));
-// hamming variants return null for length mismatches or filtered candidates;
-// the TypedArray cannot hold null, so those slots use a sentinel:
-//   hammingManyU32 -> 0xffffffff (4294967295), normalizedHammingManyF64 -> NaN.
-module.exports.hammingManyU32 = (r, c, d) => Uint32Array.from(nativeBinding.hammingMany(r, c, d), (v) => (v == null ? 0xffffffff : v));
-module.exports.normalizedHammingManyF64 = (r, c, s) => Float64Array.from(nativeBinding.normalizedHammingMany(r, c, s), (v) => (v == null ? Number.NaN : v));
+
+// --- JS wrappers (appended by scripts/patch-binding.js) ---
+// searchObjects / FuzzyObjectIndex live in objects.js, which requires this module:
+// resolve them on first access to avoid a require cycle. Assigning replaces the getter.
+for (const name of ['searchObjects', 'FuzzyObjectIndex']) {
+  Object.defineProperty(module.exports, name, {
+    enumerable: true,
+    configurable: true,
+    get: () => require('./objects.js')[name],
+    set: (value) => {
+      Object.defineProperty(module.exports, name, { value, writable: true, enumerable: true, configurable: true });
+    },
+  });
+}

@@ -1,3 +1,6 @@
+// Wrangler resolves rapid-fuzzy through its "workerd" export condition to the
+// WebAssembly build, bundling the .wasm as a precompiled module. No extra
+// configuration or compatibility flags are needed.
 import { closest, FuzzyIndex } from 'rapid-fuzzy';
 
 // Create the index once at module scope.

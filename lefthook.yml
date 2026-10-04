@@ -8,7 +8,7 @@ pre-commit:
     biome:
       run: pnpm exec biome check --staged --no-errors-on-unmatched
     rustfmt:
-      run: $HOME/.cargo/bin/cargo fmt -- --check
+      run: $HOME/.cargo/bin/cargo fmt --all -- --check
       glob: "*.rs"
 
 pre-push:
@@ -21,8 +21,8 @@ pre-push:
     test:
       run: pnpm test
     clippy:
-      run: $HOME/.cargo/bin/cargo clippy -- -W clippy::all
+      run: $HOME/.cargo/bin/cargo clippy --workspace --all-targets -- -D warnings
     cargo-test:
-      run: $HOME/.cargo/bin/cargo test
+      run: $HOME/.cargo/bin/cargo test --workspace
     cargo-deny:
       run: PATH="$HOME/.cargo/bin:$PATH" $HOME/.cargo/bin/cargo-deny check
