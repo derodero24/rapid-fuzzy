@@ -12,7 +12,7 @@ use std::cell::RefCell;
 use std::cmp::Ordering;
 
 use nucleo_matcher::pattern::{Atom, CaseMatching, Normalization, Pattern};
-use nucleo_matcher::{Config, Matcher, Utf32Str, Utf32String, chars};
+use nucleo_matcher::{Config, Matcher, Utf32Str, chars};
 
 /// Classification of how a query matched an item.
 ///
@@ -109,10 +109,25 @@ pub fn resolve_case_matching(is_case_sensitive: Option<bool>) -> CaseMatching {
 }
 
 thread_local! {
-    /// Reusable Matcher for standalone search/closest calls.
-    /// Avoids allocating internal scoring matrices on every invocation.
-    /// FuzzyIndex has its own Matcher, so this is only for the standalone path.
-    static STANDALONE_MATCHER: RefCell<Matcher> = RefCell::new(Matcher::new(Config::DEFAULT));
+    /// The nucleo `Matcher` of this thread, shared by every search running on
+    /// it: standalone `search`/`closest` and every `FuzzyIndex`.
+    ///
+    /// A matcher owns a ~130 KB scratch slab. Sharing one per thread instead
+    /// of allocating one per index keeps small indexes small, and freeing an
+    /// index frees all of its memory. Scores never depend on a matcher's
+    /// previous use: nucleo sets its configuration before every match.
+    static MATCHER: RefCell<Matcher> = RefCell::new(Matcher::new(Config::DEFAULT));
+}
+
+/// Run `f` with this thread's shared nucleo `Matcher`.
+///
+/// A re-entrant call, made while the shared matcher is in use, gets a
+/// temporary matcher instead of panicking.
+pub fn with_matcher<R>(f: impl FnOnce(&mut Matcher) -> R) -> R {
+    MATCHER.with(|cell| match cell.try_borrow_mut() {
+        Ok(mut matcher) => f(&mut matcher),
+        Err(_) => f(&mut Matcher::new(Config::DEFAULT)),
+    })
 }
 
 // ─── Query parsing ──────────────────────────────────────────────────────────
@@ -352,9 +367,9 @@ pub fn compute_query_mask(query: &str) -> u64 {
 
 /// Convert an item to the haystack nucleo matches against.
 ///
-/// Produces the same representation as `Utf32String::from` (which
-/// `FuzzyIndex` stores): ASCII text as bytes, anything else as the first
-/// codepoint of each grapheme. `Utf32Str::new` differs for non-ASCII text
+/// Produces the same representation as `Utf32String::from` (and as the
+/// haystacks `FuzzyIndex` stores): ASCII text as bytes, anything else as the
+/// first codepoint of each grapheme. `Utf32Str::new` differs for non-ASCII text
 /// whose graphemes all start with an ASCII character (e.g. NFD `école`): it
 /// returns the raw UTF-8 bytes, so positions and scores would count the
 /// bytes of combining marks.
@@ -370,16 +385,28 @@ pub fn utf32_haystack<'a>(s: &'a str, buf: &'a mut Vec<char>) -> Utf32Str<'a> {
 
 // ─── Search ─────────────────────────────────────────────────────────────────
 
+/// Haystack of an item stored in an index: `None` for ASCII items, which
+/// nucleo matches as their own bytes, otherwise the first codepoint of each
+/// grapheme (exactly what [`utf32_haystack`] and `Utf32String::from`
+/// produce).
+///
+/// Indexes keep their items as `String`s anyway, so storing only the
+/// non-ASCII haystacks avoids keeping a second copy of every ASCII item.
+pub(crate) fn index_haystack(item: &str) -> Option<Box<[char]>> {
+    (!item.is_ascii()).then(|| chars::graphemes(item).collect())
+}
+
 /// The items a search runs over.
 #[derive(Clone, Copy)]
 pub(crate) enum Corpus<'a> {
     /// Plain strings (standalone `search`), converted to haystacks on the fly.
     Strings(&'a [String]),
-    /// Pre-converted haystacks and character masks (`FuzzyIndex`); items
-    /// whose mask lacks a bit of the query's mask are never scored.
+    /// An index (`FuzzyIndex`): items with their pre-converted haystacks (see
+    /// [`index_haystack`]) and character masks; items whose mask lacks a bit
+    /// of the query's mask are never scored.
     Indexed {
         items: &'a [String],
-        haystacks: &'a [Utf32String],
+        haystacks: &'a [Option<Box<[char]>>],
         char_masks: &'a [u64],
     },
 }
@@ -391,13 +418,22 @@ impl<'a> Corpus<'a> {
         }
     }
 
+    #[inline]
     fn haystack<'b>(self, index: usize, buf: &'b mut Vec<char>) -> Utf32Str<'b>
     where
         'a: 'b,
     {
         match self {
             Corpus::Strings(items) => utf32_haystack(&items[index], buf),
-            Corpus::Indexed { haystacks, .. } => haystacks[index].slice(..),
+            Corpus::Indexed {
+                items, haystacks, ..
+            } => match &haystacks[index] {
+                Some(chars) => Utf32Str::Unicode(chars),
+                None => {
+                    debug_assert!(items[index].is_ascii());
+                    Utf32Str::Ascii(items[index].as_bytes())
+                }
+            },
         }
     }
 }
@@ -551,14 +587,13 @@ pub fn search_over_items(
     if items.is_empty() {
         return Vec::new();
     }
-    STANDALONE_MATCHER.with(|cell| {
-        let mut matcher = cell.borrow_mut();
-        let Some(plan) = QueryPlan::new(query, case_matching, &mut matcher) else {
+    with_matcher(|matcher| {
+        let Some(plan) = QueryPlan::new(query, case_matching, matcher) else {
             return Vec::new();
         };
         search_core(
             &plan,
-            &mut matcher,
+            matcher,
             Corpus::Strings(items),
             None,
             SearchParams {
