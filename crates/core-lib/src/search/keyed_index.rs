@@ -49,6 +49,23 @@ impl KeyedFuzzyIndexCore {
         })
     }
 
+    /// An index with no keys and no items.
+    ///
+    /// Before `destroy()` kept the key configuration, a destroyed index
+    /// serialized to a payload with zero keys. Loading such a payload gives
+    /// this state back: it is empty, searches return nothing, `add` rejects
+    /// any values, and it serializes to the same zero-key payload.
+    pub(crate) fn without_keys() -> Self {
+        Self {
+            key_texts: Vec::new(),
+            utf32_keys: Vec::new(),
+            key_char_masks: Vec::new(),
+            weights: Vec::new(),
+            total_weight: 0.0,
+            matcher: RefCell::new(Matcher::new(Config::DEFAULT)),
+        }
+    }
+
     /// Return the number of items in the index.
     pub fn size(&self) -> u32 {
         self.key_texts.first().map_or(0, |v| v.len() as u32)

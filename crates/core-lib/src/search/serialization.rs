@@ -80,6 +80,8 @@ pub fn serialize_keyed_index(index: &KeyedFuzzyIndexCore) -> Vec<u8> {
 /// Rebuild a [`KeyedFuzzyIndexCore`] from bytes produced by [`serialize_keyed_index`].
 ///
 /// Round-trips every state an index can be in, including a destroyed one.
+/// A payload with zero keys (what `destroy()` produced before it kept the
+/// key configuration) loads as an empty index without keys.
 ///
 /// # Errors
 ///
@@ -89,11 +91,9 @@ pub fn deserialize_keyed_index(bytes: &[u8]) -> Result<KeyedFuzzyIndexCore, Stri
     let (key_texts, weights) = deserialize_keyed(bytes, KEYED_INDEX_MAGIC)?;
 
     if key_texts.is_empty() {
-        // The constructor rejects zero keys, so the only index that
-        // serializes to zero keys is a destroyed one. Rebuild that state.
-        let mut index = KeyedFuzzyIndexCore::new(vec![Vec::new()], vec![1.0])?;
-        index.destroy();
-        return Ok(index);
+        // The constructor rejects zero keys. Only `destroy()` before it kept
+        // the key configuration produced this payload; rebuild that state.
+        return Ok(KeyedFuzzyIndexCore::without_keys());
     }
 
     // Same rules as `KeyedFuzzyIndexCore::new`, reported with the key index.

@@ -8,6 +8,7 @@
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
+use nucleo_matcher::pattern::CaseMatching;
 use rapid_fuzzy_core::search::serialization::{
     FUZZY_INDEX_ACCEPTED_MAGICS, FUZZY_INDEX_MAGIC, FUZZY_INDEX_WASM_MAGIC, KEYED_INDEX_MAGIC,
     SERIALIZE_VERSION, deserialize_fuzzy_index, deserialize_items, deserialize_keyed,
@@ -731,17 +732,41 @@ fn destroyed_keyed_index_restores_as_destroyed() {
     let mut index = keyed_index(&[&["a", "b"]], &[1.0]);
     index.destroy();
     let bytes = serialize_keyed_index(&index);
-    assert_eq!(bytes, keyed_payload(&[], &[]));
+    // destroy() keeps the key configuration: the payload has keys, no items.
+    let no_items: &[&str] = &[];
+    assert_eq!(bytes, keyed_payload(&[no_items], &[1.0]));
 
+    let mut restored = deserialize_keyed_index(&bytes).unwrap();
+    assert_eq!(restored.size(), 0);
+    assert_eq!(restored.weights(), index.weights());
+    // Behaves exactly like the destroyed original.
+    restored.add(strings(&["x"])).unwrap();
+    index.add(strings(&["x"])).unwrap();
+    assert_eq!(
+        serialize_keyed_index(&restored),
+        serialize_keyed_index(&index)
+    );
+}
+
+#[test]
+fn legacy_zero_key_payload_restores_as_destroyed() {
+    // Before destroy() kept the key configuration, a destroyed index
+    // serialized with zero keys (and its own deserializer rejected it).
+    let bytes = keyed_payload(&[], &[]);
     let mut restored = deserialize_keyed_index(&bytes).unwrap();
     assert_eq!(restored.size(), 0);
     assert!(restored.key_texts().is_empty());
     assert!(restored.weights().is_empty());
-    // Behaves exactly like the destroyed original.
+    assert!(
+        restored
+            .search("a", None, None, CaseMatching::Smart, true)
+            .is_empty()
+    );
     assert_eq!(
         restored.add(strings(&["x"])).unwrap_err(),
-        index.add(strings(&["x"])).unwrap_err()
+        "Expected 0 key values, got 1"
     );
+    assert_eq!(serialize_keyed_index(&restored), bytes);
 }
 
 #[test]
