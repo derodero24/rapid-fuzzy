@@ -6,13 +6,20 @@
   "prConcurrentLimit": 0,
   "ignoreDeps": ["string-similarity", "@types/string-similarity"],
   "lockFileMaintenance": {
-    "enabled": false
+    "enabled": true,
+    "automerge": true
   },
   "packageRules": [
     {
       "description": "Automerge non-major devDependency updates",
       "matchDepTypes": ["devDependencies"],
       "matchUpdateTypes": ["minor", "patch", "digest"],
+      "automerge": true
+    },
+    {
+      "description": "Automerge minor/patch updates of the pinned pnpm version (package.json packageManager)",
+      "matchDepTypes": ["packageManager"],
+      "matchUpdateTypes": ["minor", "patch"],
       "automerge": true
     },
     {
@@ -57,6 +64,15 @@
       "description": "Bump the biome.json $schema URL together with @biomejs/biome",
       "matchPackageNames": ["@biomejs/biome"],
       "groupName": "biome"
+    },
+    {
+      "description": "A binaryen bump must refresh the pinned archive checksum too (the command is allowed in .github/workflows/renovate.yml)",
+      "matchDepNames": ["WebAssembly/binaryen"],
+      "postUpgradeTasks": {
+        "commands": ["node .github/scripts/update-binaryen-sha256.cjs"],
+        "fileFilters": ["scripts/install-binaryen.sh"],
+        "executionMode": "update"
+      }
     }
   ],
   "customManagers": [
@@ -66,6 +82,7 @@
       "managerFilePatterns": ["/^biome\\.json$/"],
       "matchStrings": ["https://biomejs\\.dev/schemas/(?<currentValue>[^/]+)/schema\\.json"],
       "depNameTemplate": "@biomejs/biome",
+      "depTypeTemplate": "devDependencies",
       "datasourceTemplate": "npm"
     },
     {
@@ -76,6 +93,13 @@
       "depNameTemplate": "WebAssembly/binaryen",
       "datasourceTemplate": "github-releases",
       "versioningTemplate": "regex:^version_(?<major>\\d+)$"
+    },
+    {
+      "customType": "regex",
+      "description": "Tool versions installed with taiki-e/install-action in workflows",
+      "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.ya?ml$/"],
+      "matchStrings": ["tool: (?<depName>[a-z0-9-]+)@(?<currentValue>\\d+\\.\\d+\\.\\d+)"],
+      "datasourceTemplate": "crate"
     }
   ]
 }

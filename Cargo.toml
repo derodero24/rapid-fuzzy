@@ -4,7 +4,10 @@ resolver = "2"
 
 [workspace.package]
 edition = "2024"
-rust-version = "1.85"
+# Minimum supported Rust version. napi/napi-derive/napi-build 3.x and
+# libloading 0.9 require 1.88 (the code also uses let-chains, stable since
+# 1.88 in edition 2024). CI checks the workspace with exactly this toolchain.
+rust-version = "1.88"
 license = "MIT"
 repository = "https://github.com/derodero24/rapid-fuzzy"
 
@@ -21,8 +24,63 @@ rapidfuzz = "0.5"
 # Fuzzy matching (Helix editor's matcher, faster than fzf/skim)
 nucleo-matcher = "0.3"
 
+# Parallel scoring of large searches (native targets only)
+rayon = "1.11"
+
 [profile.release]
 codegen-units = 1
 lto = true
 opt-level = 3
 strip = "symbols"
+
+# Lints shared by every crate (`[lints] workspace = true`). CI runs
+# `cargo clippy --workspace --all-targets -- -D warnings`, so every "warn"
+# below fails CI. crates/wasm carries a copy of these tables (see the TODO
+# there); keep it in sync.
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+rust_2018_idioms = { level = "warn", priority = -1 }
+trivial_numeric_casts = "warn"
+unused_lifetimes = "warn"
+redundant_lifetimes = "warn"
+unit_bindings = "warn"
+non_ascii_idents = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+# Curated pedantic lints that catch real correctness/performance issues
+# without the noise of the whole group.
+cast_possible_wrap = "warn"
+checked_conversions = "warn"
+cloned_instead_of_copied = "warn"
+copy_iterator = "warn"
+implicit_clone = "warn"
+index_refutable_slice = "warn"
+inefficient_to_string = "warn"
+invalid_upcast_comparisons = "warn"
+iter_filter_is_ok = "warn"
+iter_filter_is_some = "warn"
+large_stack_arrays = "warn"
+large_types_passed_by_value = "warn"
+manual_is_variant_and = "warn"
+maybe_infinite_iter = "warn"
+mut_mut = "warn"
+naive_bytecount = "warn"
+option_option = "warn"
+ref_option = "warn"
+stable_sort_primitive = "warn"
+trivially_copy_pass_by_ref = "warn"
+unnecessary_box_returns = "warn"
+unnecessary_join = "warn"
+zero_sized_map_values = "warn"
+# Restriction lints: no leftover debugging or placeholder code, no writes to
+# the host process's stdout/stderr from library code (tests may print), no
+# float literals that silently lose precision and no mem::forget leaks.
+dbg_macro = "warn"
+lossy_float_literal = "warn"
+mem_forget = "warn"
+print_stderr = "warn"
+print_stdout = "warn"
+rc_buffer = "warn"
+todo = "warn"
+unimplemented = "warn"
