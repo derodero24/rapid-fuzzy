@@ -98,12 +98,7 @@ impl KeyedFuzzyIndex {
     pub fn add_many(&mut self, items_key_values: JsValue) -> Result<(), JsValue> {
         let items: Vec<Vec<String>> = serde_wasm_bindgen::from_value(items_key_values)
             .map_err(|e| JsValue::from_str(&e.to_string()))?;
-        for key_values in items {
-            self.core
-                .add(key_values)
-                .map_err(|e| JsValue::from_str(&e))?;
-        }
-        Ok(())
+        self.core.add_many(items).map_err(|e| JsValue::from_str(&e))
     }
 
     /// Remove the item at the given index.

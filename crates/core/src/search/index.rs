@@ -8,7 +8,8 @@ use rapid_fuzzy_core::search::{FuzzyIndexCore, is_empty_query};
 use super::{IndexSearchResult, ResolvedSearchOptions, SearchOptionsArg, SearchResult};
 
 pub struct BuildFuzzyIndexTask {
-    items: Vec<String>,
+    /// The converted items, or the conversion error to reject the Promise with.
+    items: napi::Result<Vec<String>>,
 }
 
 impl Task for BuildFuzzyIndexTask {
@@ -16,7 +17,8 @@ impl Task for BuildFuzzyIndexTask {
     type JsValue = FuzzyIndex;
 
     fn compute(&mut self) -> napi::Result<Self::Output> {
-        Ok(FuzzyIndexCore::new(std::mem::take(&mut self.items)))
+        let items = std::mem::replace(&mut self.items, Ok(Vec::new()))?;
+        Ok(FuzzyIndexCore::new(items))
     }
 
     fn resolve(&mut self, env: Env, output: Self::Output) -> napi::Result<Self::JsValue> {
@@ -99,8 +101,16 @@ impl FuzzyIndex {
     ///
     /// For large datasets this keeps the JavaScript event loop unblocked during
     /// index construction. The synchronous constructor is fine for small datasets.
+    ///
+    /// Invalid input (such as an array containing a non-string) rejects the
+    /// returned Promise instead of throwing synchronously.
     #[napi(ts_return_type = "Promise<FuzzyIndex>")]
-    pub fn from_async(items: Vec<String>) -> AsyncTask<BuildFuzzyIndexTask> {
+    pub fn from_async(
+        #[napi(ts_arg_type = "Array<string>")] items: napi::bindgen_prelude::Unknown<'_>,
+    ) -> AsyncTask<BuildFuzzyIndexTask> {
+        // JS values can only be read on the calling thread, so convert here and
+        // hand a conversion error to the task, which rejects the Promise with it.
+        let items = <Vec<String> as napi::bindgen_prelude::FromNapiValue>::from_unknown(items);
         AsyncTask::new(BuildFuzzyIndexTask { items })
     }
 

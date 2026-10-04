@@ -5,7 +5,7 @@
 
 /**
  * @param {string} item
- * @param {number[]} positions
+ * @param {ReadonlyArray<number>} positions
  * @returns {Array<{start: number, end: number, matched: boolean}>}
  */
 function highlightRanges(item, positions) {
@@ -28,24 +28,47 @@ function highlightRanges(item, positions) {
   return ranges;
 }
 
+/** @type {Record<string, string>} */
+const HTML_ENTITIES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+
 /**
- * @param {string} item
- * @param {number[]} positions
- * @param {string | ((substring: string) => string)} openOrCallback
- * @param {string} [close]
+ * Escape the characters that are special in HTML text and attribute values.
+ * @param {string} text
  * @returns {string}
  */
-function highlight(item, positions, openOrCallback, close) {
-  if (!positions || positions.length === 0) return item;
+function escapeHtml(text) {
+  return text.replace(/[&<>"']/g, (ch) => HTML_ENTITIES[ch] ?? ch);
+}
 
-  const ranges = highlightRanges(item, positions);
+/**
+ * @param {unknown} options
+ * @returns {(text: string) => string}
+ */
+function textEncoder(options) {
+  return options !== null && typeof options === 'object' && options.escapeHtml === true
+    ? escapeHtml
+    : (text) => text;
+}
+
+/**
+ * @param {string} item
+ * @param {ReadonlyArray<number>} positions
+ * @param {string | ((substring: string) => string)} openOrCallback
+ * @param {string | { escapeHtml?: boolean }} [closeOrOptions] - `close` marker, or the options in the callback form.
+ * @param {{ escapeHtml?: boolean }} [maybeOptions] - Options in the string-marker form.
+ * @returns {string}
+ */
+function highlight(item, positions, openOrCallback, closeOrOptions, maybeOptions) {
   const useCallback = typeof openOrCallback === 'function';
+  const encode = textEncoder(useCallback ? closeOrOptions : maybeOptions);
+  if (!positions || positions.length === 0) return encode(item);
 
+  const close = useCallback ? '' : (closeOrOptions ?? '');
   const parts = [];
-  for (const range of ranges) {
-    const segment = item.slice(range.start, range.end);
+  for (const range of highlightRanges(item, positions)) {
+    const segment = encode(item.slice(range.start, range.end));
     if (range.matched) {
-      parts.push(useCallback ? openOrCallback(segment) : openOrCallback + segment + (close ?? ''));
+      parts.push(useCallback ? openOrCallback(segment) : openOrCallback + segment + close);
     } else {
       parts.push(segment);
     }

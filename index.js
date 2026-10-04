@@ -766,3 +766,17 @@ module.exports.weightedRatioManyF64 = nativeBinding.weightedRatioManyF64
 const _hl = require('./highlight.js');
 module.exports.highlight = _hl.highlight;
 module.exports.highlightRanges = _hl.highlightRanges;
+
+// --- JS wrappers (appended by scripts/patch-binding.js) ---
+// searchObjects / FuzzyObjectIndex live in objects.js, which requires this module:
+// resolve them on first access to avoid a require cycle. Assigning replaces the getter.
+for (const name of ['searchObjects', 'FuzzyObjectIndex']) {
+  Object.defineProperty(module.exports, name, {
+    enumerable: true,
+    configurable: true,
+    get: () => require('./objects.js')[name],
+    set: (value) => {
+      Object.defineProperty(module.exports, name, { value, writable: true, enumerable: true, configurable: true });
+    },
+  });
+}

@@ -1954,49 +1954,22 @@ describe('KeyedFuzzyIndex error propagation', () => {
 });
 
 describe('ESM/CJS export parity', () => {
-  it('should have matching exports between CJS and ESM', () => {
+  // Exported by the napi-rs loader itself, not part of the public API.
+  const napiInternal = new Set(['__napiBindingTarget']);
+
+  it('should have matching exports between CJS and ESM', async () => {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const fs = require('node:fs') as typeof import('node:fs');
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const cjsBinding = require('../index.js') as Record<string, unknown>;
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const highlightModule = require('../highlight.js') as Record<string, unknown>;
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const objectsModule = require('../objects.js') as Record<string, unknown>;
+    const cjs = require('../index.js') as Record<string, unknown>;
+    const esm: Record<string, unknown> = { ...(await import('../index.mjs')) };
 
-    const esmContent = fs.readFileSync(require.resolve('../index.mjs'), 'utf8');
+    const cjsNames = Object.keys(cjs).filter((name) => !napiInternal.has(name));
+    const esmNames = Object.keys(esm).filter((name) => !napiInternal.has(name));
 
-    // Internal classes consumed only by wrapper modules (not part of public ESM API)
-    const internalOnly = new Set(['KeyedFuzzyIndex']);
-
-    // Collect all CJS exports across the three modules
-    const allCjsExports = new Set([
-      ...Object.keys(cjsBinding),
-      ...Object.keys(highlightModule),
-      ...Object.keys(objectsModule),
-    ]);
-
-    // Extract named exports from ESM destructuring patterns
-    // e.g. export const { FuzzyIndex, search, ... } = { ... };
-    const destructureMatches = [...esmContent.matchAll(/export const \{([^}]+)\}/g)];
-    const allEsmExports = new Set(
-      destructureMatches.flatMap((m) =>
-        (m[1] ?? '')
-          .split(',')
-          .map((s) => s.trim())
-          .filter(Boolean),
-      ),
-    );
-
-    // Every public function/class in CJS should be available in ESM
-    const missingFromEsm: string[] = [];
-    for (const name of allCjsExports) {
-      if (!internalOnly.has(name) && !allEsmExports.has(name)) {
-        missingFromEsm.push(name);
-      }
-    }
-
-    expect(missingFromEsm).toEqual([]);
+    // Every CJS export is available from the ESM entry, and vice versa.
+    expect(cjsNames.filter((name) => !(name in esm))).toEqual([]);
+    expect(esmNames.filter((name) => !(name in cjs))).toEqual([]);
+    // Both entries hand out the same objects.
+    expect(esmNames.filter((name) => esm[name] !== cjs[name])).toEqual([]);
   });
 });
 
