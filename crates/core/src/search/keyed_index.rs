@@ -1,43 +1,85 @@
-use napi::bindgen_prelude::Buffer;
+use napi::Env;
+use napi::bindgen_prelude::{Buffer, ObjectFinalize};
 use napi_derive::napi;
+use nucleo_matcher::pattern::CaseMatching;
 use rapid_fuzzy_core::search::KeyedFuzzyIndexCore;
-use rapid_fuzzy_core::search::serialization::{
-    KEYED_INDEX_MAGIC, deserialize_keyed, serialize_keyed,
-};
+use rapid_fuzzy_core::search::serialization::{deserialize_keyed_index, serialize_keyed_index};
 
 use super::keys::KeySearchResult;
-use super::{SearchOptions, resolve_case_matching};
+use super::{ResolvedSearchOptions, SearchOptionsArg};
 
 /// A persistent multi-key fuzzy search index backed by Rust-side data.
 ///
 /// Holds key text arrays and weights in memory on the Rust side,
 /// avoiding repeated FFI overhead for applications that search the
 /// same dataset multiple times with multiple keys.
-/// Pre-computes Utf32String representations and reuses the Matcher
-/// instance for optimal repeated-search performance.
+/// Pre-computes the search representation of every key text, eliminating
+/// per-search string conversion overhead.
+/// Memory is freed when the JavaScript garbage collector collects the instance
+/// or when `destroy()` is called explicitly.
 ///
 /// Typically wrapped by a JS-side `FuzzyObjectIndex` class that maps
 /// results back to original objects.
-#[napi]
+#[napi(custom_finalize)]
 pub struct KeyedFuzzyIndex {
     core: KeyedFuzzyIndexCore,
+    /// Native heap bytes currently reported to the JavaScript engine (see
+    /// [`KeyedFuzzyIndex::report_memory`]).
+    reported_bytes: i64,
+}
+
+impl KeyedFuzzyIndex {
+    fn from_core(core: KeyedFuzzyIndexCore) -> Self {
+        Self {
+            core,
+            reported_bytes: 0,
+        }
+    }
+
+    fn with_reported_memory(mut self, env: Env) -> napi::Result<Self> {
+        self.report_memory(env)?;
+        Ok(self)
+    }
+
+    /// Tell the JavaScript engine how much native memory this index holds,
+    /// like `FuzzyIndex` does: without it the garbage collector does not know
+    /// that collecting an unreachable index frees memory. Called whenever the
+    /// index's size changes; the finalizer releases the amount again.
+    fn report_memory(&mut self, env: Env) -> napi::Result<()> {
+        let bytes = i64::try_from(self.core.heap_size()).unwrap_or(i64::MAX);
+        let delta = bytes - self.reported_bytes;
+        if delta != 0 {
+            env.adjust_external_memory(delta)?;
+            self.reported_bytes = bytes;
+        }
+        Ok(())
+    }
+}
+
+impl ObjectFinalize for KeyedFuzzyIndex {
+    fn finalize(self, env: Env) -> napi::Result<()> {
+        if self.reported_bytes != 0 {
+            env.adjust_external_memory(-self.reported_bytes)?;
+        }
+        Ok(())
+    }
 }
 
 #[napi]
 impl KeyedFuzzyIndex {
     /// Create a new KeyedFuzzyIndex.
     ///
-    /// `key_texts[k]` is an array of strings for key `k`, one per item.
+    /// `keyTexts[k]` is an array of strings for key `k`, one per item.
     /// All inner arrays must have the same length (the number of items).
     #[napi(constructor)]
-    pub fn new(key_texts: Vec<Vec<String>>, weights: Vec<f64>) -> napi::Result<Self> {
-        KeyedFuzzyIndexCore::new(key_texts, weights)
-            .map(|core| Self { core })
-            .map_err(napi::Error::from_reason)
+    pub fn new(env: Env, key_texts: Vec<Vec<String>>, weights: Vec<f64>) -> napi::Result<Self> {
+        Self::new_impl(key_texts, weights)
+            .map_err(napi::Error::from_reason)?
+            .with_reported_memory(env)
     }
 
     fn new_impl(key_texts: Vec<Vec<String>>, weights: Vec<f64>) -> Result<Self, String> {
-        KeyedFuzzyIndexCore::new(key_texts, weights).map(|core| Self { core })
+        KeyedFuzzyIndexCore::new(key_texts, weights).map(Self::from_core)
     }
 
     /// Return the number of items in the index.
@@ -49,22 +91,25 @@ impl KeyedFuzzyIndex {
     /// Search the index for items matching the query.
     ///
     /// Returns results sorted by combined weighted score (best match first).
+    ///
+    /// The second argument accepts either a number (maxResults shorthand) or a
+    /// SearchOptions object, like `FuzzyIndex.search()`. `maxResults` must be a
+    /// non-negative integer or `Infinity`.
     #[napi]
-    pub fn search(&self, query: String, options: Option<SearchOptions>) -> Vec<KeySearchResult> {
-        let (max_results, min_score, case_matching, return_all_on_empty) = match &options {
-            Some(opts) => (
-                opts.max_results,
-                opts.min_score,
-                resolve_case_matching(opts.is_case_sensitive),
-                opts.return_all_on_empty.unwrap_or(false),
-            ),
-            None => (
-                None,
-                None,
-                nucleo_matcher::pattern::CaseMatching::Smart,
-                false,
-            ),
-        };
+    pub fn search(
+        &self,
+        query: String,
+        #[napi(ts_arg_type = "number | SearchOptions | undefined | null")] options: Option<
+            SearchOptionsArg,
+        >,
+    ) -> Vec<KeySearchResult> {
+        let ResolvedSearchOptions {
+            max_results,
+            min_score,
+            case_matching,
+            return_all_on_empty,
+            ..
+        } = ResolvedSearchOptions::new(options);
 
         self.core
             .search(
@@ -82,56 +127,60 @@ impl KeyedFuzzyIndex {
     /// Find the index of the closest matching item.
     ///
     /// Returns the index of the best match, or null if no match is found.
-    /// If `min_score` is provided, returns null when the best match scores below the threshold.
+    /// If `minScore` is provided, returns null when the best match scores below the threshold.
     ///
     /// Use the returned index to look up the item in your own data array.
     #[napi]
     pub fn closest(&self, query: String, min_score: Option<f64>) -> Option<u32> {
-        let results = self.core.search(
-            &query,
-            Some(1),
-            min_score,
-            nucleo_matcher::pattern::CaseMatching::Smart,
-            false,
-        );
+        let results = self
+            .core
+            .search(&query, Some(1), min_score, CaseMatching::Smart, false);
         results.into_iter().next().map(|r| r.index)
     }
 
     /// Add a single item to the index.
     ///
-    /// `key_values` must have the same length as the number of keys.
+    /// `keyValues` must have the same length as the number of keys.
     /// Throws if the length does not match.
     #[napi]
-    pub fn add(&mut self, key_values: Vec<String>) -> napi::Result<()> {
-        self.core.add(key_values).map_err(napi::Error::from_reason)
+    pub fn add(&mut self, env: Env, key_values: Vec<String>) -> napi::Result<()> {
+        self.core
+            .add(key_values)
+            .map_err(napi::Error::from_reason)?;
+        self.report_memory(env)
     }
 
     /// Add multiple items to the index at once.
     ///
-    /// Each element of `items_key_values` is an array of key values for one item.
-    /// Throws if any element has the wrong number of key values.
+    /// Each element of `itemsKeyValues` is an array of key values for one item.
+    /// Throws if any element has the wrong number of key values; every element
+    /// is checked first, so on error no item is added.
     #[napi]
-    pub fn add_many(&mut self, items_key_values: Vec<Vec<String>>) -> napi::Result<()> {
-        for key_values in items_key_values {
-            self.core
-                .add(key_values)
-                .map_err(napi::Error::from_reason)?;
-        }
-        Ok(())
+    pub fn add_many(&mut self, env: Env, items_key_values: Vec<Vec<String>>) -> napi::Result<()> {
+        self.core
+            .add_many(items_key_values)
+            .map_err(napi::Error::from_reason)?;
+        self.report_memory(env)
     }
 
     /// Remove the item at the given index.
     ///
     /// Uses swap-remove for O(1) performance. Returns false if out of bounds.
     #[napi]
-    pub fn remove(&mut self, index: u32) -> bool {
-        self.core.remove(index)
+    pub fn remove(&mut self, env: Env, index: u32) -> napi::Result<bool> {
+        let removed = self.core.remove(index);
+        self.report_memory(env)?;
+        Ok(removed)
     }
 
     /// Free the internal data. After calling this, the index is empty.
+    ///
+    /// The key configuration is kept, so the index stays usable: it behaves
+    /// as an empty index and `add()` / `addMany()` work as before.
     #[napi]
-    pub fn destroy(&mut self) {
+    pub fn destroy(&mut self, env: Env) -> napi::Result<()> {
         self.core.destroy();
+        self.report_memory(env)
     }
 
     /// Serialize the index to a compact binary format.
@@ -146,24 +195,21 @@ impl KeyedFuzzyIndex {
 
     /// Reconstruct a KeyedFuzzyIndex from a previously serialized Buffer.
     #[napi(factory)]
-    pub fn deserialize(data: Buffer) -> napi::Result<Self> {
-        Self::deserialize_impl(&data).map_err(napi::Error::from_reason)
+    pub fn deserialize(env: Env, data: Buffer) -> napi::Result<Self> {
+        Self::deserialize_impl(&data)
+            .map_err(napi::Error::from_reason)?
+            .with_reported_memory(env)
     }
 }
 
 /// Non-napi helper methods.
 impl KeyedFuzzyIndex {
     fn serialize_impl(&self) -> Vec<u8> {
-        serialize_keyed(
-            self.core.key_texts(),
-            self.core.weights(),
-            KEYED_INDEX_MAGIC,
-        )
+        serialize_keyed_index(&self.core)
     }
 
     fn deserialize_impl(bytes: &[u8]) -> Result<Self, String> {
-        let (key_texts, weights) = deserialize_keyed(bytes, KEYED_INDEX_MAGIC)?;
-        Self::new_impl(key_texts, weights)
+        deserialize_keyed_index(bytes).map(Self::from_core)
     }
 }
 
@@ -177,6 +223,7 @@ impl KeyedFuzzyIndex {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::search::SearchOptions;
 
     fn make_index() -> KeyedFuzzyIndex {
         KeyedFuzzyIndex::new_impl(
@@ -260,15 +307,15 @@ mod tests {
     #[test]
     fn test_remove() {
         let mut index = make_index();
-        assert!(index.remove(1)); // Remove Jane Doe
+        assert!(index.core.remove(1)); // Remove Jane Doe
         assert_eq!(index.size(), 2);
-        assert!(!index.remove(10)); // Out of bounds
+        assert!(!index.core.remove(10)); // Out of bounds
     }
 
     #[test]
     fn test_destroy() {
         let mut index = make_index();
-        index.destroy();
+        index.core.destroy();
         assert_eq!(index.size(), 0);
     }
 
@@ -284,13 +331,13 @@ mod tests {
         let index = make_index();
         let results = index.search(
             "john".to_string(),
-            Some(SearchOptions {
+            Some(SearchOptionsArg::Options(SearchOptions {
                 max_results: None,
                 min_score: Some(0.9),
                 include_positions: None,
                 is_case_sensitive: None,
                 return_all_on_empty: None,
-            }),
+            })),
         );
         for r in &results {
             assert!(r.score >= 0.9);
@@ -302,13 +349,13 @@ mod tests {
         let index = make_index();
         let results = index.search(
             "o".to_string(),
-            Some(SearchOptions {
+            Some(SearchOptionsArg::Options(SearchOptions {
                 max_results: Some(1),
                 min_score: None,
                 include_positions: None,
                 is_case_sensitive: None,
                 return_all_on_empty: None,
-            }),
+            })),
         );
         assert!(results.len() <= 1);
     }
@@ -431,13 +478,13 @@ mod tests {
         .unwrap();
         let results = index.search(
             "apple".to_string(),
-            Some(SearchOptions {
+            Some(SearchOptionsArg::Options(SearchOptions {
                 max_results: None,
                 min_score: Some(0.9),
                 include_positions: None,
                 is_case_sensitive: None,
                 return_all_on_empty: None,
-            }),
+            })),
         );
         // "xyz" should not appear since it can't reach 0.9 on any key
         for r in &results {
