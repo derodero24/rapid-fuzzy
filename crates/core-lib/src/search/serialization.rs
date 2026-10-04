@@ -15,7 +15,9 @@
 //! allocation), use overflow-free bounds checks so 32-bit targets (wasm)
 //! behave like 64-bit ones, and reject truncated data, trailing bytes and
 //! invalid UTF-8 with a message that says what is wrong and where. Every
-//! payload a deserializer accepts re-serializes to exactly the same bytes.
+//! payload a deserializer accepts re-serializes to exactly the same bytes,
+//! except that a `FuzzyIndex` payload with the legacy [`FUZZY_INDEX_WASM_MAGIC`]
+//! is written back with [`FUZZY_INDEX_MAGIC`].
 
 use std::fmt;
 
