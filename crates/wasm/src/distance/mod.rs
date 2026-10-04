@@ -1,25 +1,20 @@
 use rapid_fuzzy_core::distance as core_dist;
+use rapid_fuzzy_core::distance::DistanceError;
 use wasm_bindgen::prelude::*;
 
-fn batch_apply_wasm<T: Default + serde::Serialize, F: Fn(&str, &str) -> T>(
-    pairs: JsValue,
-    f: F,
-) -> JsValue {
-    let pairs: Vec<Vec<String>> = match serde_wasm_bindgen::from_value(pairs) {
-        Ok(v) => v,
-        Err(_) => return JsValue::from(js_sys::Array::new()),
-    };
-    let results: Vec<T> = pairs
-        .iter()
-        .map(|pair| {
-            if pair.len() >= 2 {
-                f(&pair[0], &pair[1])
-            } else {
-                T::default()
-            }
-        })
-        .collect();
-    serde_wasm_bindgen::to_value(&results).unwrap_or(JsValue::NULL)
+/// Read the `[a, b]` pairs of a `*Batch` function, throwing if `pairs` is not
+/// an array of string arrays.
+fn pairs_from_js(pairs: JsValue) -> Result<Vec<Vec<String>>, JsError> {
+    serde_wasm_bindgen::from_value(pairs).map_err(|e| {
+        JsError::new(&format!(
+            "pairs must be an array of [a, b] string pairs: {e}"
+        ))
+    })
+}
+
+/// Malformed pairs and `NaN` thresholds throw an `Error`.
+fn js_error(err: DistanceError) -> JsError {
+    JsError::new(&err.to_string())
 }
 
 // ─── Levenshtein ────────────────────────────────────────────────────────────
@@ -30,12 +25,8 @@ pub fn levenshtein(a: String, b: String) -> u32 {
 }
 
 #[wasm_bindgen(js_name = "levenshteinBatch")]
-pub fn levenshtein_batch(pairs: JsValue) -> Vec<u32> {
-    let pairs: Vec<Vec<String>> = match serde_wasm_bindgen::from_value(pairs) {
-        Ok(v) => v,
-        Err(_) => return Vec::new(),
-    };
-    core_dist::levenshtein_batch(&pairs)
+pub fn levenshtein_batch(pairs: JsValue) -> Result<Vec<u32>, JsError> {
+    core_dist::levenshtein_batch(&pairs_from_js(pairs)?).map_err(js_error)
 }
 
 #[wasm_bindgen(js_name = "levenshteinMany")]
@@ -55,12 +46,8 @@ pub fn damerau_levenshtein(a: String, b: String) -> u32 {
 }
 
 #[wasm_bindgen(js_name = "damerauLevenshteinBatch")]
-pub fn damerau_levenshtein_batch(pairs: JsValue) -> Vec<u32> {
-    let pairs: Vec<Vec<String>> = match serde_wasm_bindgen::from_value(pairs) {
-        Ok(v) => v,
-        Err(_) => return Vec::new(),
-    };
-    core_dist::damerau_levenshtein_batch(&pairs)
+pub fn damerau_levenshtein_batch(pairs: JsValue) -> Result<Vec<u32>, JsError> {
+    core_dist::damerau_levenshtein_batch(&pairs_from_js(pairs)?).map_err(js_error)
 }
 
 #[wasm_bindgen(js_name = "damerauLevenshteinMany")]
@@ -83,8 +70,9 @@ pub fn hamming(a: String, b: String) -> JsValue {
 }
 
 #[wasm_bindgen(js_name = "hammingBatch")]
-pub fn hamming_batch(pairs: JsValue) -> JsValue {
-    batch_apply_wasm::<Option<u32>, _>(pairs, core_dist::hamming)
+pub fn hamming_batch(pairs: JsValue) -> Result<JsValue, JsError> {
+    let results = core_dist::hamming_batch(&pairs_from_js(pairs)?).map_err(js_error)?;
+    Ok(serde_wasm_bindgen::to_value(&results).unwrap_or(JsValue::NULL))
 }
 
 #[wasm_bindgen(js_name = "hammingMany")]
@@ -108,8 +96,9 @@ pub fn normalized_hamming(a: String, b: String) -> JsValue {
 }
 
 #[wasm_bindgen(js_name = "normalizedHammingBatch")]
-pub fn normalized_hamming_batch(pairs: JsValue) -> JsValue {
-    batch_apply_wasm::<Option<f64>, _>(pairs, core_dist::normalized_hamming)
+pub fn normalized_hamming_batch(pairs: JsValue) -> Result<JsValue, JsError> {
+    let results = core_dist::normalized_hamming_batch(&pairs_from_js(pairs)?).map_err(js_error)?;
+    Ok(serde_wasm_bindgen::to_value(&results).unwrap_or(JsValue::NULL))
 }
 
 #[wasm_bindgen(js_name = "normalizedHammingMany")]
@@ -117,9 +106,10 @@ pub fn normalized_hamming_many(
     reference: String,
     candidates: Vec<String>,
     score_cutoff: Option<f64>,
-) -> JsValue {
-    let results = core_dist::normalized_hamming_many(&reference, &candidates, score_cutoff);
-    serde_wasm_bindgen::to_value(&results).unwrap_or(JsValue::NULL)
+) -> Result<JsValue, JsError> {
+    let results = core_dist::normalized_hamming_many(&reference, &candidates, score_cutoff)
+        .map_err(js_error)?;
+    Ok(serde_wasm_bindgen::to_value(&results).unwrap_or(JsValue::NULL))
 }
 
 // ─── Jaro ────────────────────────────────────────────────────────────────────
@@ -130,12 +120,8 @@ pub fn jaro(a: String, b: String) -> f64 {
 }
 
 #[wasm_bindgen(js_name = "jaroBatch")]
-pub fn jaro_batch(pairs: JsValue) -> Vec<f64> {
-    let pairs: Vec<Vec<String>> = match serde_wasm_bindgen::from_value(pairs) {
-        Ok(v) => v,
-        Err(_) => return Vec::new(),
-    };
-    core_dist::jaro_batch(&pairs)
+pub fn jaro_batch(pairs: JsValue) -> Result<Vec<f64>, JsError> {
+    core_dist::jaro_batch(&pairs_from_js(pairs)?).map_err(js_error)
 }
 
 #[wasm_bindgen(js_name = "jaroMany")]
@@ -143,8 +129,8 @@ pub fn jaro_many(
     reference: String,
     candidates: Vec<String>,
     score_cutoff: Option<f64>,
-) -> Vec<f64> {
-    core_dist::jaro_many(&reference, &candidates, score_cutoff)
+) -> Result<Vec<f64>, JsError> {
+    core_dist::jaro_many(&reference, &candidates, score_cutoff).map_err(js_error)
 }
 
 // ─── Jaro-Winkler ────────────────────────────────────────────────────────────
@@ -155,12 +141,8 @@ pub fn jaro_winkler(a: String, b: String) -> f64 {
 }
 
 #[wasm_bindgen(js_name = "jaroWinklerBatch")]
-pub fn jaro_winkler_batch(pairs: JsValue) -> Vec<f64> {
-    let pairs: Vec<Vec<String>> = match serde_wasm_bindgen::from_value(pairs) {
-        Ok(v) => v,
-        Err(_) => return Vec::new(),
-    };
-    core_dist::jaro_winkler_batch(&pairs)
+pub fn jaro_winkler_batch(pairs: JsValue) -> Result<Vec<f64>, JsError> {
+    core_dist::jaro_winkler_batch(&pairs_from_js(pairs)?).map_err(js_error)
 }
 
 #[wasm_bindgen(js_name = "jaroWinklerMany")]
@@ -168,8 +150,8 @@ pub fn jaro_winkler_many(
     reference: String,
     candidates: Vec<String>,
     score_cutoff: Option<f64>,
-) -> Vec<f64> {
-    core_dist::jaro_winkler_many(&reference, &candidates, score_cutoff)
+) -> Result<Vec<f64>, JsError> {
+    core_dist::jaro_winkler_many(&reference, &candidates, score_cutoff).map_err(js_error)
 }
 
 // ─── Sorensen-Dice ───────────────────────────────────────────────────────────
@@ -180,12 +162,8 @@ pub fn sorensen_dice(a: String, b: String) -> f64 {
 }
 
 #[wasm_bindgen(js_name = "sorensenDiceBatch")]
-pub fn sorensen_dice_batch(pairs: JsValue) -> Vec<f64> {
-    let pairs: Vec<Vec<String>> = match serde_wasm_bindgen::from_value(pairs) {
-        Ok(v) => v,
-        Err(_) => return Vec::new(),
-    };
-    core_dist::sorensen_dice_batch(&pairs)
+pub fn sorensen_dice_batch(pairs: JsValue) -> Result<Vec<f64>, JsError> {
+    core_dist::sorensen_dice_batch(&pairs_from_js(pairs)?).map_err(js_error)
 }
 
 #[wasm_bindgen(js_name = "sorensenDiceMany")]
@@ -193,8 +171,8 @@ pub fn sorensen_dice_many(
     reference: String,
     candidates: Vec<String>,
     score_cutoff: Option<f64>,
-) -> Vec<f64> {
-    core_dist::sorensen_dice_many(&reference, &candidates, score_cutoff)
+) -> Result<Vec<f64>, JsError> {
+    core_dist::sorensen_dice_many(&reference, &candidates, score_cutoff).map_err(js_error)
 }
 
 // ─── Normalized Levenshtein ──────────────────────────────────────────────────
@@ -205,12 +183,8 @@ pub fn normalized_levenshtein(a: String, b: String) -> f64 {
 }
 
 #[wasm_bindgen(js_name = "normalizedLevenshteinBatch")]
-pub fn normalized_levenshtein_batch(pairs: JsValue) -> Vec<f64> {
-    let pairs: Vec<Vec<String>> = match serde_wasm_bindgen::from_value(pairs) {
-        Ok(v) => v,
-        Err(_) => return Vec::new(),
-    };
-    core_dist::normalized_levenshtein_batch(&pairs)
+pub fn normalized_levenshtein_batch(pairs: JsValue) -> Result<Vec<f64>, JsError> {
+    core_dist::normalized_levenshtein_batch(&pairs_from_js(pairs)?).map_err(js_error)
 }
 
 #[wasm_bindgen(js_name = "normalizedLevenshteinMany")]
@@ -218,8 +192,8 @@ pub fn normalized_levenshtein_many(
     reference: String,
     candidates: Vec<String>,
     score_cutoff: Option<f64>,
-) -> Vec<f64> {
-    core_dist::normalized_levenshtein_many(&reference, &candidates, score_cutoff)
+) -> Result<Vec<f64>, JsError> {
+    core_dist::normalized_levenshtein_many(&reference, &candidates, score_cutoff).map_err(js_error)
 }
 
 // ─── Indel ───────────────────────────────────────────────────────────────────
@@ -230,12 +204,8 @@ pub fn indel(a: String, b: String) -> u32 {
 }
 
 #[wasm_bindgen(js_name = "indelBatch")]
-pub fn indel_batch(pairs: JsValue) -> Vec<u32> {
-    let pairs: Vec<Vec<String>> = match serde_wasm_bindgen::from_value(pairs) {
-        Ok(v) => v,
-        Err(_) => return Vec::new(),
-    };
-    core_dist::indel_batch(&pairs)
+pub fn indel_batch(pairs: JsValue) -> Result<Vec<u32>, JsError> {
+    core_dist::indel_batch(&pairs_from_js(pairs)?).map_err(js_error)
 }
 
 #[wasm_bindgen(js_name = "indelMany")]
@@ -255,12 +225,8 @@ pub fn normalized_indel(a: String, b: String) -> f64 {
 }
 
 #[wasm_bindgen(js_name = "normalizedIndelBatch")]
-pub fn normalized_indel_batch(pairs: JsValue) -> Vec<f64> {
-    let pairs: Vec<Vec<String>> = match serde_wasm_bindgen::from_value(pairs) {
-        Ok(v) => v,
-        Err(_) => return Vec::new(),
-    };
-    core_dist::normalized_indel_batch(&pairs)
+pub fn normalized_indel_batch(pairs: JsValue) -> Result<Vec<f64>, JsError> {
+    core_dist::normalized_indel_batch(&pairs_from_js(pairs)?).map_err(js_error)
 }
 
 #[wasm_bindgen(js_name = "normalizedIndelMany")]
@@ -268,8 +234,8 @@ pub fn normalized_indel_many(
     reference: String,
     candidates: Vec<String>,
     score_cutoff: Option<f64>,
-) -> Vec<f64> {
-    core_dist::normalized_indel_many(&reference, &candidates, score_cutoff)
+) -> Result<Vec<f64>, JsError> {
+    core_dist::normalized_indel_many(&reference, &candidates, score_cutoff).map_err(js_error)
 }
 
 // ─── Token Sort Ratio ────────────────────────────────────────────────────────
@@ -280,12 +246,8 @@ pub fn token_sort_ratio(a: String, b: String) -> f64 {
 }
 
 #[wasm_bindgen(js_name = "tokenSortRatioBatch")]
-pub fn token_sort_ratio_batch(pairs: JsValue) -> Vec<f64> {
-    let pairs: Vec<Vec<String>> = match serde_wasm_bindgen::from_value(pairs) {
-        Ok(v) => v,
-        Err(_) => return Vec::new(),
-    };
-    core_dist::token_sort_ratio_batch(&pairs)
+pub fn token_sort_ratio_batch(pairs: JsValue) -> Result<Vec<f64>, JsError> {
+    core_dist::token_sort_ratio_batch(&pairs_from_js(pairs)?).map_err(js_error)
 }
 
 #[wasm_bindgen(js_name = "tokenSortRatioMany")]
@@ -293,8 +255,8 @@ pub fn token_sort_ratio_many(
     reference: String,
     candidates: Vec<String>,
     score_cutoff: Option<f64>,
-) -> Vec<f64> {
-    core_dist::token_sort_ratio_many(&reference, &candidates, score_cutoff)
+) -> Result<Vec<f64>, JsError> {
+    core_dist::token_sort_ratio_many(&reference, &candidates, score_cutoff).map_err(js_error)
 }
 
 // ─── Token Set Ratio ─────────────────────────────────────────────────────────
@@ -305,12 +267,8 @@ pub fn token_set_ratio(a: String, b: String) -> f64 {
 }
 
 #[wasm_bindgen(js_name = "tokenSetRatioBatch")]
-pub fn token_set_ratio_batch(pairs: JsValue) -> Vec<f64> {
-    let pairs: Vec<Vec<String>> = match serde_wasm_bindgen::from_value(pairs) {
-        Ok(v) => v,
-        Err(_) => return Vec::new(),
-    };
-    core_dist::token_set_ratio_batch(&pairs)
+pub fn token_set_ratio_batch(pairs: JsValue) -> Result<Vec<f64>, JsError> {
+    core_dist::token_set_ratio_batch(&pairs_from_js(pairs)?).map_err(js_error)
 }
 
 #[wasm_bindgen(js_name = "tokenSetRatioMany")]
@@ -318,8 +276,8 @@ pub fn token_set_ratio_many(
     reference: String,
     candidates: Vec<String>,
     score_cutoff: Option<f64>,
-) -> Vec<f64> {
-    core_dist::token_set_ratio_many(&reference, &candidates, score_cutoff)
+) -> Result<Vec<f64>, JsError> {
+    core_dist::token_set_ratio_many(&reference, &candidates, score_cutoff).map_err(js_error)
 }
 
 // ─── Partial Ratio ───────────────────────────────────────────────────────────
@@ -330,12 +288,8 @@ pub fn partial_ratio(a: String, b: String) -> f64 {
 }
 
 #[wasm_bindgen(js_name = "partialRatioBatch")]
-pub fn partial_ratio_batch(pairs: JsValue) -> Vec<f64> {
-    let pairs: Vec<Vec<String>> = match serde_wasm_bindgen::from_value(pairs) {
-        Ok(v) => v,
-        Err(_) => return Vec::new(),
-    };
-    core_dist::partial_ratio_batch(&pairs)
+pub fn partial_ratio_batch(pairs: JsValue) -> Result<Vec<f64>, JsError> {
+    core_dist::partial_ratio_batch(&pairs_from_js(pairs)?).map_err(js_error)
 }
 
 #[wasm_bindgen(js_name = "partialRatioMany")]
@@ -343,8 +297,8 @@ pub fn partial_ratio_many(
     reference: String,
     candidates: Vec<String>,
     score_cutoff: Option<f64>,
-) -> Vec<f64> {
-    core_dist::partial_ratio_many(&reference, &candidates, score_cutoff)
+) -> Result<Vec<f64>, JsError> {
+    core_dist::partial_ratio_many(&reference, &candidates, score_cutoff).map_err(js_error)
 }
 
 // ─── Weighted Ratio ──────────────────────────────────────────────────────────
@@ -355,12 +309,8 @@ pub fn weighted_ratio(a: String, b: String) -> f64 {
 }
 
 #[wasm_bindgen(js_name = "weightedRatioBatch")]
-pub fn weighted_ratio_batch(pairs: JsValue) -> Vec<f64> {
-    let pairs: Vec<Vec<String>> = match serde_wasm_bindgen::from_value(pairs) {
-        Ok(v) => v,
-        Err(_) => return Vec::new(),
-    };
-    core_dist::weighted_ratio_batch(&pairs)
+pub fn weighted_ratio_batch(pairs: JsValue) -> Result<Vec<f64>, JsError> {
+    core_dist::weighted_ratio_batch(&pairs_from_js(pairs)?).map_err(js_error)
 }
 
 #[wasm_bindgen(js_name = "weightedRatioMany")]
@@ -368,6 +318,6 @@ pub fn weighted_ratio_many(
     reference: String,
     candidates: Vec<String>,
     score_cutoff: Option<f64>,
-) -> Vec<f64> {
-    core_dist::weighted_ratio_many(&reference, &candidates, score_cutoff)
+) -> Result<Vec<f64>, JsError> {
+    core_dist::weighted_ratio_many(&reference, &candidates, score_cutoff).map_err(js_error)
 }

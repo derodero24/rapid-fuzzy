@@ -848,7 +848,6 @@ dependencies = [
  "nucleo-matcher",
  "proptest",
  "rapid-fuzzy-core",
- "rapidfuzz",
  "strsim",
 ]
 
@@ -879,10 +878,8 @@ dependencies = [
  "js-sys",
  "nucleo-matcher",
  "rapid-fuzzy-core",
- "rapidfuzz",
  "serde",
  "serde-wasm-bindgen",
- "strsim",
  "tsify",
  "wasm-bindgen",
 ]

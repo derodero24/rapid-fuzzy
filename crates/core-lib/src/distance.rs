@@ -1,5 +1,26 @@
+//! String distance and similarity algorithms shared by the Node.js (napi) and
+//! browser (wasm-bindgen) bindings.
+//!
+//! Every algorithm has three entry points that return identical scores for the
+//! same pair of strings:
+//!
+//! - `name(a, b)` compares one pair,
+//! - `name_batch(pairs)` compares many independent `[a, b]` pairs,
+//! - `name_many(reference, candidates, threshold)` compares one reference with
+//!   many candidates and reuses the work that only depends on the reference.
+//!
+//! The optional threshold of the `*_many` functions follows one rule:
+//!
+//! - `max_distance` (distances): a candidate whose distance exceeds it gets
+//!   `max_distance + 1` instead (saturating at `u32::MAX`), or `None` for
+//!   Hamming.
+//! - `min_similarity` (similarities): a candidate scoring below it gets `0.0`
+//!   instead (`None` for normalized Hamming); a score equal to it is kept.
+//!   `NaN` is rejected with [`DistanceError::NanThreshold`].
+
+use std::borrow::Cow;
 use std::collections::BTreeSet;
-use std::collections::HashMap;
+use std::fmt;
 
 use rapidfuzz::distance::damerau_levenshtein as rapid_damerau;
 use rapidfuzz::distance::hamming as rapid_hamming;
@@ -8,17 +29,145 @@ use rapidfuzz::distance::jaro as rapid_jaro;
 use rapidfuzz::distance::jaro_winkler as rapid_jw;
 use rapidfuzz::distance::levenshtein as rapid_lev;
 
-pub fn batch_apply<T: Default, F: Fn(&str, &str) -> T>(pairs: &[Vec<String>], f: F) -> Vec<T> {
-    pairs
+// ─── Errors ──────────────────────────────────────────────────────────────────
+
+/// Invalid input to a `*_batch` or `*_many` function.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DistanceError {
+    /// A `*_batch` pair that does not hold exactly two strings.
+    InvalidPair {
+        /// Position of the pair in the input.
+        index: usize,
+        /// Number of strings the pair holds.
+        len: usize,
+    },
+    /// A `min_similarity` threshold that is `NaN`.
+    NanThreshold,
+}
+
+impl fmt::Display for DistanceError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidPair { index, len } => write!(
+                f,
+                "pairs[{index}] must contain exactly 2 strings, got {len}"
+            ),
+            Self::NanThreshold => f.write_str("minSimilarity must be a number, got NaN"),
+        }
+    }
+}
+
+impl std::error::Error for DistanceError {}
+
+// ─── Shared helpers ──────────────────────────────────────────────────────────
+
+/// Apply `f` to every `[a, b]` pair, rejecting the whole batch (before any
+/// work is done) if a pair does not hold exactly two strings.
+pub fn batch_apply<T, F: Fn(&str, &str) -> T>(
+    pairs: &[Vec<String>],
+    f: F,
+) -> Result<Vec<T>, DistanceError> {
+    if let Some((index, pair)) = pairs.iter().enumerate().find(|(_, p)| p.len() != 2) {
+        return Err(DistanceError::InvalidPair {
+            index,
+            len: pair.len(),
+        });
+    }
+    Ok(pairs.iter().map(|pair| f(&pair[0], &pair[1])).collect())
+}
+
+/// The value a `*_many` distance function returns for a candidate whose
+/// distance exceeds `max_distance`.
+fn distance_sentinel(max_distance: u32) -> u32 {
+    max_distance.saturating_add(1)
+}
+
+/// How far below the requested threshold the cutoff handed to rapidfuzz is
+/// set. rapidfuzz prunes candidates with bounds that are computed differently
+/// from the final score (Jaro-Winkler, for one, converts the cutoff into a
+/// Jaro cutoff), so a score exactly at the threshold can be pruned by a
+/// rounding error of a few ulps. Pruning with a slightly lower cutoff and
+/// comparing the exact score afterwards keeps such candidates.
+const CUTOFF_SLACK: f64 = 1e-9;
+
+/// A validated `min_similarity` threshold of a `*_many` similarity function.
+#[derive(Debug, Clone, Copy)]
+struct MinSimilarity(Option<f64>);
+
+impl MinSimilarity {
+    fn new(min_similarity: Option<f64>) -> Result<Self, DistanceError> {
+        match min_similarity {
+            Some(t) if t.is_nan() => Err(DistanceError::NanThreshold),
+            // Every score is >= 0, so such a threshold keeps every candidate.
+            Some(t) if t <= 0.0 => Ok(Self(None)),
+            t => Ok(Self(t)),
+        }
+    }
+
+    /// Whether a candidate with this `score` is kept.
+    fn keeps(self, score: f64) -> bool {
+        self.0.is_none_or(|t| score >= t)
+    }
+
+    /// `score` if the candidate is kept, `0.0` otherwise.
+    fn apply(self, score: f64) -> f64 {
+        if self.keeps(score) { score } else { 0.0 }
+    }
+
+    /// Whether no score can be kept: every similarity is at most `1.0`.
+    fn rejects_all(self) -> bool {
+        self.0.is_some_and(|t| t > 1.0)
+    }
+
+    /// The (slightly lowered) cutoff to prune with before the exact check.
+    fn pruning_cutoff(self) -> Option<f64> {
+        self.0.map(|t| t - CUTOFF_SLACK)
+    }
+}
+
+/// Shared shape of the `*_many` functions backed by a rapidfuzz scorer:
+/// `exact` computes the score, `pruned` computes it with a cutoff and may
+/// return `None` for candidates below it.
+fn similarity_many<E, P>(
+    candidates: &[String],
+    min_similarity: Option<f64>,
+    exact: E,
+    pruned: P,
+) -> Result<Vec<f64>, DistanceError>
+where
+    E: Fn(&str) -> f64,
+    P: Fn(&str, f64) -> Option<f64>,
+{
+    let threshold = MinSimilarity::new(min_similarity)?;
+    if threshold.rejects_all() {
+        return Ok(vec![0.0; candidates.len()]);
+    }
+    Ok(match threshold.pruning_cutoff() {
+        None => candidates.iter().map(|c| exact(c)).collect(),
+        Some(cutoff) => candidates
+            .iter()
+            .map(|c| pruned(c, cutoff).map_or(0.0, |score| threshold.apply(score)))
+            .collect(),
+    })
+}
+
+/// Shared shape of the `*_many` functions that compute the score themselves.
+fn similarity_many_with<F>(
+    candidates: &[String],
+    min_similarity: Option<f64>,
+    mut score: F,
+) -> Result<Vec<f64>, DistanceError>
+where
+    F: FnMut(&str, MinSimilarity) -> f64,
+{
+    let threshold = MinSimilarity::new(min_similarity)?;
+    if threshold.rejects_all() {
+        return Ok(vec![0.0; candidates.len()]);
+    }
+    Ok(candidates
         .iter()
-        .map(|pair| {
-            if pair.len() >= 2 {
-                f(&pair[0], &pair[1])
-            } else {
-                T::default()
-            }
-        })
-        .collect()
+        .map(|c| threshold.apply(score(c, threshold)))
+        .collect())
 }
 
 // ─── Levenshtein ────────────────────────────────────────────────────────────
@@ -27,10 +176,8 @@ pub fn levenshtein(a: &str, b: &str) -> u32 {
     rapid_lev::distance(a.chars(), b.chars()) as u32
 }
 
-pub fn levenshtein_batch(pairs: &[Vec<String>]) -> Vec<u32> {
-    batch_apply(pairs, |a, b| {
-        rapid_lev::distance(a.chars(), b.chars()) as u32
-    })
+pub fn levenshtein_batch(pairs: &[Vec<String>]) -> Result<Vec<u32>, DistanceError> {
+    batch_apply(pairs, levenshtein)
 }
 
 pub fn levenshtein_many(
@@ -42,7 +189,7 @@ pub fn levenshtein_many(
     match max_distance {
         Some(cutoff) => {
             let args = rapid_lev::Args::default().score_cutoff(cutoff as usize);
-            let sentinel = cutoff + 1;
+            let sentinel = distance_sentinel(cutoff);
             candidates
                 .iter()
                 .map(|c| {
@@ -65,10 +212,8 @@ pub fn damerau_levenshtein(a: &str, b: &str) -> u32 {
     rapid_damerau::distance(a.chars(), b.chars()) as u32
 }
 
-pub fn damerau_levenshtein_batch(pairs: &[Vec<String>]) -> Vec<u32> {
-    batch_apply(pairs, |a, b| {
-        rapid_damerau::distance(a.chars(), b.chars()) as u32
-    })
+pub fn damerau_levenshtein_batch(pairs: &[Vec<String>]) -> Result<Vec<u32>, DistanceError> {
+    batch_apply(pairs, damerau_levenshtein)
 }
 
 pub fn damerau_levenshtein_many(
@@ -80,7 +225,7 @@ pub fn damerau_levenshtein_many(
     match max_distance {
         Some(cutoff) => {
             let args = rapid_damerau::Args::default().score_cutoff(cutoff as usize);
-            let sentinel = cutoff + 1;
+            let sentinel = distance_sentinel(cutoff);
             candidates
                 .iter()
                 .map(|c| {
@@ -105,19 +250,8 @@ pub fn hamming(a: &str, b: &str) -> Option<u32> {
         .map(|d| d as u32)
 }
 
-pub fn hamming_batch(pairs: &[Vec<String>]) -> Vec<Option<u32>> {
-    pairs
-        .iter()
-        .map(|pair| {
-            if pair.len() >= 2 {
-                rapid_hamming::distance(pair[0].chars(), pair[1].chars())
-                    .ok()
-                    .map(|d| d as u32)
-            } else {
-                None
-            }
-        })
-        .collect()
+pub fn hamming_batch(pairs: &[Vec<String>]) -> Result<Vec<Option<u32>>, DistanceError> {
+    batch_apply(pairs, hamming)
 }
 
 pub fn hamming_many(
@@ -153,34 +287,23 @@ pub fn normalized_hamming(a: &str, b: &str) -> Option<f64> {
     rapid_hamming::normalized_similarity(a.chars(), b.chars()).ok()
 }
 
-pub fn normalized_hamming_batch(pairs: &[Vec<String>]) -> Vec<Option<f64>> {
-    pairs
-        .iter()
-        .map(|pair| {
-            if pair.len() >= 2 {
-                rapid_hamming::normalized_similarity(pair[0].chars(), pair[1].chars()).ok()
-            } else {
-                None
-            }
-        })
-        .collect()
+pub fn normalized_hamming_batch(pairs: &[Vec<String>]) -> Result<Vec<Option<f64>>, DistanceError> {
+    batch_apply(pairs, normalized_hamming)
 }
 
 pub fn normalized_hamming_many(
     reference: &str,
     candidates: &[String],
     min_similarity: Option<f64>,
-) -> Vec<Option<f64>> {
-    candidates
+) -> Result<Vec<Option<f64>>, DistanceError> {
+    let threshold = MinSimilarity::new(min_similarity)?;
+    if threshold.rejects_all() {
+        return Ok(vec![None; candidates.len()]);
+    }
+    Ok(candidates
         .iter()
-        .map(|c| {
-            let score = rapid_hamming::normalized_similarity(reference.chars(), c.chars()).ok()?;
-            match min_similarity {
-                Some(cutoff) if score < cutoff => None,
-                _ => Some(score),
-            }
-        })
-        .collect()
+        .map(|c| normalized_hamming(reference, c).filter(|&score| threshold.keeps(score)))
+        .collect())
 }
 
 // ─── Jaro ────────────────────────────────────────────────────────────────────
@@ -189,25 +312,25 @@ pub fn jaro(a: &str, b: &str) -> f64 {
     rapid_jaro::similarity(a.chars(), b.chars())
 }
 
-pub fn jaro_batch(pairs: &[Vec<String>]) -> Vec<f64> {
-    batch_apply(pairs, |a, b| rapid_jaro::similarity(a.chars(), b.chars()))
+pub fn jaro_batch(pairs: &[Vec<String>]) -> Result<Vec<f64>, DistanceError> {
+    batch_apply(pairs, jaro)
 }
 
-pub fn jaro_many(reference: &str, candidates: &[String], min_similarity: Option<f64>) -> Vec<f64> {
+pub fn jaro_many(
+    reference: &str,
+    candidates: &[String],
+    min_similarity: Option<f64>,
+) -> Result<Vec<f64>, DistanceError> {
     let scorer = rapid_jaro::BatchComparator::new(reference.chars());
-    match min_similarity {
-        Some(cutoff) => {
+    similarity_many(
+        candidates,
+        min_similarity,
+        |c| scorer.similarity(c.chars()),
+        |c, cutoff| {
             let args = rapid_jaro::Args::default().score_cutoff(cutoff);
-            candidates
-                .iter()
-                .map(|c| scorer.similarity_with_args(c.chars(), &args).unwrap_or(0.0))
-                .collect()
-        }
-        None => candidates
-            .iter()
-            .map(|c| scorer.similarity(c.chars()))
-            .collect(),
-    }
+            scorer.similarity_with_args(c.chars(), &args)
+        },
+    )
 }
 
 // ─── Jaro-Winkler ────────────────────────────────────────────────────────────
@@ -216,88 +339,113 @@ pub fn jaro_winkler(a: &str, b: &str) -> f64 {
     rapid_jw::similarity(a.chars(), b.chars())
 }
 
-pub fn jaro_winkler_batch(pairs: &[Vec<String>]) -> Vec<f64> {
-    batch_apply(pairs, |a, b| rapid_jw::similarity(a.chars(), b.chars()))
+pub fn jaro_winkler_batch(pairs: &[Vec<String>]) -> Result<Vec<f64>, DistanceError> {
+    batch_apply(pairs, jaro_winkler)
 }
 
 pub fn jaro_winkler_many(
     reference: &str,
     candidates: &[String],
     min_similarity: Option<f64>,
-) -> Vec<f64> {
+) -> Result<Vec<f64>, DistanceError> {
     let scorer = rapid_jw::BatchComparator::new(reference.chars());
-    match min_similarity {
-        Some(cutoff) => {
+    similarity_many(
+        candidates,
+        min_similarity,
+        |c| scorer.similarity(c.chars()),
+        |c, cutoff| {
             let args = rapid_jw::Args::default().score_cutoff(cutoff);
-            candidates
-                .iter()
-                .map(|c| scorer.similarity_with_args(c.chars(), &args).unwrap_or(0.0))
-                .collect()
-        }
-        None => candidates
-            .iter()
-            .map(|c| scorer.similarity(c.chars()))
-            .collect(),
-    }
+            scorer.similarity_with_args(c.chars(), &args)
+        },
+    )
 }
 
 // ─── Sorensen-Dice ───────────────────────────────────────────────────────────
 
-pub fn sorensen_dice(a: &str, b: &str) -> f64 {
-    strsim::sorensen_dice(a, b)
+/// A string prepared for the Sorensen-Dice coefficient: its characters with
+/// whitespace removed, and its character bigrams packed into `u64`s and sorted
+/// so two profiles intersect with a single merge pass.
+///
+/// The buffers are reused when a profile is reloaded, so comparing one
+/// reference with many candidates allocates nothing per candidate.
+#[derive(Debug, Default)]
+struct DiceProfile {
+    chars: Vec<char>,
+    bigrams: Vec<u64>,
 }
 
-pub fn sorensen_dice_batch(pairs: &[Vec<String>]) -> Vec<f64> {
-    batch_apply(pairs, strsim::sorensen_dice)
+impl DiceProfile {
+    fn new(s: &str) -> Self {
+        let mut profile = Self::default();
+        profile.load(s);
+        profile
+    }
+
+    fn load(&mut self, s: &str) {
+        self.chars.clear();
+        self.chars.extend(s.chars().filter(|c| !c.is_whitespace()));
+        self.bigrams.clear();
+        self.bigrams.extend(
+            self.chars
+                .windows(2)
+                .map(|w| (u64::from(w[0]) << 32) | u64::from(w[1])),
+        );
+        self.bigrams.sort_unstable();
+    }
+
+    /// `2 * |shared bigrams| / (|bigrams(a)| + |bigrams(b)|)`, counted in
+    /// characters. Identical strings score `1.0`; otherwise a string with
+    /// fewer than two characters has no bigrams and scores `0.0`. This is
+    /// `strsim::sorensen_dice` with character instead of UTF-8 byte lengths,
+    /// so ASCII input scores exactly the same.
+    fn similarity(&self, other: &Self) -> f64 {
+        if self.chars == other.chars {
+            return 1.0;
+        }
+        if self.chars.len() < 2 || other.chars.len() < 2 {
+            return 0.0;
+        }
+        let shared = sorted_intersection_len(&self.bigrams, &other.bigrams);
+        (2 * shared) as f64 / (self.chars.len() + other.chars.len() - 2) as f64
+    }
+}
+
+/// Size of the multiset intersection of two sorted slices.
+fn sorted_intersection_len(a: &[u64], b: &[u64]) -> usize {
+    let (mut i, mut j, mut shared) = (0, 0, 0);
+    while i < a.len() && j < b.len() {
+        match a[i].cmp(&b[j]) {
+            std::cmp::Ordering::Less => i += 1,
+            std::cmp::Ordering::Greater => j += 1,
+            std::cmp::Ordering::Equal => {
+                shared += 1;
+                i += 1;
+                j += 1;
+            }
+        }
+    }
+    shared
+}
+
+pub fn sorensen_dice(a: &str, b: &str) -> f64 {
+    DiceProfile::new(a).similarity(&DiceProfile::new(b))
+}
+
+pub fn sorensen_dice_batch(pairs: &[Vec<String>]) -> Result<Vec<f64>, DistanceError> {
+    batch_apply(pairs, sorensen_dice)
 }
 
 pub fn sorensen_dice_many(
     reference: &str,
     candidates: &[String],
     min_similarity: Option<f64>,
-) -> Vec<f64> {
-    // Same definition as `sorensen_dice` (strsim): whitespace is stripped,
-    // identical strings score 1.0, strings shorter than two bytes score 0.0,
-    // and the denominator counts bigrams by byte length. Only the reference
-    // side is precomputed here.
-    let ref_str: String = reference.chars().filter(|c| !c.is_whitespace()).collect();
-    let ref_bigrams = bigram_counts(&ref_str);
-
-    candidates
-        .iter()
-        .map(|c| {
-            let c_str: String = c.chars().filter(|ch| !ch.is_whitespace()).collect();
-            let score = if ref_str == c_str {
-                1.0
-            } else if ref_str.len() < 2 || c_str.len() < 2 {
-                0.0
-            } else {
-                let c_bigrams = bigram_counts(&c_str);
-                let intersection: usize = ref_bigrams
-                    .iter()
-                    .map(|(bigram, count)| count.min(c_bigrams.get(bigram).unwrap_or(&0)))
-                    .sum();
-                (2 * intersection) as f64 / (ref_str.len() + c_str.len() - 2) as f64
-            };
-
-            match min_similarity {
-                Some(cutoff) if score < cutoff => 0.0,
-                _ => score,
-            }
-        })
-        .collect()
-}
-
-fn bigrams(s: &str) -> impl Iterator<Item = (char, char)> + '_ {
-    s.chars().zip(s.chars().skip(1))
-}
-
-fn bigram_counts(s: &str) -> HashMap<(char, char), usize> {
-    let mut counts = HashMap::new();
-    for bigram in bigrams(s) {
-        *counts.entry(bigram).or_insert(0) += 1;
-    }
-    counts
+) -> Result<Vec<f64>, DistanceError> {
+    let reference = DiceProfile::new(reference);
+    let mut candidate = DiceProfile::default();
+    similarity_many_with(candidates, min_similarity, |c, _| {
+        candidate.load(c);
+        reference.similarity(&candidate)
+    })
 }
 
 // ─── Normalized Levenshtein ──────────────────────────────────────────────────
@@ -306,35 +454,37 @@ pub fn normalized_levenshtein(a: &str, b: &str) -> f64 {
     rapid_lev::normalized_similarity(a.chars(), b.chars())
 }
 
-pub fn normalized_levenshtein_batch(pairs: &[Vec<String>]) -> Vec<f64> {
-    batch_apply(pairs, |a, b| {
-        rapid_lev::normalized_similarity(a.chars(), b.chars())
-    })
+pub fn normalized_levenshtein_batch(pairs: &[Vec<String>]) -> Result<Vec<f64>, DistanceError> {
+    batch_apply(pairs, normalized_levenshtein)
 }
 
 pub fn normalized_levenshtein_many(
     reference: &str,
     candidates: &[String],
     min_similarity: Option<f64>,
-) -> Vec<f64> {
+) -> Result<Vec<f64>, DistanceError> {
     let scorer = rapid_lev::BatchComparator::new(reference.chars());
-    match min_similarity {
-        Some(cutoff) => {
-            let args = rapid_lev::Args::default().score_cutoff(cutoff);
-            candidates
-                .iter()
-                .map(|c| {
-                    scorer
-                        .normalized_similarity_with_args(c.chars(), &args)
-                        .unwrap_or(0.0)
-                })
-                .collect()
-        }
-        None => candidates
-            .iter()
-            .map(|c| scorer.normalized_similarity(c.chars()))
-            .collect(),
-    }
+    similarity_many(
+        candidates,
+        min_similarity,
+        |c| scorer.normalized_similarity(c.chars()),
+        |c, cutoff| lev_similarity_at_least(&scorer, c.chars(), cutoff),
+    )
+}
+
+/// Normalized Levenshtein similarity of `scorer`'s string and `other`, or
+/// `None` if it is below `cutoff` (which lets rapidfuzz stop early).
+fn lev_similarity_at_least<I>(
+    scorer: &rapid_lev::BatchComparator<char>,
+    other: I,
+    cutoff: f64,
+) -> Option<f64>
+where
+    I: IntoIterator<Item = char>,
+    I::IntoIter: DoubleEndedIterator + Clone,
+{
+    let args = rapid_lev::Args::default().score_cutoff(cutoff);
+    scorer.normalized_similarity_with_args(other, &args)
 }
 
 // ─── Indel ───────────────────────────────────────────────────────────────────
@@ -343,10 +493,8 @@ pub fn indel(a: &str, b: &str) -> u32 {
     rapid_indel::distance(a.chars(), b.chars()) as u32
 }
 
-pub fn indel_batch(pairs: &[Vec<String>]) -> Vec<u32> {
-    batch_apply(pairs, |a, b| {
-        rapid_indel::distance(a.chars(), b.chars()) as u32
-    })
+pub fn indel_batch(pairs: &[Vec<String>]) -> Result<Vec<u32>, DistanceError> {
+    batch_apply(pairs, indel)
 }
 
 pub fn indel_many(reference: &str, candidates: &[String], max_distance: Option<u32>) -> Vec<u32> {
@@ -354,7 +502,7 @@ pub fn indel_many(reference: &str, candidates: &[String], max_distance: Option<u
     match max_distance {
         Some(cutoff) => {
             let args = rapid_indel::Args::default().score_cutoff(cutoff as usize);
-            let sentinel = cutoff + 1;
+            let sentinel = distance_sentinel(cutoff);
             candidates
                 .iter()
                 .map(|c| {
@@ -377,62 +525,66 @@ pub fn normalized_indel(a: &str, b: &str) -> f64 {
     rapid_indel::normalized_similarity(a.chars(), b.chars())
 }
 
-pub fn normalized_indel_batch(pairs: &[Vec<String>]) -> Vec<f64> {
-    batch_apply(pairs, |a, b| {
-        rapid_indel::normalized_similarity(a.chars(), b.chars())
-    })
+pub fn normalized_indel_batch(pairs: &[Vec<String>]) -> Result<Vec<f64>, DistanceError> {
+    batch_apply(pairs, normalized_indel)
 }
 
 pub fn normalized_indel_many(
     reference: &str,
     candidates: &[String],
     min_similarity: Option<f64>,
-) -> Vec<f64> {
+) -> Result<Vec<f64>, DistanceError> {
     let scorer = rapid_indel::BatchComparator::new(reference.chars());
-    match min_similarity {
-        Some(cutoff) => {
+    similarity_many(
+        candidates,
+        min_similarity,
+        |c| scorer.normalized_similarity(c.chars()),
+        |c, cutoff| {
             let args = rapid_indel::Args::default().score_cutoff(cutoff);
-            candidates
-                .iter()
-                .map(|c| {
-                    scorer
-                        .normalized_similarity_with_args(c.chars(), &args)
-                        .unwrap_or(0.0)
-                })
-                .collect()
-        }
-        None => candidates
-            .iter()
-            .map(|c| scorer.normalized_similarity(c.chars()))
-            .collect(),
-    }
+            scorer.normalized_similarity_with_args(c.chars(), &args)
+        },
+    )
 }
 
 // ─── Internal helpers for token-based algorithms ─────────────────────────────
 
+/// `word.to_lowercase()`, borrowing `word` when it is already lower-case ASCII
+/// (the common case, which then needs no allocation).
+fn lowercase_word(word: &str) -> Cow<'_, str> {
+    if !word.is_ascii() {
+        // Full Unicode lower-casing (e.g. a word-final `Σ` becomes `ς`).
+        Cow::Owned(word.to_lowercase())
+    } else if word.bytes().any(|b| b.is_ascii_uppercase()) {
+        Cow::Owned(word.to_ascii_lowercase())
+    } else {
+        Cow::Borrowed(word)
+    }
+}
+
+/// Lower-case `s` and collapse every whitespace run into a single space,
+/// dropping leading and trailing whitespace.
 pub fn normalize_str(s: &str) -> String {
-    let mut result = String::new();
+    let mut result = String::with_capacity(s.len());
     for word in s.split_whitespace() {
         if !result.is_empty() {
             result.push(' ');
         }
-        result.push_str(&word.to_lowercase());
+        result.push_str(&lowercase_word(word));
     }
     result
 }
 
-pub fn sorted_tokens(s: &str) -> Vec<String> {
-    let mut tokens: Vec<String> = s.split_whitespace().map(|w| w.to_lowercase()).collect();
-    tokens.sort();
-    tokens
+/// The lower-cased whitespace-separated tokens of `s`, sorted and joined by
+/// single spaces: the string token sort ratio compares.
+fn sorted_token_string(s: &str) -> String {
+    let mut tokens: Vec<Cow<'_, str>> = s.split_whitespace().map(lowercase_word).collect();
+    tokens.sort_unstable();
+    tokens.join(" ")
 }
 
 pub fn token_sort_ratio_impl(a: &str, b: &str) -> f64 {
-    let sorted_a = sorted_tokens(a).join(" ");
-    let sorted_b = sorted_tokens(b).join(" ");
-    if sorted_a.is_empty() && sorted_b.is_empty() {
-        return 1.0;
-    }
+    let sorted_a = sorted_token_string(a);
+    let sorted_b = sorted_token_string(b);
     rapid_lev::normalized_similarity(sorted_a.chars(), sorted_b.chars())
 }
 
@@ -442,6 +594,7 @@ pub fn token_set_ratio_impl(a: &str, b: &str) -> f64 {
     token_set_ratio_from_normalized(&norm_a, &norm_b)
 }
 
+/// Token set ratio of two strings already passed through [`normalize_str`].
 pub fn token_set_ratio_from_normalized(norm_a: &str, norm_b: &str) -> f64 {
     if norm_a.is_empty() || norm_b.is_empty() {
         return if norm_a.is_empty() && norm_b.is_empty() {
@@ -450,44 +603,52 @@ pub fn token_set_ratio_from_normalized(norm_a: &str, norm_b: &str) -> f64 {
             0.0
         };
     }
-
     let tokens_a: BTreeSet<&str> = norm_a.split_whitespace().collect();
     let tokens_b: BTreeSet<&str> = norm_b.split_whitespace().collect();
+    token_set_ratio_from_tokens(&tokens_a, &tokens_b)
+}
 
-    let diff_a: Vec<&str> = tokens_a.difference(&tokens_b).copied().collect();
-    let diff_b: Vec<&str> = tokens_b.difference(&tokens_a).copied().collect();
-
+/// Token set ratio of two non-empty token sets.
+///
+/// With `sect` the sorted shared tokens and `diff_a` / `diff_b` the sorted
+/// tokens only one side has, this is the best plain ratio among
+/// `sect + diff_a` vs `sect + diff_b`, `sect` vs `sect + diff_a`, and `sect`
+/// vs `sect + diff_b`. Without shared tokens it is the ratio of `diff_a` and
+/// `diff_b`.
+fn token_set_ratio_from_tokens(tokens_a: &BTreeSet<&str>, tokens_b: &BTreeSet<&str>) -> f64 {
+    let diff_a: Vec<&str> = tokens_a.difference(tokens_b).copied().collect();
+    let diff_b: Vec<&str> = tokens_b.difference(tokens_a).copied().collect();
     if diff_a.is_empty() && diff_b.is_empty() {
         return 1.0;
     }
 
-    let sect_str: String = tokens_a
-        .intersection(&tokens_b)
+    let sect = tokens_a
+        .intersection(tokens_b)
         .copied()
         .collect::<Vec<_>>()
         .join(" ");
-
-    let combined_a = if diff_a.is_empty() {
-        std::borrow::Cow::Borrowed(sect_str.as_str())
-    } else {
-        std::borrow::Cow::Owned(format!("{} {}", sect_str, diff_a.join(" ")))
+    // `sect` followed by `diff`, joined by a space only when both are non-empty.
+    let combine = |diff: &[&str]| -> String {
+        let diff = diff.join(" ");
+        match (sect.is_empty(), diff.is_empty()) {
+            (_, true) => sect.clone(),
+            (true, false) => diff,
+            (false, false) => format!("{sect} {diff}"),
+        }
     };
-    let combined_b = if diff_b.is_empty() {
-        std::borrow::Cow::Borrowed(sect_str.as_str())
-    } else {
-        std::borrow::Cow::Owned(format!("{} {}", sect_str, diff_b.join(" ")))
-    };
+    let combined_a = combine(&diff_a);
+    let combined_b = combine(&diff_b);
 
     let score_ab = rapid_lev::normalized_similarity(combined_a.chars(), combined_b.chars());
     let score_a = if diff_a.is_empty() {
         1.0
     } else {
-        rapid_lev::normalized_similarity(sect_str.chars(), combined_a.chars())
+        rapid_lev::normalized_similarity(sect.chars(), combined_a.chars())
     };
     let score_b = if diff_b.is_empty() {
         1.0
     } else {
-        rapid_lev::normalized_similarity(sect_str.chars(), combined_b.chars())
+        rapid_lev::normalized_similarity(sect.chars(), combined_b.chars())
     };
 
     f64::max(score_ab, f64::max(score_a, score_b))
@@ -499,42 +660,68 @@ pub fn partial_ratio_impl(a: &str, b: &str) -> f64 {
     partial_ratio_from_normalized(&norm_a, &norm_b)
 }
 
+/// Partial ratio of two strings already passed through [`normalize_str`].
 pub fn partial_ratio_from_normalized(norm_a: &str, norm_b: &str) -> f64 {
-    if norm_a.is_empty() && norm_b.is_empty() {
-        return 1.0;
-    }
+    // Every score is >= 0, so a floor of 0 always yields a score.
+    partial_ratio_at_least(norm_a, norm_b, 0.0, None).unwrap_or(0.0)
+}
+
+/// Partial ratio of two normalized strings if it is at least `floor`,
+/// `None` otherwise.
+///
+/// The shorter string is compared with every window of the same length in the
+/// longer one and the best window wins. Each window is computed with the best
+/// score so far (or `floor`) as the cutoff, so a high `floor` lets rapidfuzz
+/// abandon windows early. `cached_a`, if given, must be the comparator of
+/// `norm_a` and is reused when `norm_a` is the shorter string.
+fn partial_ratio_at_least(
+    norm_a: &str,
+    norm_b: &str,
+    floor: f64,
+    cached_a: Option<&rapid_lev::BatchComparator<char>>,
+) -> Option<f64> {
     if norm_a.is_empty() || norm_b.is_empty() {
-        return 0.0;
+        let score = if norm_a.is_empty() && norm_b.is_empty() {
+            1.0
+        } else {
+            0.0
+        };
+        return (score >= floor).then_some(score);
     }
 
-    let (shorter, longer) = if norm_a.chars().count() <= norm_b.chars().count() {
-        (norm_a, norm_b)
+    let len_a = norm_a.chars().count();
+    let len_b = norm_b.chars().count();
+    if len_a == len_b {
+        let args = rapid_lev::Args::default().score_cutoff(floor);
+        return rapid_lev::normalized_similarity_with_args(norm_a.chars(), norm_b.chars(), &args);
+    }
+
+    let built;
+    let (scorer, longer, short_len) = if len_a < len_b {
+        let scorer = match cached_a {
+            Some(scorer) => scorer,
+            None => {
+                built = rapid_lev::BatchComparator::new(norm_a.chars());
+                &built
+            }
+        };
+        (scorer, norm_b, len_a)
     } else {
-        (norm_b, norm_a)
+        built = rapid_lev::BatchComparator::new(norm_b.chars());
+        (&built, norm_a, len_b)
     };
 
-    let short_len = shorter.chars().count();
-    let long_len = longer.chars().count();
-
-    if short_len == long_len {
-        return rapid_lev::normalized_similarity(shorter.chars(), longer.chars());
-    }
-
     let long_chars: Vec<char> = longer.chars().collect();
-    let scorer = rapid_lev::BatchComparator::new(shorter.chars());
-    let mut best = 0.0_f64;
-
-    for start in 0..=(long_len - short_len) {
-        let window = long_chars[start..start + short_len].iter().copied();
-        let args = rapid_lev::Args::default().score_cutoff(best);
-        if let Some(score) = scorer.normalized_similarity_with_args(window, &args) {
-            best = score;
-            if best == 1.0 {
+    let mut best: Option<f64> = None;
+    for window in long_chars.windows(short_len) {
+        let cutoff = best.unwrap_or(floor);
+        if let Some(score) = lev_similarity_at_least(scorer, window.iter().copied(), cutoff) {
+            best = Some(score);
+            if score == 1.0 {
                 break;
             }
         }
     }
-
     best
 }
 
@@ -562,11 +749,24 @@ pub fn weighted_ratio_impl(a: &str, b: &str) -> f64 {
     }
     let sort = token_sort_ratio_impl(a, b);
     let set = token_set_ratio_from_normalized(&norm_a, &norm_b);
-    let partial = partial_ratio_from_normalized(&norm_a, &norm_b);
+    best_with_partial(raw.max(sort).max(set), &norm_a, &norm_b, 0.0, None)
+}
 
-    [raw, sort, set, partial]
-        .into_iter()
-        .fold(0.0_f64, f64::max)
+/// `max(best, partial_ratio(norm_a, norm_b))`, skipping the (expensive)
+/// partial ratio when it cannot change the result: it is only computed down to
+/// `max(best, floor)`, and not at all once `best` is already `1.0`.
+fn best_with_partial(
+    best: f64,
+    norm_a: &str,
+    norm_b: &str,
+    floor: f64,
+    cached_a: Option<&rapid_lev::BatchComparator<char>>,
+) -> f64 {
+    if best == 1.0 {
+        return best;
+    }
+    partial_ratio_at_least(norm_a, norm_b, best.max(floor), cached_a)
+        .map_or(best, |partial| best.max(partial))
 }
 
 // ─── Token Sort Ratio ────────────────────────────────────────────────────────
@@ -575,7 +775,7 @@ pub fn token_sort_ratio(a: &str, b: &str) -> f64 {
     token_sort_ratio_impl(a, b)
 }
 
-pub fn token_sort_ratio_batch(pairs: &[Vec<String>]) -> Vec<f64> {
+pub fn token_sort_ratio_batch(pairs: &[Vec<String>]) -> Result<Vec<f64>, DistanceError> {
     batch_apply(pairs, token_sort_ratio_impl)
 }
 
@@ -583,23 +783,15 @@ pub fn token_sort_ratio_many(
     reference: &str,
     candidates: &[String],
     min_similarity: Option<f64>,
-) -> Vec<f64> {
-    let sorted_ref = sorted_tokens(reference).join(" ");
-    candidates
-        .iter()
-        .map(|c| {
-            let sorted_c = sorted_tokens(c).join(" ");
-            let score = if sorted_ref.is_empty() && sorted_c.is_empty() {
-                1.0
-            } else {
-                rapid_lev::normalized_similarity(sorted_ref.chars(), sorted_c.chars())
-            };
-            match min_similarity {
-                Some(cutoff) if score < cutoff => 0.0,
-                _ => score,
-            }
-        })
-        .collect()
+) -> Result<Vec<f64>, DistanceError> {
+    let sorted_ref = sorted_token_string(reference);
+    let scorer = rapid_lev::BatchComparator::new(sorted_ref.chars());
+    similarity_many(
+        candidates,
+        min_similarity,
+        |c| scorer.normalized_similarity(sorted_token_string(c).chars()),
+        |c, cutoff| lev_similarity_at_least(&scorer, sorted_token_string(c).chars(), cutoff),
+    )
 }
 
 // ─── Token Set Ratio ─────────────────────────────────────────────────────────
@@ -608,7 +800,7 @@ pub fn token_set_ratio(a: &str, b: &str) -> f64 {
     token_set_ratio_impl(a, b)
 }
 
-pub fn token_set_ratio_batch(pairs: &[Vec<String>]) -> Vec<f64> {
+pub fn token_set_ratio_batch(pairs: &[Vec<String>]) -> Result<Vec<f64>, DistanceError> {
     batch_apply(pairs, token_set_ratio_impl)
 }
 
@@ -616,73 +808,17 @@ pub fn token_set_ratio_many(
     reference: &str,
     candidates: &[String],
     min_similarity: Option<f64>,
-) -> Vec<f64> {
+) -> Result<Vec<f64>, DistanceError> {
     let norm_ref = normalize_str(reference);
     let tokens_ref: BTreeSet<&str> = norm_ref.split_whitespace().collect();
-
-    candidates
-        .iter()
-        .map(|c| {
-            let norm_c = normalize_str(c);
-
-            if norm_ref.is_empty() || norm_c.is_empty() {
-                let score = if norm_ref.is_empty() && norm_c.is_empty() {
-                    1.0
-                } else {
-                    0.0
-                };
-                return match min_similarity {
-                    Some(cutoff) if score < cutoff => 0.0,
-                    _ => score,
-                };
-            }
-
-            let tokens_c: BTreeSet<&str> = norm_c.split_whitespace().collect();
-
-            let diff_ref: Vec<&str> = tokens_ref.difference(&tokens_c).copied().collect();
-            let diff_c: Vec<&str> = tokens_c.difference(&tokens_ref).copied().collect();
-
-            if diff_ref.is_empty() && diff_c.is_empty() {
-                return 1.0;
-            }
-
-            let sect_str: String = tokens_ref
-                .intersection(&tokens_c)
-                .copied()
-                .collect::<Vec<_>>()
-                .join(" ");
-
-            let combined_ref = if diff_ref.is_empty() {
-                std::borrow::Cow::Borrowed(sect_str.as_str())
-            } else {
-                std::borrow::Cow::Owned(format!("{} {}", sect_str, diff_ref.join(" ")))
-            };
-            let combined_c = if diff_c.is_empty() {
-                std::borrow::Cow::Borrowed(sect_str.as_str())
-            } else {
-                std::borrow::Cow::Owned(format!("{} {}", sect_str, diff_c.join(" ")))
-            };
-
-            let score_ab =
-                rapid_lev::normalized_similarity(combined_ref.chars(), combined_c.chars());
-            let score_a = if diff_ref.is_empty() {
-                1.0
-            } else {
-                rapid_lev::normalized_similarity(sect_str.chars(), combined_ref.chars())
-            };
-            let score_b = if diff_c.is_empty() {
-                1.0
-            } else {
-                rapid_lev::normalized_similarity(sect_str.chars(), combined_c.chars())
-            };
-
-            let score = f64::max(score_ab, f64::max(score_a, score_b));
-            match min_similarity {
-                Some(cutoff) if score < cutoff => 0.0,
-                _ => score,
-            }
-        })
-        .collect()
+    similarity_many_with(candidates, min_similarity, |c, _| {
+        let norm_c = normalize_str(c);
+        if norm_ref.is_empty() || norm_c.is_empty() {
+            return token_set_ratio_from_normalized(&norm_ref, &norm_c);
+        }
+        let tokens_c: BTreeSet<&str> = norm_c.split_whitespace().collect();
+        token_set_ratio_from_tokens(&tokens_ref, &tokens_c)
+    })
 }
 
 // ─── Partial Ratio ───────────────────────────────────────────────────────────
@@ -691,7 +827,7 @@ pub fn partial_ratio(a: &str, b: &str) -> f64 {
     partial_ratio_impl(a, b)
 }
 
-pub fn partial_ratio_batch(pairs: &[Vec<String>]) -> Vec<f64> {
+pub fn partial_ratio_batch(pairs: &[Vec<String>]) -> Result<Vec<f64>, DistanceError> {
     batch_apply(pairs, partial_ratio_impl)
 }
 
@@ -699,60 +835,14 @@ pub fn partial_ratio_many(
     reference: &str,
     candidates: &[String],
     min_similarity: Option<f64>,
-) -> Vec<f64> {
+) -> Result<Vec<f64>, DistanceError> {
     let norm_ref = normalize_str(reference);
-
-    candidates
-        .iter()
-        .map(|c| {
-            let norm_c = normalize_str(c);
-
-            if norm_ref.is_empty() && norm_c.is_empty() {
-                return 1.0;
-            }
-            if norm_ref.is_empty() || norm_c.is_empty() {
-                return 0.0;
-            }
-
-            let (shorter, longer) = if norm_ref.chars().count() <= norm_c.chars().count() {
-                (norm_ref.as_str(), norm_c.as_str())
-            } else {
-                (norm_c.as_str(), norm_ref.as_str())
-            };
-
-            let short_len = shorter.chars().count();
-            let long_len = longer.chars().count();
-
-            if short_len == long_len {
-                let score = rapid_lev::normalized_similarity(shorter.chars(), longer.chars());
-                return match min_similarity {
-                    Some(cutoff) if score < cutoff => 0.0,
-                    _ => score,
-                };
-            }
-
-            let long_chars: Vec<char> = longer.chars().collect();
-            let scorer = rapid_lev::BatchComparator::new(shorter.chars());
-            let mut best = 0.0_f64;
-
-            for start in 0..=(long_len - short_len) {
-                let window = long_chars[start..start + short_len].iter().copied();
-                let cutoff = min_similarity.map_or(best, |t| best.max(t));
-                let args = rapid_lev::Args::default().score_cutoff(cutoff);
-                if let Some(score) = scorer.normalized_similarity_with_args(window, &args) {
-                    best = score;
-                    if best == 1.0 {
-                        break;
-                    }
-                }
-            }
-
-            match min_similarity {
-                Some(cutoff) if best < cutoff => 0.0,
-                _ => best,
-            }
-        })
-        .collect()
+    let ref_scorer = rapid_lev::BatchComparator::new(norm_ref.chars());
+    similarity_many_with(candidates, min_similarity, |c, threshold| {
+        let norm_c = normalize_str(c);
+        let floor = threshold.pruning_cutoff().unwrap_or(0.0);
+        partial_ratio_at_least(&norm_ref, &norm_c, floor, Some(&ref_scorer)).unwrap_or(0.0)
+    })
 }
 
 // ─── Weighted Ratio ──────────────────────────────────────────────────────────
@@ -761,7 +851,7 @@ pub fn weighted_ratio(a: &str, b: &str) -> f64 {
     weighted_ratio_impl(a, b)
 }
 
-pub fn weighted_ratio_batch(pairs: &[Vec<String>]) -> Vec<f64> {
+pub fn weighted_ratio_batch(pairs: &[Vec<String>]) -> Result<Vec<f64>, DistanceError> {
     batch_apply(pairs, weighted_ratio_impl)
 }
 
@@ -769,146 +859,48 @@ pub fn weighted_ratio_many(
     reference: &str,
     candidates: &[String],
     min_similarity: Option<f64>,
-) -> Vec<f64> {
+) -> Result<Vec<f64>, DistanceError> {
     let norm_ref = normalize_str(reference);
-    let sorted_ref = sorted_tokens(reference).join(" ");
-    let tokens_ref: BTreeSet<String> = norm_ref.split_whitespace().map(String::from).collect();
+    let tokens_ref: BTreeSet<&str> = norm_ref.split_whitespace().collect();
     let ref_scorer = rapid_lev::BatchComparator::new(norm_ref.chars());
     let ref_is_normalized = norm_ref == reference;
     // Only needed when the original reference differs from the normalized one.
     let raw_ref_scorer =
         (!ref_is_normalized).then(|| rapid_lev::BatchComparator::new(reference.chars()));
+    let sorted_ref = sorted_token_string(reference);
+    let sort_scorer = rapid_lev::BatchComparator::new(sorted_ref.chars());
 
-    candidates
-        .iter()
-        .map(|c| {
-            let norm_c = normalize_str(c);
-            let raw_normalized = ref_scorer.normalized_similarity(norm_c.chars());
-            if raw_normalized == 1.0 {
-                return 1.0;
-            }
-            // Skip the original-string pass when normalization changed nothing.
-            let raw = if ref_is_normalized && norm_c == *c {
-                raw_normalized
-            } else {
-                let scorer = raw_ref_scorer.as_ref().unwrap_or(&ref_scorer);
-                raw_normalized.max(scorer.normalized_similarity(c.chars()))
-            };
-            if raw == 1.0 {
-                return 1.0;
-            }
+    similarity_many_with(candidates, min_similarity, |c, threshold| {
+        let norm_c = normalize_str(c);
+        let raw_normalized = ref_scorer.normalized_similarity(norm_c.chars());
+        if raw_normalized == 1.0 {
+            return 1.0;
+        }
+        // Skip the original-string pass when normalization changed nothing.
+        let raw = if ref_is_normalized && norm_c == *c {
+            raw_normalized
+        } else {
+            let scorer = raw_ref_scorer.as_ref().unwrap_or(&ref_scorer);
+            raw_normalized.max(scorer.normalized_similarity(c.chars()))
+        };
+        if raw == 1.0 {
+            return 1.0;
+        }
 
-            let sorted_c = sorted_tokens(c).join(" ");
-            let sort = if sorted_ref.is_empty() && sorted_c.is_empty() {
-                1.0
-            } else {
-                rapid_lev::normalized_similarity(sorted_ref.chars(), sorted_c.chars())
-            };
-
-            let set = {
-                if norm_ref.is_empty() || norm_c.is_empty() {
-                    if norm_ref.is_empty() && norm_c.is_empty() {
-                        1.0
-                    } else {
-                        0.0
-                    }
-                } else {
-                    let tokens_c: BTreeSet<&str> = norm_c.split_whitespace().collect();
-                    let tokens_ref_borrowed: BTreeSet<&str> =
-                        tokens_ref.iter().map(|s| s.as_str()).collect();
-
-                    let diff_ref: Vec<&str> =
-                        tokens_ref_borrowed.difference(&tokens_c).copied().collect();
-                    let diff_c: Vec<&str> =
-                        tokens_c.difference(&tokens_ref_borrowed).copied().collect();
-
-                    if diff_ref.is_empty() && diff_c.is_empty() {
-                        1.0
-                    } else {
-                        let sect_str: String = tokens_ref_borrowed
-                            .intersection(&tokens_c)
-                            .copied()
-                            .collect::<Vec<_>>()
-                            .join(" ");
-
-                        let combined_ref = if diff_ref.is_empty() {
-                            std::borrow::Cow::Borrowed(sect_str.as_str())
-                        } else {
-                            std::borrow::Cow::Owned(format!("{} {}", sect_str, diff_ref.join(" ")))
-                        };
-                        let combined_c = if diff_c.is_empty() {
-                            std::borrow::Cow::Borrowed(sect_str.as_str())
-                        } else {
-                            std::borrow::Cow::Owned(format!("{} {}", sect_str, diff_c.join(" ")))
-                        };
-
-                        let score_ab = rapid_lev::normalized_similarity(
-                            combined_ref.chars(),
-                            combined_c.chars(),
-                        );
-                        let score_a = if diff_ref.is_empty() {
-                            1.0
-                        } else {
-                            rapid_lev::normalized_similarity(sect_str.chars(), combined_ref.chars())
-                        };
-                        let score_b = if diff_c.is_empty() {
-                            1.0
-                        } else {
-                            rapid_lev::normalized_similarity(sect_str.chars(), combined_c.chars())
-                        };
-
-                        f64::max(score_ab, f64::max(score_a, score_b))
-                    }
-                }
-            };
-
-            let partial = {
-                if norm_ref.is_empty() && norm_c.is_empty() {
-                    1.0
-                } else if norm_ref.is_empty() || norm_c.is_empty() {
-                    0.0
-                } else {
-                    let (shorter, longer) = if norm_ref.chars().count() <= norm_c.chars().count() {
-                        (norm_ref.as_str(), norm_c.as_str())
-                    } else {
-                        (norm_c.as_str(), norm_ref.as_str())
-                    };
-
-                    let short_len = shorter.chars().count();
-                    let long_len = longer.chars().count();
-
-                    if short_len == long_len {
-                        rapid_lev::normalized_similarity(shorter.chars(), longer.chars())
-                    } else {
-                        let long_chars: Vec<char> = longer.chars().collect();
-                        let scorer = rapid_lev::BatchComparator::new(shorter.chars());
-                        let mut best = 0.0_f64;
-
-                        for start in 0..=(long_len - short_len) {
-                            let window = long_chars[start..start + short_len].iter().copied();
-                            let args = rapid_lev::Args::default().score_cutoff(best);
-                            if let Some(score) =
-                                scorer.normalized_similarity_with_args(window, &args)
-                            {
-                                best = score;
-                                if best == 1.0 {
-                                    break;
-                                }
-                            }
-                        }
-
-                        best
-                    }
-                }
-            };
-
-            let score = [raw, sort, set, partial]
-                .into_iter()
-                .fold(0.0_f64, f64::max);
-            match min_similarity {
-                Some(cutoff) if score < cutoff => 0.0,
-                _ => score,
-            }
-        })
-        .collect()
+        let sort = sort_scorer.normalized_similarity(sorted_token_string(c).chars());
+        let set = if norm_ref.is_empty() || norm_c.is_empty() {
+            token_set_ratio_from_normalized(&norm_ref, &norm_c)
+        } else {
+            let tokens_c: BTreeSet<&str> = norm_c.split_whitespace().collect();
+            token_set_ratio_from_tokens(&tokens_ref, &tokens_c)
+        };
+        let floor = threshold.pruning_cutoff().unwrap_or(0.0);
+        best_with_partial(
+            raw.max(sort).max(set),
+            &norm_ref,
+            &norm_c,
+            floor,
+            Some(&ref_scorer),
+        )
+    })
 }
