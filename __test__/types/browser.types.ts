@@ -14,14 +14,17 @@ type Expect<T extends true> = T;
 type IsAny<T> = 0 extends 1 & T ? true : false;
 
 type BrowserExports = keyof typeof Browser;
+// napi-rs's loader marker (index.d.ts, @napi-rs/cli >= 3.10) is internal and not
+// part of the public API; the runtime parity test in index.spec.ts skips it too.
+type NodeExports = Exclude<keyof typeof NodeEntry, '__napiBindingTarget'>;
 type ExportsWithAny = {
   [K in BrowserExports]: IsAny<(typeof Browser)[K]> extends true ? K : never;
 }[BrowserExports];
 
 export type DeclarationChecks = [
   // The same runtime exports as the Node.js ES module entry.
-  Expect<Equal<Exclude<BrowserExports, keyof typeof NodeEntry>, never>>,
-  Expect<Equal<Exclude<keyof typeof NodeEntry, BrowserExports>, never>>,
+  Expect<Equal<Exclude<BrowserExports, NodeExports>, never>>,
+  Expect<Equal<Exclude<NodeExports, BrowserExports>, never>>,
   Expect<Equal<ExportsWithAny, never>>,
   // FuzzyObjectIndex without the Buffer-based serialize() / deserialize().
   Expect<Equal<'serialize' extends keyof Browser.FuzzyObjectIndex<unknown> ? true : false, false>>,
