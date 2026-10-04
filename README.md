@@ -93,6 +93,17 @@ The browser build (`rapid-fuzzy` resolved with the `browser` condition) instanti
 
 The build target must support top-level `await` (ES2022; the defaults of the bundlers above do).
 
+TypeScript does not apply the `browser` condition on its own, so a browser project type-checks against the Node.js declarations, which for example still list `FuzzyObjectIndex#serialize()`. To check against the declarations of the browser build instead, add the condition to `tsconfig.json` (TypeScript 5.0+, with `"moduleResolution": "bundler"`, `"node16"` or `"nodenext"`):
+
+```json
+{
+  "compilerOptions": {
+    "moduleResolution": "bundler",
+    "customConditions": ["browser"]
+  }
+}
+```
+
 #### CDN (no bundler required)
 
 The browser build is plain ES modules, so it runs directly from a CDN that serves the package files unmodified, such as [jsDelivr](https://www.jsdelivr.com/) or [unpkg](https://unpkg.com/):
@@ -376,16 +387,16 @@ After `destroy()`, an index releases its Rust-side memory but stays usable: it b
 
 #### Incremental Search (Autocomplete)
 
-`FuzzyIndex` remembers which items matched the previous query. When the next query only appends characters to it (typing `app` → `apple`), only those items are re-scored:
+`FuzzyIndex` can remember which items matched the previous query. When the next query only appends characters to it (typing `appl` → `apple`), only those items are re-scored:
 
 ```typescript
 const index = new FuzzyIndex(items);
-index.search('app');    // scores all items, remembers the matches
-index.search('apple');  // re-scores only the items that matched 'app'
+index.search('appl');   // scores all items; remembers the matches if fewer than half of the items matched
+index.search('apple');  // re-scores only the items that matched 'appl'
 index.search('xyz');    // not an extension — full scan
 ```
 
-The cache is only used for plain extensions (not once the query contains `!`, `^`, `$`, `'` or `\`), a search with a positive `minScore` does not update it, and results are the same with or without it. In our type-ahead benchmark (12 keystrokes over 10,000 items) a whole sequence took about 1.6 ms.
+The matches are remembered only when fewer than half of the items matched (a short first keystroke that matches most items is not worth narrowing to, so the next query scans everything again), and a search with a positive `minScore` does not update them. They are used only for plain extensions: not once the query contains `!`, `^`, `$`, `'` or `\`, nor when it contains a character that matching normalizes, such as an accented letter (`caf` → `café` is a full scan). Results are the same with or without the cache. In our type-ahead benchmark (12 keystrokes over 10,000 items) a whole sequence took about 1.6 ms.
 
 #### Index Serialization
 
