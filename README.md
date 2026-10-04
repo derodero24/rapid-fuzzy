@@ -658,7 +658,7 @@ onUnmounted(() => index.destroy());
 
 ### Memory Usage
 
-`FuzzyIndex` and `FuzzyObjectIndex` store the item strings and precomputed search data (a character mask per item and, for non-ASCII items, their UTF-32 text) on the Rust side. Call `.destroy()` when the index is no longer needed to free this memory immediately rather than waiting for garbage collection.
+`FuzzyIndex` and `FuzzyObjectIndex` store the item strings and precomputed search data (a character mask per item and, for non-ASCII items, their UTF-32 text) on the Rust side. Call `.destroy()` when the index is no longer needed to free this memory immediately rather than waiting for garbage collection. Indexes dropped without `.destroy()` are reclaimed by the garbage collector, but only once the event loop gets a turn to run their finalizers: code that creates many indexes in a tight synchronous loop should call `.destroy()` on each one.
 
 For read-heavy workloads, prefer `searchIndices()` over `search()` — it returns only indices and scores without cloning item strings back to JavaScript, reducing GC pressure.
 
