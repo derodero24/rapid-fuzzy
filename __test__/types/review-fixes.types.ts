@@ -31,3 +31,45 @@ export function readonlyArguments(b: typeof Browser, n: typeof Node): void {
     keyed.search('kit', { maxResults: Number.POSITIVE_INFINITY });
   }
 }
+
+// ─── Literal key names inside generic functions ─────────────────────────────
+
+import { FuzzyObjectIndex, searchObjects } from '../../objects.js';
+
+interface Located {
+  name: string;
+  address?: { city: string; geo: { lat: number } } | null | undefined;
+  greet(): string;
+}
+
+// A constrained item type parameter accepts the key paths its constraint
+// has, as string keys and as KeyConfig names, at any depth. (Method names are
+// not told apart from properties there; concrete item types reject them.)
+export function constrained<T extends Located>(items: readonly T[]): void {
+  searchObjects('q', items, { keys: ['name'] });
+  searchObjects('q', items, { keys: ['name', { name: 'address.city', weight: 2 }] });
+  searchObjects('q', items, { keys: ['address.geo.lat'], maxResults: 1 });
+  const index = new FuzzyObjectIndex(items, { keys: ['name', { name: 'name', weight: 2 }] });
+  index.search('q', 2);
+  // Names the constraint does not have are still rejected.
+  // @ts-expect-error -- typo in a key name
+  searchObjects('q', items, { keys: ['nmae'] });
+  // @ts-expect-error -- typo in a nested key name
+  searchObjects('q', items, { keys: ['address.ctiy'] });
+  // @ts-expect-error -- path continues past a string value
+  new FuzzyObjectIndex(items, { keys: ['name.length'] });
+}
+
+// Keys typed as plain strings are accepted for any item type parameter.
+export function unconstrained<T>(items: readonly T[], keys: readonly string[]): void {
+  searchObjects('q', items, { keys });
+  new FuzzyObjectIndex(items, { keys: [...keys, { name: keys[0] ?? 'name', weight: 2 }] });
+}
+
+// Concrete item types keep the precise check.
+declare const located: readonly Located[];
+searchObjects('q', located, { keys: ['name', 'address.geo.lat'] });
+// @ts-expect-error -- methods are not searchable keys
+searchObjects('q', located, { keys: ['greet'] });
+// @ts-expect-error -- path continues past a string value
+searchObjects('q', located, { keys: ['name.length'] });

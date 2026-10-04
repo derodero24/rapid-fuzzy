@@ -154,12 +154,49 @@ interface KeyNames<S extends string, C extends string> {
   readonly keys: ReadonlyArray<S | { readonly name: C; readonly weight?: number | undefined }>;
 }
 
+/** Names of the members of primitive values, which are never data keys. */
+type PrimitiveMember = keyof string | keyof number | keyof boolean | keyof bigint | keyof symbol;
+
+/**
+ * `Name` when the value type `V` has keys of its own (any data value: a
+ * primitive, an array, an object), `never` when it has none (a function).
+ * Built without conditional types, so that for a generic `V` it resolves
+ * through `V`'s constraint.
+ */
+type DataKey<V, Name> = { [Q in keyof V & string]: Name }[keyof V & string];
+
+/** The segment `S` when it names a data property of `T`. */
+type GenericSegment<T, S extends string> = S & keyof T & DataKey<NonNullable<T[S & keyof T]>, S>;
+
+/**
+ * `P` when it is a key path of `T`, built only from key lookups: unlike
+ * {@link CheckPath}, which uses conditional types on `T`, it is assignable
+ * from a literal inside a generic function whose item type parameter is
+ * constrained to have the path (`<T extends { name: string }>`). It is less
+ * precise for concrete types (it does not see array indices), which
+ * {@link CheckPath} covers.
+ */
+type GenericPath<
+  T,
+  P extends string,
+  Nested extends boolean = false,
+> = P extends `${infer Head}.${infer Rest}`
+  ? `${GenericSegment<T, NestedName<Head, Nested>>}.${GenericPath<NonNullable<T[Head & keyof T]>, Rest, true>}`
+  : GenericSegment<T, NestedName<P, Nested>>;
+
+/** A segment name, excluding primitive members below the top level. */
+type NestedName<S extends string, Nested extends boolean> = Nested extends true
+  ? Exclude<S, PrimitiveMember>
+  : S;
+
 /**
  * `K` when every name in it is a key path of `T`; otherwise the valid
  * alternatives, so the offending name is reported. A plain `string` is not
  * checked.
  */
-type CheckedKey<T, K extends string> = string extends K ? K : CheckPath<NonNullable<T>, K>;
+type CheckedKey<T, K extends string> = string extends K
+  ? K
+  : CheckPath<NonNullable<T>, K> | GenericPath<NonNullable<T>, K>;
 
 /** Excludes `T` from type inference (like `NoInfer`, for TypeScript < 5.4). */
 type NoInference<T> = [T][T extends unknown ? 0 : never];
