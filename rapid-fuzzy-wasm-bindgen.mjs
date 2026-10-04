@@ -93,13 +93,14 @@ export class FuzzyIndex {
      * The WebAssembly build has no worker thread, so the index is built
      * synchronously on the calling thread and the returned Promise is already
      * resolved. Prefer the constructor when you do not need a Promise.
+     *
+     * Invalid input (anything but an array of strings) rejects the returned
+     * Promise with a `TypeError` instead of throwing synchronously.
      * @param {string[]} items
      * @returns {Promise<FuzzyIndex>}
      */
     static fromAsync(items) {
-        const ptr0 = passArrayJsValueToWasm0(items, wasm.__wbindgen_export);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.fuzzyindex_fromAsync(ptr0, len0);
+        const ret = wasm.fuzzyindex_fromAsync(addHeapObject(items));
         return takeObject(ret);
     }
     /**
@@ -355,8 +356,10 @@ export class KeyedFuzzyIndex {
      * Search the index for items matching the query.
      *
      * Returns results sorted by combined weighted score (best match first).
+     * The second argument accepts either a number (maxResults) or a
+     * SearchOptions object, like `FuzzyIndex.search()`.
      * @param {string} query
-     * @param {SearchOptions | null} [options]
+     * @param {number | SearchOptions | null} [options]
      * @returns {KeySearchResult[]}
      */
     search(query, options) {
@@ -1621,10 +1624,6 @@ function __wbg_get_imports() {
             const ret = Error(getStringFromWasm0(arg0, arg1));
             return addHeapObject(ret);
         },
-        __wbg_Number_c54e7112a3fa7e3e: function(arg0) {
-            const ret = Number(getObject(arg0));
-            return ret;
-        },
         __wbg_String_8564e559799eccda: function(arg0, arg1) {
             const ret = String(getObject(arg1));
             const ptr1 = passStringToWasm0(ret, wasm.__wbindgen_export, wasm.__wbindgen_export2);
@@ -1730,10 +1729,6 @@ function __wbg_get_imports() {
             const ret = Array.isArray(getObject(arg0));
             return ret;
         },
-        __wbg_isSafeInteger_8f51c743827d1ec5: function(arg0) {
-            const ret = Number.isSafeInteger(getObject(arg0));
-            return ret;
-        },
         __wbg_iterator_22ddeb808cf55a6f: function() {
             const ret = Symbol.iterator;
             return addHeapObject(ret);
@@ -1780,6 +1775,10 @@ function __wbg_get_imports() {
         __wbg_push_bfdf956ba476f65b: function(arg0, arg1) {
             const ret = getObject(arg0).push(getObject(arg1));
             return ret;
+        },
+        __wbg_reject_bea6d825081bd4d7: function(arg0) {
+            const ret = Promise.reject(getObject(arg0));
+            return addHeapObject(ret);
         },
         __wbg_resolve_35ec7e0c6af4c82c: function(arg0) {
             const ret = Promise.resolve(getObject(arg0));

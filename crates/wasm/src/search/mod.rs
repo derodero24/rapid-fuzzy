@@ -8,11 +8,11 @@ pub use keys::search_keys;
 
 use nucleo_matcher::pattern::CaseMatching;
 use rapid_fuzzy_core::search as core;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use tsify::Tsify;
 use wasm_bindgen::prelude::*;
 
-use crate::convert::{from_js, or_null, to_js};
+use crate::convert::{from_js, or_null, to_js, type_error};
 
 // ─── Shared wasm types ──────────────────────────────────────────────────────
 
@@ -105,9 +105,10 @@ impl From<core::IndexSearchResult> for IndexSearchResult {
 #[derive(Debug, Clone, Default, Deserialize, Tsify)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchOptions {
-    /// Maximum number of results to return.
+    /// Maximum number of results to return: a non-negative integer, or
+    /// `Infinity` for no limit. NaN, negative and fractional values throw.
     #[tsify(optional)]
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_max_results")]
     pub max_results: Option<u32>,
     /// Minimum normalized score (0.0-1.0) to include in results.
     #[tsify(optional)]
@@ -133,26 +134,33 @@ pub struct SearchOptions {
 }
 
 impl SearchOptions {
-    /// Read the `options` argument of `search`, `FuzzyIndex.search` and
-    /// `FuzzyIndex.searchIndices`: `undefined`/`null`, a number (shorthand for
-    /// `{ maxResults }`, as in the Node.js binding) or a `SearchOptions` object.
+    /// Read the `options` argument of `search`, `searchKeys` and the
+    /// indexes' `search` / `searchIndices`: `undefined`/`null`, a number
+    /// (shorthand for `{ maxResults }`, as in the Node.js binding) or a
+    /// `SearchOptions` object.
     pub(crate) fn from_js_or_max_results(options: Option<JsValue>) -> Result<Self, JsValue> {
         match options {
             None => Ok(Self::default()),
-            Some(max_results) if max_results.as_f64().is_some() => Ok(Self {
-                max_results: Some(from_js(max_results, "maxResults")?),
-                ..Self::default()
-            }),
-            Some(options) => from_js(options, "SearchOptions"),
+            Some(max_results) => match max_results.as_f64() {
+                Some(value) => Ok(Self {
+                    max_results: core::check_max_results(value).map_err(|e| type_error(&e))?,
+                    ..Self::default()
+                }),
+                None => from_js(max_results, "SearchOptions"),
+            },
         }
     }
+}
 
-    /// Read an optional `SearchOptions` argument.
-    pub(crate) fn from_ts(options: Option<tsify::Ts<Self>>) -> Result<Self, JsValue> {
-        options.map_or_else(
-            || Ok(Self::default()),
-            |opts| from_js(opts.into(), "SearchOptions"),
-        )
+/// Read `SearchOptions.maxResults` like the Node.js binding does (see
+/// [`core::check_max_results`]): `Infinity` means no limit, and NaN,
+/// negative or fractional values are rejected.
+fn deserialize_max_results<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<u32>, D::Error> {
+    match Option::<f64>::deserialize(deserializer)? {
+        Some(value) => core::check_max_results(value).map_err(serde::de::Error::custom),
+        None => Ok(None),
     }
 }
 

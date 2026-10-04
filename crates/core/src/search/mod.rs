@@ -16,7 +16,7 @@ use napi::bindgen_prelude::{FromNapiValue, Object, TypeName, Unknown, ValidateNa
 use napi::{Status, ValueType};
 use napi_derive::napi;
 use nucleo_matcher::pattern::CaseMatching;
-use rapid_fuzzy_core::search::is_empty_query;
+use rapid_fuzzy_core::search::{check_max_results, is_empty_query};
 
 // -------------------------
 // Napi-specific types
@@ -138,33 +138,11 @@ pub struct SearchOptions {
 /// and checked instead: non-negative integers are accepted (values beyond
 /// `u32::MAX` exceed any array length and mean "no limit"), `Infinity` means
 /// no limit, and NaN, negative or fractional values are rejected.
+///
+/// The check itself is [`check_max_results`], shared with the WebAssembly
+/// binding.
 pub(crate) fn resolve_max_results(value: f64) -> napi::Result<Option<u32>> {
     check_max_results(value).map_err(|message| napi::Error::new(Status::InvalidArg, message))
-}
-
-/// [`resolve_max_results`] without the napi error type (which cannot be
-/// created outside a Node.js process, e.g. in unit tests).
-fn check_max_results(value: f64) -> Result<Option<u32>, String> {
-    if value == f64::INFINITY {
-        return Ok(None);
-    }
-    if value.is_nan() || value < 0.0 || value.fract() != 0.0 {
-        let shown = if value.is_nan() {
-            "NaN".to_string()
-        } else if value.is_infinite() {
-            "-Infinity".to_string()
-        } else {
-            value.to_string()
-        };
-        return Err(format!(
-            "maxResults must be a non-negative integer or Infinity, got {shown}"
-        ));
-    }
-    Ok(Some(if value >= f64::from(u32::MAX) {
-        u32::MAX
-    } else {
-        value as u32
-    }))
 }
 
 /// Read an optional property, treating `undefined` (or a missing property)

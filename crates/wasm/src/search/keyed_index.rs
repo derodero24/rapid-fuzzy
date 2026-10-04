@@ -1,6 +1,5 @@
 use rapid_fuzzy_core::search::KeyedFuzzyIndexCore;
 use rapid_fuzzy_core::search::serialization::{deserialize_keyed_index, serialize_keyed_index};
-use tsify::Ts;
 use wasm_bindgen::prelude::*;
 
 use super::keys::KeySearchResult;
@@ -43,13 +42,16 @@ impl KeyedFuzzyIndex {
     /// Search the index for items matching the query.
     ///
     /// Returns results sorted by combined weighted score (best match first).
+    /// The second argument accepts either a number (maxResults) or a
+    /// SearchOptions object, like `FuzzyIndex.search()`.
     #[wasm_bindgen(unchecked_return_type = "KeySearchResult[]")]
     pub fn search(
         &self,
         query: String,
-        options: Option<Ts<SearchOptions>>,
+        #[wasm_bindgen(unchecked_optional_param_type = "number | SearchOptions | null")]
+        options: Option<JsValue>,
     ) -> Result<JsValue, JsValue> {
-        let opts = SearchOptions::from_ts(options)?;
+        let opts = SearchOptions::from_js_or_max_results(options)?;
         let (max_results, min_score, case_matching, return_all_on_empty) = (
             opts.max_results,
             opts.min_score,

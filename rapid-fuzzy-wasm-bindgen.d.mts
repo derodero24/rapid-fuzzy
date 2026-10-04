@@ -87,7 +87,8 @@ export type MatchType = "Exact" | "Prefix" | "Contains" | "Fuzzy";
  */
 export interface SearchOptions {
     /**
-     * Maximum number of results to return.
+     * Maximum number of results to return: a non-negative integer, or
+     * `Infinity` for no limit. NaN, negative and fractional values throw.
      */
     maxResults?: number;
     /**
@@ -155,6 +156,9 @@ export class FuzzyIndex {
      * The WebAssembly build has no worker thread, so the index is built
      * synchronously on the calling thread and the returned Promise is already
      * resolved. Prefer the constructor when you do not need a Promise.
+     *
+     * Invalid input (anything but an array of strings) rejects the returned
+     * Promise with a `TypeError` instead of throwing synchronously.
      */
     static fromAsync(items: string[]): Promise<FuzzyIndex>;
     /**
@@ -248,8 +252,10 @@ export class KeyedFuzzyIndex {
      * Search the index for items matching the query.
      *
      * Returns results sorted by combined weighted score (best match first).
+     * The second argument accepts either a number (maxResults) or a
+     * SearchOptions object, like `FuzzyIndex.search()`.
      */
-    search(query: string, options?: SearchOptions | null): KeySearchResult[];
+    search(query: string, options?: number | SearchOptions | null): KeySearchResult[];
     /**
      * Serialize the index to a compact binary format (Uint8Array).
      */
@@ -712,7 +718,7 @@ export interface InitOutput {
     readonly fuzzyindex_closest: (a: number, b: number, c: number, d: number, e: number) => number;
     readonly fuzzyindex_deserialize: (a: number, b: number, c: number) => void;
     readonly fuzzyindex_destroy: (a: number) => void;
-    readonly fuzzyindex_fromAsync: (a: number, b: number) => number;
+    readonly fuzzyindex_fromAsync: (a: number) => number;
     readonly fuzzyindex_new: (a: number, b: number) => number;
     readonly fuzzyindex_remove: (a: number, b: number) => number;
     readonly fuzzyindex_search: (a: number, b: number, c: number, d: number, e: number) => void;

@@ -107,6 +107,35 @@ pub fn resolve_case_matching(is_case_sensitive: Option<bool>) -> CaseMatching {
     }
 }
 
+/// Validate a `maxResults` value coming from JavaScript (as a double).
+///
+/// Non-negative integers are accepted (values beyond `u32::MAX` exceed any
+/// array length and mean "no limit"), `Infinity` means no limit, and NaN,
+/// negative or fractional values are rejected with the message both
+/// bindings report.
+pub fn check_max_results(value: f64) -> Result<Option<u32>, String> {
+    if value == f64::INFINITY {
+        return Ok(None);
+    }
+    if value.is_nan() || value < 0.0 || value.fract() != 0.0 {
+        let shown = if value.is_nan() {
+            "NaN".to_string()
+        } else if value.is_infinite() {
+            "-Infinity".to_string()
+        } else {
+            value.to_string()
+        };
+        return Err(format!(
+            "maxResults must be a non-negative integer or Infinity, got {shown}"
+        ));
+    }
+    Ok(Some(if value >= f64::from(u32::MAX) {
+        u32::MAX
+    } else {
+        value as u32
+    }))
+}
+
 thread_local! {
     /// The nucleo `Matcher` of this thread, shared by every search running on
     /// it: standalone `search`/`closest`/`searchKeys` and every `FuzzyIndex`

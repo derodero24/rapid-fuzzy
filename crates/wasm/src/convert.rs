@@ -35,6 +35,23 @@ pub(crate) fn string_matrix_from_js(
     from_js(value, what)
 }
 
+/// Read a `string[]` argument, throwing a `TypeError` for anything but an
+/// array of strings.
+pub(crate) fn strings_from_js(value: &JsValue) -> Result<Vec<String>, JsValue> {
+    if !js_sys::Array::is_array(value) {
+        return Err(type_error("Expected an array of strings"));
+    }
+    value
+        .unchecked_ref::<js_sys::Array>()
+        .iter()
+        .enumerate()
+        .map(|(i, item)| {
+            item.as_string()
+                .ok_or_else(|| type_error(&format!("Expected a string at index {i}")))
+        })
+        .collect()
+}
+
 /// Serialize a value (e.g. a result array) into a JS value.
 pub(crate) fn to_js<T: Serialize + ?Sized>(value: &T) -> Result<JsValue, JsValue> {
     serde_wasm_bindgen::to_value(value)

@@ -4,7 +4,7 @@ use rapid_fuzzy_core::search::{FuzzyIndexCore, is_empty_query};
 use wasm_bindgen::prelude::*;
 
 use super::{IndexSearchResult, SearchOptions, SearchResult, resolve_case_matching};
-use crate::convert::{error, or_null, to_js};
+use crate::convert::{error, or_null, strings_from_js, to_js};
 
 /// A persistent fuzzy search index backed by Rust-side data.
 ///
@@ -36,9 +36,17 @@ impl FuzzyIndex {
     /// The WebAssembly build has no worker thread, so the index is built
     /// synchronously on the calling thread and the returned Promise is already
     /// resolved. Prefer the constructor when you do not need a Promise.
+    ///
+    /// Invalid input (anything but an array of strings) rejects the returned
+    /// Promise with a `TypeError` instead of throwing synchronously.
     #[wasm_bindgen(js_name = "fromAsync", unchecked_return_type = "Promise<FuzzyIndex>")]
-    pub fn from_async(items: Vec<String>) -> js_sys::Promise {
-        js_sys::Promise::resolve(&JsValue::from(Self::new(items)))
+    pub fn from_async(
+        #[wasm_bindgen(unchecked_param_type = "string[]")] items: JsValue,
+    ) -> js_sys::Promise {
+        match strings_from_js(&items) {
+            Ok(items) => js_sys::Promise::resolve(&JsValue::from(Self::new(items))),
+            Err(err) => js_sys::Promise::reject(&err),
+        }
     }
 
     /// Search the index for items matching the query.
