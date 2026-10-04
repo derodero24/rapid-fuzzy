@@ -51,6 +51,7 @@ pub fn search_keys(
 
     let results: Vec<KeySearchResult> =
         rapid_fuzzy_core::search::search_keys_impl(&query, &key_texts, &weights, core_opts)
+            .unwrap_or_default()
             .into_iter()
             .map(KeySearchResult::from)
             .collect();

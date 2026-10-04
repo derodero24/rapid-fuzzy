@@ -1,9 +1,10 @@
 use std::cell::RefCell;
 
-use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
+use nucleo_matcher::pattern::CaseMatching;
 use nucleo_matcher::{Config, Matcher, Utf32String};
 
-use super::{KeySearchResult, compute_char_mask, compute_max_score, compute_query_mask};
+use super::keys::{IndexedKeys, KeyedSearchParams, keyed_search_core, validate_keyed_input};
+use super::{KeySearchResult, compute_char_mask};
 
 fn to_utf32(texts: &[String]) -> Vec<Utf32String> {
     texts
@@ -31,37 +32,7 @@ impl KeyedFuzzyIndexCore {
     /// `key_texts[k]` is an array of strings for key `k`, one per item.
     /// All inner arrays must have the same length (the number of items).
     pub fn new(key_texts: Vec<Vec<String>>, weights: Vec<f64>) -> Result<Self, String> {
-        let num_keys = key_texts.len();
-
-        if let Some(num_items) = key_texts.first().map(Vec::len) {
-            for (k, col) in key_texts.iter().enumerate().skip(1) {
-                if col.len() != num_items {
-                    return Err(format!(
-                        "All key_texts columns must have the same length; key 0 has {}, key {} has {}",
-                        num_items,
-                        k,
-                        col.len()
-                    ));
-                }
-            }
-        }
-
-        if weights.len() != num_keys {
-            return Err(format!(
-                "Expected {} weights, got {}",
-                num_keys,
-                weights.len()
-            ));
-        }
-
-        if weights.iter().any(|w| !w.is_finite() || *w < 0.0) {
-            return Err("Weights must be finite non-negative numbers".to_string());
-        }
-
-        let total_weight: f64 = weights.iter().sum();
-        if total_weight <= 0.0 {
-            return Err("Total weight must be greater than zero".to_string());
-        }
+        let total_weight = validate_keyed_input(&key_texts, &weights)?;
 
         let utf32_keys: Vec<Vec<Utf32String>> = key_texts.iter().map(|t| to_utf32(t)).collect();
         let key_char_masks: Vec<Vec<u64>> = key_texts
@@ -95,7 +66,9 @@ impl KeyedFuzzyIndexCore {
 
     /// Search the index for items matching the query.
     ///
-    /// Returns results sorted by combined weighted score (best match first).
+    /// Returns results sorted by combined weighted score (best match first),
+    /// exactly like [`search_keys_impl`](super::search_keys_impl) on the same
+    /// key texts and weights (see the `keys` module for the semantics).
     pub fn search(
         &self,
         query: &str,
@@ -104,141 +77,23 @@ impl KeyedFuzzyIndexCore {
         case_matching: CaseMatching,
         return_all_on_empty: bool,
     ) -> Vec<KeySearchResult> {
-        let num_keys = self.key_texts.len();
-
-        if num_keys == 0 {
-            return Vec::new();
-        }
-
-        let num_items = self.size() as usize;
-        if num_items == 0 {
-            return Vec::new();
-        }
-
-        if return_all_on_empty && query.trim().is_empty() {
-            let limit = max_results.unwrap_or(num_items as u32) as usize;
-            return (0..num_items)
-                .take(limit)
-                .map(|i| KeySearchResult {
-                    index: i as u32,
-                    score: 1.0,
-                    key_scores: vec![1.0; num_keys],
-                })
-                .collect();
-        }
-
-        if query.trim().is_empty() {
-            return Vec::new();
-        }
-
-        let threshold = min_score.unwrap_or(0.0);
-
-        let mut matcher = self.matcher.borrow_mut();
-        let pattern = Pattern::parse(query, case_matching, Normalization::Smart);
-        let max_score = compute_max_score(query, &pattern, &mut matcher);
-        let query_mask = compute_query_mask(query);
-
-        // Identify keys with non-zero weight to skip unnecessary scoring.
-        let active_keys: Vec<usize> = (0..num_keys).filter(|&k| self.weights[k] > 0.0).collect();
-
-        // Pre-compute the sum of active weights for early exit upper-bound.
-        let active_total_weight: f64 = active_keys.iter().map(|&k| self.weights[k]).sum();
-
-        // Per-item scoring with early exit and per-key char_mask pre-filtering.
-        let mut per_key_scores: Vec<Vec<f64>> = vec![vec![0.0; num_items]; num_keys];
-
-        let threshold_weighted = threshold * self.total_weight;
-
-        let mut scored: Vec<(u32, f64)> = (0..num_items)
-            .filter_map(|i| {
-                let mut weighted_sum = 0.0;
-                let mut matched_any = false;
-                let mut remaining_weight = active_total_weight;
-
-                for &k in &active_keys {
-                    let w = self.weights[k];
-                    remaining_weight -= w;
-
-                    // Per-key char_mask pre-filter: skip expensive scoring if
-                    // the item for this key cannot contain the query characters.
-                    if query_mask != 0 && (self.key_char_masks[k][i] & query_mask) != query_mask {
-                        // Upper bound check: even if all remaining keys score 1.0,
-                        // can we still reach the threshold?
-                        if threshold > 0.0 && weighted_sum + remaining_weight < threshold_weighted {
-                            return None;
-                        }
-                        continue;
-                    }
-
-                    let atoms = self.utf32_keys[k][i].slice(..);
-                    let score = match pattern.score(atoms, &mut matcher) {
-                        Some(raw) => ((raw as f64) / max_score).min(1.0),
-                        None => 0.0,
-                    };
-                    per_key_scores[k][i] = score;
-
-                    if score > 0.0 {
-                        weighted_sum += score * w;
-                        matched_any = true;
-                    }
-
-                    // Early exit: if even perfect scores on remaining keys
-                    // cannot lift the combined score above the threshold,
-                    // skip the remaining keys for this item.
-                    if threshold > 0.0 && weighted_sum + remaining_weight < threshold_weighted {
-                        return None;
-                    }
-                }
-
-                if !matched_any {
-                    return None;
-                }
-
-                let combined = weighted_sum / self.total_weight;
-                if combined >= threshold {
-                    Some((i as u32, combined))
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        // Sort by score descending, with original index as tiebreaker
-        // for deterministic ordering.
-        let cmp = |a: &(u32, f64), b: &(u32, f64)| {
-            let score_ord = b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal);
-            if score_ord != std::cmp::Ordering::Equal {
-                return score_ord;
-            }
-            a.0.cmp(&b.0)
-        };
-
-        // Top-k selection: use quickselect O(n) + sort O(k log k) instead of
-        // full sort O(n log n) when maxResults is set.
-        if let Some(max) = max_results {
-            let k = max as usize;
-            if scored.len() > k {
-                scored.select_nth_unstable_by(k, cmp);
-                scored.truncate(k);
-            }
-        }
-        scored.sort_unstable_by(cmp);
-
-        // Pass 2: Construct KeySearchResult only for the final top-k items.
-        scored
-            .into_iter()
-            .map(|(index, score)| {
-                let key_scores: Vec<f64> = per_key_scores
-                    .iter()
-                    .map(|scores| scores[index as usize])
-                    .collect();
-                KeySearchResult {
-                    index,
-                    score,
-                    key_scores,
-                }
-            })
-            .collect()
+        keyed_search_core(
+            query,
+            &IndexedKeys {
+                key_texts: &self.key_texts,
+                haystacks: &self.utf32_keys,
+                char_masks: &self.key_char_masks,
+            },
+            &self.weights,
+            self.total_weight,
+            KeyedSearchParams {
+                max_results,
+                min_score,
+                case_matching,
+                return_all_on_empty,
+            },
+            &mut self.matcher.borrow_mut(),
+        )
     }
 
     /// Add a single item to the index.
