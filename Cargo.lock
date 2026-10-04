@@ -868,6 +868,7 @@ version = "1.1.1"
 dependencies = [
  "nucleo-matcher",
  "rapidfuzz",
+ "rayon",
  "strsim",
 ]
 

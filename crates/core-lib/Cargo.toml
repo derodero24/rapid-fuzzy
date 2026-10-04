@@ -12,3 +12,7 @@ crate-type = ["rlib"]
 nucleo-matcher = { workspace = true }
 strsim = { workspace = true }
 rapidfuzz = { workspace = true }
+
+# WebAssembly builds search on the calling thread only.
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+rayon = { workspace = true }

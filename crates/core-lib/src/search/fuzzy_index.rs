@@ -179,9 +179,7 @@ impl FuzzyIndexCore {
                         && refines(&cache.query, &query)
                 })
                 .map(|cache| cache.matching.as_slice());
-            with_matcher(|matcher| {
-                search_core(&plan, matcher, corpus, candidates, params, unfiltered)
-            })
+            search_core(&plan, corpus, candidates, params, unfiltered)
         };
 
         if unfiltered {
