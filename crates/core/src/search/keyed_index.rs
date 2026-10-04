@@ -1,4 +1,3 @@
-use napi::Either;
 use napi::bindgen_prelude::Buffer;
 use napi_derive::napi;
 use nucleo_matcher::pattern::CaseMatching;
@@ -6,7 +5,7 @@ use rapid_fuzzy_core::search::KeyedFuzzyIndexCore;
 use rapid_fuzzy_core::search::serialization::{deserialize_keyed_index, serialize_keyed_index};
 
 use super::keys::KeySearchResult;
-use super::{SearchOptions, resolve_case_matching};
+use super::{ResolvedSearchOptions, SearchOptionsArg};
 
 /// A persistent multi-key fuzzy search index backed by Rust-side data.
 ///
@@ -49,23 +48,23 @@ impl KeyedFuzzyIndex {
     /// Returns results sorted by combined weighted score (best match first).
     ///
     /// The second argument accepts either a number (maxResults shorthand) or a
-    /// SearchOptions object, like `FuzzyIndex.search()`.
+    /// SearchOptions object, like `FuzzyIndex.search()`. `maxResults` must be a
+    /// non-negative integer or `Infinity`.
     #[napi]
     pub fn search(
         &self,
         query: String,
-        options: Option<Either<u32, SearchOptions>>,
+        #[napi(ts_arg_type = "number | SearchOptions | undefined | null")] options: Option<
+            SearchOptionsArg,
+        >,
     ) -> Vec<KeySearchResult> {
-        let (max_results, min_score, case_matching, return_all_on_empty) = match options {
-            Some(Either::A(max)) => (Some(max), None, CaseMatching::Smart, false),
-            Some(Either::B(opts)) => (
-                opts.max_results,
-                opts.min_score,
-                resolve_case_matching(opts.is_case_sensitive),
-                opts.return_all_on_empty.unwrap_or(false),
-            ),
-            None => (None, None, CaseMatching::Smart, false),
-        };
+        let ResolvedSearchOptions {
+            max_results,
+            min_score,
+            case_matching,
+            return_all_on_empty,
+            ..
+        } = ResolvedSearchOptions::new(options);
 
         self.core
             .search(
@@ -170,6 +169,7 @@ impl KeyedFuzzyIndex {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::search::SearchOptions;
 
     fn make_index() -> KeyedFuzzyIndex {
         KeyedFuzzyIndex::new_impl(
@@ -277,7 +277,7 @@ mod tests {
         let index = make_index();
         let results = index.search(
             "john".to_string(),
-            Some(Either::B(SearchOptions {
+            Some(SearchOptionsArg::Options(SearchOptions {
                 max_results: None,
                 min_score: Some(0.9),
                 include_positions: None,
@@ -295,7 +295,7 @@ mod tests {
         let index = make_index();
         let results = index.search(
             "o".to_string(),
-            Some(Either::B(SearchOptions {
+            Some(SearchOptionsArg::Options(SearchOptions {
                 max_results: Some(1),
                 min_score: None,
                 include_positions: None,
@@ -424,7 +424,7 @@ mod tests {
         .unwrap();
         let results = index.search(
             "apple".to_string(),
-            Some(Either::B(SearchOptions {
+            Some(SearchOptionsArg::Options(SearchOptions {
                 max_results: None,
                 min_score: Some(0.9),
                 include_positions: None,

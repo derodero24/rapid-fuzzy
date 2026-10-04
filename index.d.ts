@@ -117,7 +117,8 @@ export declare class KeyedFuzzyIndex {
    * Returns results sorted by combined weighted score (best match first).
    *
    * The second argument accepts either a number (maxResults shorthand) or a
-   * SearchOptions object, like `FuzzyIndex.search()`.
+   * SearchOptions object, like `FuzzyIndex.search()`. `maxResults` must be a
+   * non-negative integer or `Infinity`.
    */
   search(query: string, options?: number | SearchOptions | undefined | null): Array<KeySearchResult>
   /**

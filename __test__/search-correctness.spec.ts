@@ -365,6 +365,7 @@ describe('maxResults validation', () => {
       expect(index.search('a', { maxResults })).toHaveLength(expected);
       expect(index.searchIndices('a', maxResults)).toHaveLength(expected);
       expect(index.searchIndices('a', { maxResults })).toHaveLength(expected);
+      expect(keyed.search('a', maxResults)).toHaveLength(expected);
       expect(keyed.search('a', { maxResults })).toHaveLength(expected);
       expect(searchKeys('a', [items], [1], { maxResults })).toHaveLength(expected);
       expect(search('', items, { maxResults, returnAllOnEmpty: true })).toHaveLength(expected);
@@ -383,6 +384,7 @@ describe('maxResults validation', () => {
       expect(() => index.search('a', { maxResults })).toThrow(error);
       expect(() => index.searchIndices('a', maxResults)).toThrow(error);
       expect(() => index.searchIndices('a', { maxResults })).toThrow(error);
+      expect(() => keyed.search('a', maxResults)).toThrow(error);
       expect(() => keyed.search('a', { maxResults })).toThrow(error);
       expect(() => searchKeys('a', [items], [1], { maxResults })).toThrow(error);
     }
