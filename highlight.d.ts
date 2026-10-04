@@ -70,8 +70,9 @@ export declare function highlight(
  *
  * @example
  * ```typescript
- * const ranges = highlightRanges(result.item, result.positions);
- * // → [{ start: 0, end: 1, matched: true }, { start: 1, end: 2, matched: false }, ...]
+ * highlightRanges('fuzzy', [0, 3, 4]);
+ * // → [{ start: 0, end: 1, matched: true }, { start: 1, end: 3, matched: false },
+ * //    { start: 3, end: 5, matched: true }]
  * ```
  */
 export declare function highlightRanges(

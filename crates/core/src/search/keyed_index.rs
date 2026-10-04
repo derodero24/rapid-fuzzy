@@ -26,7 +26,7 @@ pub struct KeyedFuzzyIndex {
 impl KeyedFuzzyIndex {
     /// Create a new KeyedFuzzyIndex.
     ///
-    /// `key_texts[k]` is an array of strings for key `k`, one per item.
+    /// `keyTexts[k]` is an array of strings for key `k`, one per item.
     /// All inner arrays must have the same length (the number of items).
     #[napi(constructor)]
     pub fn new(key_texts: Vec<Vec<String>>, weights: Vec<f64>) -> napi::Result<Self> {
@@ -82,7 +82,7 @@ impl KeyedFuzzyIndex {
     /// Find the index of the closest matching item.
     ///
     /// Returns the index of the best match, or null if no match is found.
-    /// If `min_score` is provided, returns null when the best match scores below the threshold.
+    /// If `minScore` is provided, returns null when the best match scores below the threshold.
     ///
     /// Use the returned index to look up the item in your own data array.
     #[napi]
@@ -95,7 +95,7 @@ impl KeyedFuzzyIndex {
 
     /// Add a single item to the index.
     ///
-    /// `key_values` must have the same length as the number of keys.
+    /// `keyValues` must have the same length as the number of keys.
     /// Throws if the length does not match.
     #[napi]
     pub fn add(&mut self, key_values: Vec<String>) -> napi::Result<()> {
@@ -104,7 +104,7 @@ impl KeyedFuzzyIndex {
 
     /// Add multiple items to the index at once.
     ///
-    /// Each element of `items_key_values` is an array of key values for one item.
+    /// Each element of `itemsKeyValues` is an array of key values for one item.
     /// Throws if any element has the wrong number of key values; every element
     /// is checked first, so on error no item is added.
     #[napi]

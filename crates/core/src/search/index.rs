@@ -256,6 +256,9 @@ impl FuzzyIndex {
     }
 
     /// Free the internal data. After calling this, the index is empty.
+    ///
+    /// The index stays usable: it behaves as an empty index (searches
+    /// return no results) and `add()` / `addMany()` work as before.
     #[napi]
     pub fn destroy(&mut self, env: Env) -> napi::Result<()> {
         self.core.destroy();
@@ -267,6 +270,12 @@ impl FuzzyIndex {
     /// The returned Buffer can be written to disk, stored in IndexedDB,
     /// or transferred over the network. Use `FuzzyIndex.deserialize()` to
     /// reconstruct the index.
+    ///
+    /// The format stores the item strings (UTF-8, each with a 4-byte length)
+    /// after a small header, not the precomputed search data:
+    /// `deserialize()` recomputes it, so loading takes about as long as
+    /// building the index from an array. The format is versioned; data
+    /// written by a different format version is rejected.
     #[napi]
     pub fn serialize(&self) -> Buffer {
         self.serialize_impl().into()

@@ -117,8 +117,10 @@ pub struct SearchOptions {
     #[tsify(optional)]
     #[serde(default)]
     pub include_positions: Option<bool>,
-    /// If true, matching is case-sensitive. Default is smart case
-    /// (case-insensitive unless the query contains uppercase characters).
+    /// If true, matching is case-sensitive. When false or omitted, matching
+    /// is smart case: case-insensitive while the query is all lower-case, and
+    /// case-sensitive once it contains an upper-case letter. `false` does not
+    /// force case-insensitive matching; lower-case the query for that.
     #[tsify(optional)]
     #[serde(default)]
     pub is_case_sensitive: Option<bool>,

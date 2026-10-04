@@ -34,7 +34,7 @@ impl From<rapid_fuzzy_core::search::KeySearchResult> for KeySearchResult {
 
 /// Perform fuzzy search across multiple text keys with weights.
 ///
-/// `key_texts[k]` is an array of strings for key `k`, one per item.
+/// `keyTexts[k]` is an array of strings for key `k`, one per item.
 /// All inner arrays must have the same length (the number of items).
 /// `weights` specifies the relative importance of each key.
 ///

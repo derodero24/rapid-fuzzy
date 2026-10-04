@@ -119,8 +119,10 @@ pub struct SearchOptions {
     pub min_score: Option<f64>,
     /// If true, include matched character positions in results.
     pub include_positions: Option<bool>,
-    /// If true, matching is case-sensitive. Default is smart case
-    /// (case-insensitive unless the query contains uppercase characters).
+    /// If true, matching is case-sensitive. When false or omitted, matching
+    /// is smart case: case-insensitive while the query is all lower-case, and
+    /// case-sensitive once it contains an upper-case letter. `false` does not
+    /// force case-insensitive matching; lower-case the query for that.
     pub is_case_sensitive: Option<bool>,
     /// If true, return all items when the query has no search term: empty,
     /// whitespace-only, or only query syntax such as `^` or `!`.
@@ -294,8 +296,11 @@ pub(crate) fn search_impl(
 ///
 /// Returns matches sorted by score (best match first).
 /// Scores are normalized to a 0.0-1.0 range where 1.0 is a perfect match.
-/// Uses the nucleo algorithm (same as Helix editor), which is
-/// significantly faster than fzf/skim for large datasets.
+/// Uses the nucleo matcher (the one in the Helix editor): every character of
+/// each query term must occur in the item in order, so letters missing from
+/// the query are tolerated but substituted or swapped letters are not. Matches
+/// at the start of the item, at word boundaries and in consecutive runs score
+/// higher. Matching is smart case by default (see `SearchOptions`).
 ///
 /// Terms are separated by any whitespace (including the ideographic space
 /// U+3000). A query without any search term (empty, whitespace-only or only

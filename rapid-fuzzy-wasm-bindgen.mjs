@@ -80,6 +80,9 @@ export class FuzzyIndex {
     }
     /**
      * Free the internal data. After calling this, the index is empty.
+     *
+     * The index stays usable: it behaves as an empty index (searches
+     * return no results) and `add()` / `addMany()` work as before.
      */
     destroy() {
         wasm.fuzzyindex_destroy(this.__wbg_ptr);
@@ -302,6 +305,9 @@ export class KeyedFuzzyIndex {
     }
     /**
      * Free the internal data. After calling this, the index is empty.
+     *
+     * The key configuration is kept, so the index stays usable: it behaves
+     * as an empty index and `add()` / `addMany()` work as before.
      */
     destroy() {
         wasm.keyedfuzzyindex_destroy(this.__wbg_ptr);
@@ -422,6 +428,11 @@ export function closest(query, items, minScore) {
  *
  * Like Levenshtein, but also considers transpositions of two adjacent
  * characters as a single edit.
+ *
+ * Compares the Unicode code points of the strings as given: case, whitespace
+ * and Unicode normalization (NFC vs NFD) are not adjusted.
+ * Takes time proportional to the product of the two lengths: about 0.4 s
+ * for two 10,000-character strings with the native addon.
  * @param {string} a
  * @param {string} b
  * @returns {number}
@@ -496,6 +507,9 @@ export function damerauLevenshteinMany(reference, candidates, maxDistance) {
  * The Hamming distance counts the number of positions at which the corresponding
  * characters differ. It is only defined for strings of equal length.
  * Returns `null` if the strings have different lengths.
+ *
+ * Compares the Unicode code points of the strings as given: case, whitespace
+ * and Unicode normalization (NFC vs NFD) are not adjusted.
  * @param {string} a
  * @param {string} b
  * @returns {number | null}
@@ -564,6 +578,9 @@ export function hammingMany(reference, candidates, maxDistance) {
  *
  * Useful when substitutions are semantically two operations (one deletion +
  * one insertion), such as in DNA sequence alignment.
+ *
+ * Compares the Unicode code points of the strings as given: case, whitespace
+ * and Unicode normalization (NFC vs NFD) are not adjusted.
  * @param {string} a
  * @param {string} b
  * @returns {number}
@@ -637,6 +654,9 @@ export function indelMany(reference, candidates, maxDistance) {
  * Compute the Jaro similarity between two strings.
  *
  * Returns a value between 0.0 (completely different) and 1.0 (identical).
+ *
+ * Compares the Unicode code points of the strings as given: case, whitespace
+ * and Unicode normalization (NFC vs NFD) are not adjusted.
  * @param {string} a
  * @param {string} b
  * @returns {number}
@@ -715,6 +735,9 @@ export function jaroMany(reference, candidates, minSimilarity) {
  *
  * A modification of Jaro that gives more weight to common prefixes.
  * Returns a value between 0.0 and 1.0.
+ *
+ * Compares the Unicode code points of the strings as given: case, whitespace
+ * and Unicode normalization (NFC vs NFD) are not adjusted.
  * @param {string} a
  * @param {string} b
  * @returns {number}
@@ -794,6 +817,9 @@ export function jaroWinklerMany(reference, candidates, minSimilarity) {
  * The Levenshtein distance is the minimum number of single-character edits
  * (insertions, deletions, or substitutions) required to change one string
  * into the other.
+ *
+ * Compares the Unicode code points of the strings as given: case, whitespace
+ * and Unicode normalization (NFC vs NFD) are not adjusted.
  * @param {string} a
  * @param {string} b
  * @returns {number}
@@ -868,6 +894,9 @@ export function levenshteinMany(reference, candidates, maxDistance) {
  *
  * Returns `null` if the strings have different lengths.
  * Returns a value between 0.0 (no matching characters) and 1.0 (identical).
+ *
+ * Compares the Unicode code points of the strings as given: case, whitespace
+ * and Unicode normalization (NFC vs NFD) are not adjusted.
  * @param {string} a
  * @param {string} b
  * @returns {number | null}
@@ -940,7 +969,14 @@ export function normalizedHammingMany(reference, candidates, minSimilarity) {
 /**
  * Compute the normalized Indel similarity between two strings.
  *
- * Returns a value between 0.0 (completely different) and 1.0 (identical).
+ * `1 - indel(a, b) / (length of a + length of b)`, counted in characters:
+ * the measure behind `fuzz.ratio` in RapidFuzz and fuzzball, on a 0.0-1.0
+ * scale (fuzzball also lower-cases and strips punctuation by default; this
+ * function does not). Returns a value between 0.0 (completely different)
+ * and 1.0 (identical).
+ *
+ * Compares the Unicode code points of the strings as given: case, whitespace
+ * and Unicode normalization (NFC vs NFD) are not adjusted.
  * @param {string} a
  * @param {string} b
  * @returns {number}
@@ -1017,7 +1053,12 @@ export function normalizedIndelMany(reference, candidates, minSimilarity) {
 /**
  * Compute the normalized Levenshtein similarity between two strings.
  *
- * Returns a value between 0.0 (completely different) and 1.0 (identical).
+ * `1 - levenshtein(a, b) / max(length of a, length of b)`, counted in
+ * characters. Returns a value between 0.0 (completely different) and 1.0
+ * (identical).
+ *
+ * Compares the Unicode code points of the strings as given: case, whitespace
+ * and Unicode normalization (NFC vs NFD) are not adjusted.
  * @param {string} a
  * @param {string} b
  * @returns {number}
@@ -1094,10 +1135,18 @@ export function normalizedLevenshteinMany(reference, candidates, minSimilarity) 
 /**
  * Compute the partial ratio between two strings.
  *
- * Finds the best matching substring of the shorter string within the longer string
- * using a sliding window approach. Returns the highest normalized Levenshtein
- * similarity across all windows. Useful for matching when one string is a
- * substring or abbreviation of the other. Returns a value between 0.0 and 1.0.
+ * Lower-cases both strings and collapses whitespace runs into single
+ * spaces, then compares the shorter string with every window of the same
+ * length in the longer one and returns the highest normalized Levenshtein
+ * similarity. Useful when one string is a substring or truncation of the
+ * other; it does not match abbreviations (`MSFT` vs `Microsoft` scores low).
+ * Scores can differ from fuzzball's / RapidFuzz's `partial_ratio`, which
+ * use a different alignment. Returns a value between 0.0 and 1.0.
+ *
+ * Takes time proportional to the length of the longer string times the
+ * square of the length of the shorter one: about 0.4 s for a
+ * 1,000-character string against a 10,000-character one with the native
+ * addon.
  * @param {string} a
  * @param {string} b
  * @returns {number}
@@ -1245,8 +1294,10 @@ export function searchKeys(query, keyTexts, weights, options) {
 /**
  * Compute the Sorensen-Dice coefficient between two strings.
  *
- * Uses bigrams (pairs of consecutive characters) to measure similarity.
- * Returns a value between 0.0 and 1.0.
+ * Compares the bigrams (pairs of consecutive characters) of the two strings
+ * after removing all whitespace; case and Unicode normalization are not
+ * adjusted. Identical strings score 1.0; otherwise a string with fewer than
+ * two characters left scores 0.0. Returns a value between 0.0 and 1.0.
  * @param {string} a
  * @param {string} b
  * @returns {number}
@@ -1323,10 +1374,13 @@ export function sorensenDiceMany(reference, candidates, minSimilarity) {
 /**
  * Compute the token set ratio between two strings.
  *
- * Compares the intersection and differences of token sets from both strings.
- * Returns the maximum similarity among comparisons of the intersection with
- * each remainder. Highly effective for strings with shared tokens but
- * different lengths. Returns a value between 0.0 and 1.0.
+ * Lower-cases both strings and splits them into sets of whitespace-separated
+ * tokens (duplicates count once). With the shared tokens sorted and joined
+ * as `common`, returns the highest normalized Levenshtein similarity among
+ * `common + rest of a` vs `common + rest of b`, `common` vs
+ * `common + rest of a`, and `common` vs `common + rest of b`. It is 1.0
+ * when the tokens of one string are a subset of the other's.
+ * Returns a value between 0.0 and 1.0.
  * @param {string} a
  * @param {string} b
  * @returns {number}
@@ -1402,9 +1456,10 @@ export function tokenSetRatioMany(reference, candidates, minSimilarity) {
 /**
  * Compute the token sort ratio between two strings.
  *
- * Splits both strings into tokens, sorts them alphabetically, then computes
- * the normalized Levenshtein similarity. This makes the comparison
- * order-independent, ideal for matching names or addresses where word order varies.
+ * Lower-cases both strings, splits them on whitespace, sorts the tokens and
+ * joins them with single spaces, then returns the normalized Levenshtein
+ * similarity of the two results, so word order does not matter. Punctuation
+ * is kept: `Smith,` and `Smith` are different tokens.
  * Returns a value between 0.0 (completely different) and 1.0 (identical after sorting).
  * @param {string} a
  * @param {string} b
@@ -1481,10 +1536,13 @@ export function tokenSortRatioMany(reference, candidates, minSimilarity) {
 /**
  * Compute the weighted ratio between two strings.
  *
- * Returns the maximum score across normalized Levenshtein, token sort ratio,
- * token set ratio, and partial ratio. This provides a single "best effort"
- * similarity score that automatically selects the most appropriate algorithm.
- * Returns a value between 0.0 and 1.0.
+ * Returns the highest of: the normalized Levenshtein similarity of the
+ * strings as given and after lower-casing and collapsing whitespace,
+ * `tokenSortRatio`, `tokenSetRatio` and `partialRatio`. Unlike `WRatio` in
+ * fuzzball / RapidFuzz, no score is scaled down or weighted by the length
+ * ratio of the strings, so scores are often higher than `WRatio`'s.
+ * Includes the cost of `partialRatio` (see there) when the strings differ
+ * in length. Returns a value between 0.0 and 1.0.
  * @param {string} a
  * @param {string} b
  * @returns {number}

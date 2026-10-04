@@ -181,6 +181,9 @@ impl FuzzyIndex {
     }
 
     /// Free the internal data. After calling this, the index is empty.
+    ///
+    /// The index stays usable: it behaves as an empty index (searches
+    /// return no results) and `add()` / `addMany()` work as before.
     pub fn destroy(&mut self) {
         self.core.destroy();
     }

@@ -15,6 +15,9 @@ fn invalid_arg(err: DistanceError) -> napi::Error {
 /// The Levenshtein distance is the minimum number of single-character edits
 /// (insertions, deletions, or substitutions) required to change one string
 /// into the other.
+///
+/// Compares the Unicode code points of the strings as given: case, whitespace
+/// and Unicode normalization (NFC vs NFD) are not adjusted.
 #[napi]
 pub fn levenshtein(a: String, b: String) -> u32 {
     core_dist::levenshtein(&a, &b)
@@ -33,8 +36,8 @@ pub fn levenshtein_batch(pairs: Vec<Vec<String>>) -> napi::Result<Vec<u32>> {
 /// Compute the Levenshtein distance from one reference string to many candidates.
 ///
 /// Returns an array of distances, one per candidate, in the same order as the input.
-/// If `max_distance` is provided, candidates with distance exceeding the threshold
-/// will return `max_distance + 1`, at most 4294967295 (enabling early termination
+/// If `maxDistance` is provided, candidates with distance exceeding the threshold
+/// will return `maxDistance + 1`, at most 4294967295 (enabling early termination
 /// for better performance).
 #[napi]
 pub fn levenshtein_many(
@@ -49,6 +52,11 @@ pub fn levenshtein_many(
 ///
 /// Like Levenshtein, but also considers transpositions of two adjacent
 /// characters as a single edit.
+///
+/// Compares the Unicode code points of the strings as given: case, whitespace
+/// and Unicode normalization (NFC vs NFD) are not adjusted.
+/// Takes time proportional to the product of the two lengths: about 0.4 s
+/// for two 10,000-character strings with the native addon.
 #[napi]
 pub fn damerau_levenshtein(a: String, b: String) -> u32 {
     core_dist::damerau_levenshtein(&a, &b)
@@ -67,8 +75,8 @@ pub fn damerau_levenshtein_batch(pairs: Vec<Vec<String>>) -> napi::Result<Vec<u3
 /// Compute the Damerau-Levenshtein distance from one reference string to many candidates.
 ///
 /// Returns an array of distances, one per candidate, in the same order as the input.
-/// If `max_distance` is provided, candidates with distance exceeding the threshold
-/// will return `max_distance + 1`, at most 4294967295 (enabling early termination
+/// If `maxDistance` is provided, candidates with distance exceeding the threshold
+/// will return `maxDistance + 1`, at most 4294967295 (enabling early termination
 /// for better performance).
 #[napi]
 pub fn damerau_levenshtein_many(
@@ -84,6 +92,9 @@ pub fn damerau_levenshtein_many(
 /// The Hamming distance counts the number of positions at which the corresponding
 /// characters differ. It is only defined for strings of equal length.
 /// Returns `null` if the strings have different lengths.
+///
+/// Compares the Unicode code points of the strings as given: case, whitespace
+/// and Unicode normalization (NFC vs NFD) are not adjusted.
 #[napi]
 pub fn hamming(a: String, b: String) -> Option<u32> {
     core_dist::hamming(&a, &b)
@@ -104,7 +115,7 @@ pub fn hamming_batch(pairs: Vec<Vec<String>>) -> napi::Result<Vec<Option<u32>>> 
 ///
 /// Returns an array of distances, one per candidate, in the same order as the input.
 /// Returns `null` for candidates with a different length than the reference.
-/// If `max_distance` is provided, candidates with distance exceeding the threshold
+/// If `maxDistance` is provided, candidates with distance exceeding the threshold
 /// will also return `null` (enabling early termination for better performance).
 #[napi]
 pub fn hamming_many(
@@ -119,6 +130,9 @@ pub fn hamming_many(
 ///
 /// Returns `null` if the strings have different lengths.
 /// Returns a value between 0.0 (no matching characters) and 1.0 (identical).
+///
+/// Compares the Unicode code points of the strings as given: case, whitespace
+/// and Unicode normalization (NFC vs NFD) are not adjusted.
 #[napi]
 pub fn normalized_hamming(a: String, b: String) -> Option<f64> {
     core_dist::normalized_hamming(&a, &b)
@@ -139,9 +153,9 @@ pub fn normalized_hamming_batch(pairs: Vec<Vec<String>>) -> napi::Result<Vec<Opt
 ///
 /// Returns an array of scores, one per candidate, in the same order as the input.
 /// Returns `null` for candidates with a different length than the reference.
-/// If `min_similarity` is provided, candidates with similarity below the threshold
+/// If `minSimilarity` is provided, candidates with similarity below the threshold
 /// will also return `null`; a score equal to it is kept. Throws an `InvalidArg`
-/// error if `min_similarity` is `NaN`.
+/// error if `minSimilarity` is `NaN`.
 #[napi]
 pub fn normalized_hamming_many(
     reference: String,
@@ -154,6 +168,9 @@ pub fn normalized_hamming_many(
 /// Compute the Jaro similarity between two strings.
 ///
 /// Returns a value between 0.0 (completely different) and 1.0 (identical).
+///
+/// Compares the Unicode code points of the strings as given: case, whitespace
+/// and Unicode normalization (NFC vs NFD) are not adjusted.
 #[napi]
 pub fn jaro(a: String, b: String) -> f64 {
     core_dist::jaro(&a, &b)
@@ -172,9 +189,9 @@ pub fn jaro_batch(pairs: Vec<Vec<String>>) -> napi::Result<Vec<f64>> {
 /// Compute the Jaro similarity from one reference string to many candidates.
 ///
 /// Returns an array of similarity scores, one per candidate, in the same order as the input.
-/// If `min_similarity` is provided, candidates with similarity below the threshold
+/// If `minSimilarity` is provided, candidates with similarity below the threshold
 /// will return `0.0` (enabling early termination for better performance); a score
-/// equal to it is kept. Throws an `InvalidArg` error if `min_similarity` is `NaN`.
+/// equal to it is kept. Throws an `InvalidArg` error if `minSimilarity` is `NaN`.
 #[napi]
 pub fn jaro_many(
     reference: String,
@@ -188,6 +205,9 @@ pub fn jaro_many(
 ///
 /// A modification of Jaro that gives more weight to common prefixes.
 /// Returns a value between 0.0 and 1.0.
+///
+/// Compares the Unicode code points of the strings as given: case, whitespace
+/// and Unicode normalization (NFC vs NFD) are not adjusted.
 #[napi]
 pub fn jaro_winkler(a: String, b: String) -> f64 {
     core_dist::jaro_winkler(&a, &b)
@@ -206,9 +226,9 @@ pub fn jaro_winkler_batch(pairs: Vec<Vec<String>>) -> napi::Result<Vec<f64>> {
 /// Compute the Jaro-Winkler similarity from one reference string to many candidates.
 ///
 /// Returns an array of similarity scores, one per candidate, in the same order as the input.
-/// If `min_similarity` is provided, candidates with similarity below the threshold
+/// If `minSimilarity` is provided, candidates with similarity below the threshold
 /// will return `0.0` (enabling early termination for better performance); a score
-/// equal to it is kept. Throws an `InvalidArg` error if `min_similarity` is `NaN`.
+/// equal to it is kept. Throws an `InvalidArg` error if `minSimilarity` is `NaN`.
 #[napi]
 pub fn jaro_winkler_many(
     reference: String,
@@ -220,8 +240,10 @@ pub fn jaro_winkler_many(
 
 /// Compute the Sorensen-Dice coefficient between two strings.
 ///
-/// Uses bigrams (pairs of consecutive characters, ignoring whitespace) to
-/// measure similarity. Returns a value between 0.0 and 1.0.
+/// Compares the bigrams (pairs of consecutive characters) of the two strings
+/// after removing all whitespace; case and Unicode normalization are not
+/// adjusted. Identical strings score 1.0; otherwise a string with fewer than
+/// two characters left scores 0.0. Returns a value between 0.0 and 1.0.
 #[napi]
 pub fn sorensen_dice(a: String, b: String) -> f64 {
     core_dist::sorensen_dice(&a, &b)
@@ -240,8 +262,8 @@ pub fn sorensen_dice_batch(pairs: Vec<Vec<String>>) -> napi::Result<Vec<f64>> {
 /// Compute the Sorensen-Dice coefficient from one reference string to many candidates.
 ///
 /// Returns an array of similarity scores, one per candidate, in the same order as the input.
-/// If `min_similarity` is provided, candidates scoring below the threshold return `0.0`;
-/// a score equal to it is kept. Throws an `InvalidArg` error if `min_similarity` is `NaN`.
+/// If `minSimilarity` is provided, candidates scoring below the threshold return `0.0`;
+/// a score equal to it is kept. Throws an `InvalidArg` error if `minSimilarity` is `NaN`.
 /// Reference bigrams are pre-computed once and reused for all candidates.
 #[napi]
 pub fn sorensen_dice_many(
@@ -254,7 +276,12 @@ pub fn sorensen_dice_many(
 
 /// Compute the normalized Levenshtein similarity between two strings.
 ///
-/// Returns a value between 0.0 (completely different) and 1.0 (identical).
+/// `1 - levenshtein(a, b) / max(length of a, length of b)`, counted in
+/// characters. Returns a value between 0.0 (completely different) and 1.0
+/// (identical).
+///
+/// Compares the Unicode code points of the strings as given: case, whitespace
+/// and Unicode normalization (NFC vs NFD) are not adjusted.
 #[napi]
 pub fn normalized_levenshtein(a: String, b: String) -> f64 {
     core_dist::normalized_levenshtein(&a, &b)
@@ -273,9 +300,9 @@ pub fn normalized_levenshtein_batch(pairs: Vec<Vec<String>>) -> napi::Result<Vec
 /// Compute the normalized Levenshtein similarity from one reference string to many candidates.
 ///
 /// Returns an array of similarity scores, one per candidate, in the same order as the input.
-/// If `min_similarity` is provided, candidates with similarity below the threshold
+/// If `minSimilarity` is provided, candidates with similarity below the threshold
 /// will return `0.0` (enabling early termination for better performance); a score
-/// equal to it is kept. Throws an `InvalidArg` error if `min_similarity` is `NaN`.
+/// equal to it is kept. Throws an `InvalidArg` error if `minSimilarity` is `NaN`.
 #[napi]
 pub fn normalized_levenshtein_many(
     reference: String,
@@ -294,6 +321,9 @@ pub fn normalized_levenshtein_many(
 ///
 /// Useful when substitutions are semantically two operations (one deletion +
 /// one insertion), such as in DNA sequence alignment.
+///
+/// Compares the Unicode code points of the strings as given: case, whitespace
+/// and Unicode normalization (NFC vs NFD) are not adjusted.
 #[napi]
 pub fn indel(a: String, b: String) -> u32 {
     core_dist::indel(&a, &b)
@@ -312,8 +342,8 @@ pub fn indel_batch(pairs: Vec<Vec<String>>) -> napi::Result<Vec<u32>> {
 /// Compute the Indel distance from one reference string to many candidates.
 ///
 /// Returns an array of distances, one per candidate, in the same order as the input.
-/// If `max_distance` is provided, candidates with distance exceeding the threshold
-/// will return `max_distance + 1`, at most 4294967295 (enabling early termination
+/// If `maxDistance` is provided, candidates with distance exceeding the threshold
+/// will return `maxDistance + 1`, at most 4294967295 (enabling early termination
 /// for better performance).
 #[napi]
 pub fn indel_many(
@@ -326,7 +356,14 @@ pub fn indel_many(
 
 /// Compute the normalized Indel similarity between two strings.
 ///
-/// Returns a value between 0.0 (completely different) and 1.0 (identical).
+/// `1 - indel(a, b) / (length of a + length of b)`, counted in characters:
+/// the measure behind `fuzz.ratio` in RapidFuzz and fuzzball, on a 0.0-1.0
+/// scale (fuzzball also lower-cases and strips punctuation by default; this
+/// function does not). Returns a value between 0.0 (completely different)
+/// and 1.0 (identical).
+///
+/// Compares the Unicode code points of the strings as given: case, whitespace
+/// and Unicode normalization (NFC vs NFD) are not adjusted.
 #[napi]
 pub fn normalized_indel(a: String, b: String) -> f64 {
     core_dist::normalized_indel(&a, &b)
@@ -345,9 +382,9 @@ pub fn normalized_indel_batch(pairs: Vec<Vec<String>>) -> napi::Result<Vec<f64>>
 /// Compute the normalized Indel similarity from one reference string to many candidates.
 ///
 /// Returns an array of similarity scores, one per candidate, in the same order as the input.
-/// If `min_similarity` is provided, candidates with similarity below the threshold
+/// If `minSimilarity` is provided, candidates with similarity below the threshold
 /// will return `0.0` (enabling early termination for better performance); a score
-/// equal to it is kept. Throws an `InvalidArg` error if `min_similarity` is `NaN`.
+/// equal to it is kept. Throws an `InvalidArg` error if `minSimilarity` is `NaN`.
 #[napi]
 pub fn normalized_indel_many(
     reference: String,
@@ -359,9 +396,10 @@ pub fn normalized_indel_many(
 
 /// Compute the token sort ratio between two strings.
 ///
-/// Splits both strings into tokens, sorts them alphabetically, then computes
-/// the normalized Levenshtein similarity. This makes the comparison
-/// order-independent, ideal for matching names or addresses where word order varies.
+/// Lower-cases both strings, splits them on whitespace, sorts the tokens and
+/// joins them with single spaces, then returns the normalized Levenshtein
+/// similarity of the two results, so word order does not matter. Punctuation
+/// is kept: `Smith,` and `Smith` are different tokens.
 /// Returns a value between 0.0 (completely different) and 1.0 (identical after sorting).
 #[napi]
 pub fn token_sort_ratio(a: String, b: String) -> f64 {
@@ -381,8 +419,8 @@ pub fn token_sort_ratio_batch(pairs: Vec<Vec<String>>) -> napi::Result<Vec<f64>>
 /// Compute the token sort ratio from one reference string to many candidates.
 ///
 /// Returns an array of similarity scores, one per candidate, in the same order as the input.
-/// If `min_similarity` is provided, candidates scoring below the threshold return `0.0`;
-/// a score equal to it is kept. Throws an `InvalidArg` error if `min_similarity` is `NaN`.
+/// If `minSimilarity` is provided, candidates scoring below the threshold return `0.0`;
+/// a score equal to it is kept. Throws an `InvalidArg` error if `minSimilarity` is `NaN`.
 #[napi]
 pub fn token_sort_ratio_many(
     reference: String,
@@ -394,10 +432,13 @@ pub fn token_sort_ratio_many(
 
 /// Compute the token set ratio between two strings.
 ///
-/// Compares the intersection and differences of token sets from both strings.
-/// Returns the maximum similarity among comparisons of the intersection with
-/// each remainder. Highly effective for strings with shared tokens but
-/// different lengths. Returns a value between 0.0 and 1.0.
+/// Lower-cases both strings and splits them into sets of whitespace-separated
+/// tokens (duplicates count once). With the shared tokens sorted and joined
+/// as `common`, returns the highest normalized Levenshtein similarity among
+/// `common + rest of a` vs `common + rest of b`, `common` vs
+/// `common + rest of a`, and `common` vs `common + rest of b`. It is 1.0
+/// when the tokens of one string are a subset of the other's.
+/// Returns a value between 0.0 and 1.0.
 #[napi]
 pub fn token_set_ratio(a: String, b: String) -> f64 {
     core_dist::token_set_ratio(&a, &b)
@@ -416,8 +457,8 @@ pub fn token_set_ratio_batch(pairs: Vec<Vec<String>>) -> napi::Result<Vec<f64>> 
 /// Compute the token set ratio from one reference string to many candidates.
 ///
 /// Returns an array of similarity scores, one per candidate, in the same order as the input.
-/// If `min_similarity` is provided, candidates scoring below the threshold return `0.0`;
-/// a score equal to it is kept. Throws an `InvalidArg` error if `min_similarity` is `NaN`.
+/// If `minSimilarity` is provided, candidates scoring below the threshold return `0.0`;
+/// a score equal to it is kept. Throws an `InvalidArg` error if `minSimilarity` is `NaN`.
 #[napi]
 pub fn token_set_ratio_many(
     reference: String,
@@ -429,10 +470,18 @@ pub fn token_set_ratio_many(
 
 /// Compute the partial ratio between two strings.
 ///
-/// Finds the best matching substring of the shorter string within the longer string
-/// using a sliding window approach. Returns the highest normalized Levenshtein
-/// similarity across all windows. Useful for matching when one string is a
-/// substring or abbreviation of the other. Returns a value between 0.0 and 1.0.
+/// Lower-cases both strings and collapses whitespace runs into single
+/// spaces, then compares the shorter string with every window of the same
+/// length in the longer one and returns the highest normalized Levenshtein
+/// similarity. Useful when one string is a substring or truncation of the
+/// other; it does not match abbreviations (`MSFT` vs `Microsoft` scores low).
+/// Scores can differ from fuzzball's / RapidFuzz's `partial_ratio`, which
+/// use a different alignment. Returns a value between 0.0 and 1.0.
+///
+/// Takes time proportional to the length of the longer string times the
+/// square of the length of the shorter one: about 0.4 s for a
+/// 1,000-character string against a 10,000-character one with the native
+/// addon.
 #[napi]
 pub fn partial_ratio(a: String, b: String) -> f64 {
     core_dist::partial_ratio(&a, &b)
@@ -451,8 +500,8 @@ pub fn partial_ratio_batch(pairs: Vec<Vec<String>>) -> napi::Result<Vec<f64>> {
 /// Compute the partial ratio from one reference string to many candidates.
 ///
 /// Returns an array of similarity scores, one per candidate, in the same order as the input.
-/// If `min_similarity` is provided, candidates scoring below the threshold return `0.0`;
-/// a score equal to it is kept. Throws an `InvalidArg` error if `min_similarity` is `NaN`.
+/// If `minSimilarity` is provided, candidates scoring below the threshold return `0.0`;
+/// a score equal to it is kept. Throws an `InvalidArg` error if `minSimilarity` is `NaN`.
 #[napi]
 pub fn partial_ratio_many(
     reference: String,
@@ -464,10 +513,13 @@ pub fn partial_ratio_many(
 
 /// Compute the weighted ratio between two strings.
 ///
-/// Returns the maximum score across normalized Levenshtein, token sort ratio,
-/// token set ratio, and partial ratio. This provides a single "best effort"
-/// similarity score that automatically selects the most appropriate algorithm.
-/// Returns a value between 0.0 and 1.0.
+/// Returns the highest of: the normalized Levenshtein similarity of the
+/// strings as given and after lower-casing and collapsing whitespace,
+/// `tokenSortRatio`, `tokenSetRatio` and `partialRatio`. Unlike `WRatio` in
+/// fuzzball / RapidFuzz, no score is scaled down or weighted by the length
+/// ratio of the strings, so scores are often higher than `WRatio`'s.
+/// Includes the cost of `partialRatio` (see there) when the strings differ
+/// in length. Returns a value between 0.0 and 1.0.
 #[napi]
 pub fn weighted_ratio(a: String, b: String) -> f64 {
     core_dist::weighted_ratio(&a, &b)
@@ -486,8 +538,8 @@ pub fn weighted_ratio_batch(pairs: Vec<Vec<String>>) -> napi::Result<Vec<f64>> {
 /// Compute the weighted ratio from one reference string to many candidates.
 ///
 /// Returns an array of similarity scores, one per candidate, in the same order as the input.
-/// If `min_similarity` is provided, candidates scoring below the threshold return `0.0`;
-/// a score equal to it is kept. Throws an `InvalidArg` error if `min_similarity` is `NaN`.
+/// If `minSimilarity` is provided, candidates scoring below the threshold return `0.0`;
+/// a score equal to it is kept. Throws an `InvalidArg` error if `minSimilarity` is `NaN`.
 #[napi]
 pub fn weighted_ratio_many(
     reference: String,

@@ -127,6 +127,9 @@ impl KeyedFuzzyIndex {
     }
 
     /// Free the internal data. After calling this, the index is empty.
+    ///
+    /// The key configuration is kept, so the index stays usable: it behaves
+    /// as an empty index and `add()` / `addMany()` work as before.
     pub fn destroy(&mut self) {
         self.core.destroy();
     }
