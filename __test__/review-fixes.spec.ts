@@ -1,6 +1,6 @@
 // Regression tests for the review of the 2.2 release candidate: Node.js and
 // WebAssembly builds must accept the same arguments and agree on the results.
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { highlight, highlightRanges } from '../highlight.js';
@@ -293,5 +293,27 @@ describe('highlight() uses the position unit of search results', () => {
         highlight(item, hit?.positions ?? [], '[', ']'),
       );
     }
+  });
+});
+
+describe('THIRD_PARTY_NOTICES', () => {
+  const notices = readFileSync(join(ROOT, 'THIRD_PARTY_NOTICES'), 'utf8');
+
+  it('reproduces the notices of the code wasi-libc links into the WASI build', () => {
+    for (const notice of [
+      'Copyright (c) 2015-2017 Nuxi (https://nuxi.nl/) and contributors.', // cloudlibc, BSD-2-Clause
+      'Copyright © 2005-2020 Rich Felker, et al.', // musl, MIT
+      'The Regents of the University of California.  All rights reserved.', // musl-fts, BSD-3-Clause
+      'Copyright (c) 2010-2014 Emscripten authors, see AUTHORS file.', // emmalloc, MIT
+      'Doug Lea and released to the public domain', // dlmalloc, CC0
+      'wasi-libc as a whole is multi-licensed',
+    ]) {
+      expect(notices).toContain(notice);
+    }
+  });
+
+  it('reproduces the notice of the Rust standard library', () => {
+    expect(notices).toContain('It is Copyright (c) The Rust Project Contributors.');
+    expect(notices).toContain('UNICODE LICENSE V3');
   });
 });

@@ -12,7 +12,8 @@
  *   (or from scripts/third-party-licenses/<crate>/ for the few crates that
  *   publish none).
  * - The toolchain components linked in as well: the Rust standard library,
- *   wasi-libc and emnapi (WASI build only).
+ *   wasi-libc and emnapi (WASI build only), with the license texts kept in
+ *   scripts/third-party-licenses/toolchain/ and in the emnapi package.
  *
  * The release workflow copies the file into every npm package.
  *
@@ -177,6 +178,22 @@ function crateComponents() {
     });
 }
 
+/**
+ * License texts of a toolchain component, kept in
+ * scripts/third-party-licenses/toolchain/<name>/ (see its README.md).
+ * @param {string} name
+ */
+function toolchainTexts(name) {
+  const texts = readTexts(
+    path.join(FALLBACK_DIR, 'toolchain', name),
+    (file) => file !== 'README.md',
+  );
+  if (texts.length === 0) {
+    throw new Error(`scripts/third-party-licenses/toolchain/${name}/ holds no license texts`);
+  }
+  return texts;
+}
+
 /** @returns {Component[]} */
 function toolchainComponents() {
   const emnapiDir = path.join(ROOT, 'node_modules', 'emnapi');
@@ -192,10 +209,10 @@ function toolchainComponents() {
       url: 'https://github.com/rust-lang/rust',
       notes: [
         'core, alloc and std, and the crates they bundle, are compiled into every binary.',
-        'Their notices are listed in https://github.com/rust-lang/rust/blob/master/COPYRIGHT',
-        'and in share/doc/rust/COPYRIGHT-library.html of every Rust toolchain.',
+        'The notices of the crates the standard library depends on are listed in',
+        'share/doc/rust/COPYRIGHT-library.html of every Rust toolchain.',
       ],
-      texts: [],
+      texts: toolchainTexts('rust-std'),
     },
     {
       title: 'wasi-libc',
@@ -204,9 +221,9 @@ function toolchainComponents() {
       notes: [
         'WASI build only: linked by the Rust wasm32-wasip1-threads target. Portions are',
         'derived from dlmalloc (CC0), emmalloc (MIT), cloudlibc (BSD-2-Clause), musl (MIT)',
-        'and musl-fts (BSD-3-Clause); see the license files in its repository.',
+        'and musl-fts (BSD-3-Clause), whose notices are included below.',
       ],
-      texts: [],
+      texts: toolchainTexts('wasi-libc'),
     },
     {
       title: `emnapi ${emnapi.version}`,
