@@ -1,11 +1,11 @@
 # Migrating from FlexSearch to rapid-fuzzy
 
-[FlexSearch](https://www.npmjs.com/package/flexsearch) is a full-text search engine that uses inverted indexes and tokenization. rapid-fuzzy is a fuzzy matching library that finds approximate string matches using edit distance and similarity algorithms. They serve different primary use cases, but rapid-fuzzy can replace FlexSearch for autocomplete and typo-tolerant search scenarios.
+[FlexSearch](https://www.npmjs.com/package/flexsearch) is a full-text search engine that uses inverted indexes and tokenization. rapid-fuzzy is a fuzzy matching library: its search matches items that contain the query's characters in order (so `tsc` and `typscript` find `TypeScript`), and it provides edit-distance and similarity functions. They serve different primary use cases, but rapid-fuzzy can replace FlexSearch for autocomplete over short strings.
 
 ## When to switch
 
 **Switch to rapid-fuzzy when**:
-- You need typo tolerance (e.g., "typscript" → "TypeScript")
+- You need matches for partial words, abbreviations and missing letters (e.g., "tsc" or "typscript" → "TypeScript")
 - You want ranked results by string similarity
 - You need match highlighting positions
 - You search short strings (names, tags, file names, commands)
@@ -32,24 +32,27 @@ npm install rapid-fuzzy
 | `new Index()` + `index.add(id, text)` | `new FuzzyIndex(items)` | rapid-fuzzy indexes by array position |
 | `index.search(query)` | `index.search(query)` | Returns `{ item, score, index }[]` |
 | `index.add(id, text)` | `index.add(item)` | Appends to index |
-| `index.remove(id)` | `index.remove(index)` | Removes by position |
+| `index.remove(id)` | `index.remove(index)` | Removes by position; the last item moves into the freed position |
 
 ## Code Examples
 
 ### Basic search
 
 ```typescript
+const items = ['TypeScript', 'JavaScript', 'Python'];
+
 // Before (FlexSearch)
 import { Index } from 'flexsearch';
 const index = new Index();
 items.forEach((item, i) => index.add(i, item));
-const ids = index.search('typscript'); // [0] — returns IDs only
+index.search('typescript'); // [0] — returns IDs only
+index.search('typscript');  // [] — not a token of any item
 
 // After (rapid-fuzzy)
 import { FuzzyIndex } from 'rapid-fuzzy';
 const index = new FuzzyIndex(items);
-const results = index.search('typscript');
-// [{ item: 'TypeScript', score: 0.85, index: 0, positions: [] }]
+index.search('typscript');
+// [{ item: 'TypeScript', score: 0.86, index: 0, positions: [] }]
 ```
 
 ### Standalone search (no index)
@@ -78,9 +81,9 @@ index.search(query, { maxResults: 10, minScore: 0.3 });
 
 ## What You Gain
 
-### Typo tolerance
+### Fuzzy matching
 
-FlexSearch matches exact tokens — "typscript" won't find "TypeScript". rapid-fuzzy uses fuzzy algorithms that handle typos, transpositions, and partial matches automatically.
+FlexSearch's default index matches whole tokens — "typscript" won't find "TypeScript". rapid-fuzzy's search finds items that contain the query's characters in order, so partial words, abbreviations and missing letters match. It does not tolerate substituted or swapped letters (`tpyescript`); for those, compare candidates with a distance function such as `jaroWinklerMany` or `damerauLevenshtein`.
 
 ### Similarity scores
 
@@ -100,7 +103,7 @@ const html = highlight(results[0].item, results[0].positions, '<b>', '</b>');
 
 ### Additional algorithms
 
-Access 10 distance algorithms for specialized use cases:
+Access edit-distance and similarity functions for specialized use cases:
 
 ```typescript
 import { levenshtein, jaroWinkler, sorensenDice } from 'rapid-fuzzy';

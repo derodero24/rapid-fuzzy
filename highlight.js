@@ -3,9 +3,54 @@
 
 'use strict';
 
+/** @type {Intl.Segmenter | null | undefined} */
+let graphemeSegmenter;
+
+/**
+ * @param {string} text
+ * @returns {boolean}
+ */
+function isAscii(text) {
+  for (let i = 0; i < text.length; i++) {
+    if (text.charCodeAt(i) > 0x7f) return false;
+  }
+  return true;
+}
+
+/**
+ * The UTF-16 offset at which each search position of `item` starts, followed
+ * by `item.length`, or `null` when positions are UTF-16 offsets already.
+ *
+ * Search results count an ASCII item by character and any other item by
+ * grapheme cluster (user-perceived character: an emoji with its modifiers,
+ * a letter with its combining marks), so these are the grapheme boundaries
+ * of non-ASCII items. Without `Intl.Segmenter` they fall back to code points.
+ * @param {string} item
+ * @returns {number[] | null}
+ */
+function positionOffsets(item) {
+  if (isAscii(item)) return null;
+  if (graphemeSegmenter === undefined) {
+    graphemeSegmenter =
+      typeof Intl === 'object' && typeof Intl.Segmenter === 'function'
+        ? new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+        : null;
+  }
+  const offsets = [];
+  if (graphemeSegmenter) {
+    for (const { index } of graphemeSegmenter.segment(item)) offsets.push(index);
+  } else {
+    for (let i = 0; i < item.length; i += (item.codePointAt(i) ?? 0) > 0xffff ? 2 : 1) {
+      offsets.push(i);
+    }
+  }
+  offsets.push(item.length);
+  return offsets;
+}
+
 /**
  * @param {string} item
- * @param {number[]} positions
+ * @param {ReadonlyArray<number>} positions
  * @returns {Array<{start: number, end: number, matched: boolean}>}
  */
 function highlightRanges(item, positions) {
@@ -14,38 +59,65 @@ function highlightRanges(item, positions) {
     return [{ start: 0, end: item.length, matched: false }];
   }
 
+  const offsets = positionOffsets(item);
+  const count = offsets ? offsets.length - 1 : item.length;
+  /** @type {(position: number) => number} */
+  const offset = offsets ? (position) => offsets[position] : (position) => position;
   const set = new Set(positions);
   const ranges = [];
   let i = 0;
 
-  while (i < item.length) {
+  while (i < count) {
     const matched = set.has(i);
     const start = i;
-    while (i < item.length && set.has(i) === matched) i++;
-    ranges.push({ start, end: i, matched });
+    while (i < count && set.has(i) === matched) i++;
+    ranges.push({ start: offset(start), end: offset(i), matched });
   }
 
   return ranges;
 }
 
+/** @type {Record<string, string>} */
+const HTML_ENTITIES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+
 /**
- * @param {string} item
- * @param {number[]} positions
- * @param {string | ((substring: string) => string)} openOrCallback
- * @param {string} [close]
+ * Escape the characters that are special in HTML text and attribute values.
+ * @param {string} text
  * @returns {string}
  */
-function highlight(item, positions, openOrCallback, close) {
-  if (!positions || positions.length === 0) return item;
+function escapeHtml(text) {
+  return text.replace(/[&<>"']/g, (ch) => HTML_ENTITIES[ch] ?? ch);
+}
 
-  const ranges = highlightRanges(item, positions);
+/**
+ * @param {unknown} options
+ * @returns {(text: string) => string}
+ */
+function textEncoder(options) {
+  return options !== null && typeof options === 'object' && options.escapeHtml === true
+    ? escapeHtml
+    : (text) => text;
+}
+
+/**
+ * @param {string} item
+ * @param {ReadonlyArray<number>} positions
+ * @param {string | ((substring: string) => string)} openOrCallback
+ * @param {string | { escapeHtml?: boolean }} [closeOrOptions] - `close` marker, or the options in the callback form.
+ * @param {{ escapeHtml?: boolean }} [maybeOptions] - Options in the string-marker form.
+ * @returns {string}
+ */
+function highlight(item, positions, openOrCallback, closeOrOptions, maybeOptions) {
   const useCallback = typeof openOrCallback === 'function';
+  const encode = textEncoder(useCallback ? closeOrOptions : maybeOptions);
+  if (!positions || positions.length === 0) return encode(item);
 
+  const close = useCallback ? '' : (closeOrOptions ?? '');
   const parts = [];
-  for (const range of ranges) {
-    const segment = item.slice(range.start, range.end);
+  for (const range of highlightRanges(item, positions)) {
+    const segment = encode(item.slice(range.start, range.end));
     if (range.matched) {
-      parts.push(useCallback ? openOrCallback(segment) : openOrCallback + segment + (close ?? ''));
+      parts.push(useCallback ? openOrCallback(segment) : openOrCallback + segment + close);
     } else {
       parts.push(segment);
     }
