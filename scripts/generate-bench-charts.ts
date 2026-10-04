@@ -35,42 +35,51 @@ function parseOps(s: string): number | null {
   return m ? Number(m[1].replace(/,/g, '')) : null;
 }
 
+/** The lines between `<!-- bench:<name>:start -->` and `<!-- bench:<name>:end -->`. */
+function blockLines(name: string): string[] {
+  const start = readme.indexOf(`<!-- bench:${name}:start -->`);
+  const end = readme.indexOf(`<!-- bench:${name}:end -->`);
+  if (start === -1 || end === -1 || end < start) {
+    console.warn(`⚠ No bench:${name} block found in README`);
+    return [];
+  }
+  return readme.slice(start, end).split('\n');
+}
+
+const SEARCH_COLUMNS = ['rapid-fuzzy', 'rapid-fuzzy (indexed)', 'fuse.js', 'fuzzysort', 'uFuzzy'];
+
+/** The bars of one search table row: one per column with a value. */
+function searchBars(cells: string[]): BarEntry[] {
+  const bars: BarEntry[] = [];
+  SEARCH_COLUMNS.forEach((label, i) => {
+    const value = parseOps(cells[i] ?? '');
+    if (value !== null) bars.push({ label, value });
+  });
+  return bars;
+}
+
 function parseSearchTable(): ChartData {
   const groups: ChartData['groups'] = [];
-  const lines = readme.split('\n');
 
-  for (const line of lines) {
-    // Match rows: | Small (20 items) | rf | fi | fj | fs | uf |
-    const m = line.match(
-      /\|\s*(Small|Medium|Large|XL)\s*\([^)]+\)\s*\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|/,
-    );
-    if (!m) continue;
-
-    const groupLabel = m[1];
-    const rf = parseOps(m[2]);
-    const fi = parseOps(m[3]);
-    const fj = parseOps(m[4]);
-    const fs = parseOps(m[5]);
-    const uf = parseOps(m[6]);
-
-    const bars: BarEntry[] = [];
-    if (rf !== null) bars.push({ label: 'rapid-fuzzy', value: rf });
-    if (fi !== null) bars.push({ label: 'rapid-fuzzy (indexed)', value: fi });
-    if (fj !== null) bars.push({ label: 'fuse.js', value: fj });
-    if (fs !== null) bars.push({ label: 'fuzzysort', value: fs });
-    if (uf !== null) bars.push({ label: 'uFuzzy', value: uf });
-
-    groups.push({ groupLabel, bars });
+  for (const line of blockLines('search')) {
+    // Rows: | Small (20 items) | rf | fi | fj | fs | uf |
+    const cells = line.split('|').slice(1, -1);
+    const groupLabel = cells[0]?.trim() ?? '';
+    const bars = searchBars(cells.slice(1));
+    if (bars.length > 1) groups.push({ groupLabel, bars });
   }
 
-  return { title: 'Fuzzy Search Performance', subtitle: 'ops/s (higher is better)', groups };
+  return {
+    title: 'Fuzzy Search Performance',
+    subtitle: 'ops/s (higher is better), Node.js — see README for setup and caveats',
+    groups,
+  };
 }
 
 function parseDistanceTable(): ChartData {
   const groups: ChartData['groups'] = [];
-  const lines = readme.split('\n');
 
-  for (const line of lines) {
+  for (const line of blockLines('distance')) {
     const m = line.match(
       /\|\s*(Levenshtein|Normalized Levenshtein|Sorensen-Dice|Jaro-Winkler|Damerau-Levenshtein)\s*\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|/,
     );
@@ -134,10 +143,9 @@ function buildValueText(bar: BarEntry, group: { bars: BarEntry[] }): string {
   const isRapidFuzzy = bar.label === 'rapid-fuzzy' || bar.label === 'rapid-fuzzy (indexed)';
   if (!isRapidFuzzy) return text;
 
-  const rfEntry = group.bars.find((b) => b.label === 'rapid-fuzzy');
   const fuseEntry = group.bars.find((b) => b.label === 'fuse.js');
-  if (rfEntry && fuseEntry && fuseEntry.value > 0) {
-    const mult = Math.round(rfEntry.value / fuseEntry.value);
+  if (fuseEntry && fuseEntry.value > 0) {
+    const mult = Math.round(bar.value / fuseEntry.value);
     if (mult >= 2) text += ` — ${mult}x vs fuse.js`;
   }
 
