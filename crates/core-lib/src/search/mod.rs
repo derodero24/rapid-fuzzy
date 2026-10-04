@@ -7,11 +7,12 @@ pub use fuzzy_index::FuzzyIndexCore;
 pub use keyed_index::KeyedFuzzyIndexCore;
 pub use keys::{SearchKeysOptions, search_keys_impl};
 
+use std::borrow::Cow;
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::cmp::Ordering;
 
-use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
-use nucleo_matcher::{Config, Matcher, Utf32String, chars};
+use nucleo_matcher::pattern::{Atom, CaseMatching, Normalization, Pattern};
+use nucleo_matcher::{Config, Matcher, Utf32Str, Utf32String, chars};
 
 /// Classification of how a query matched an item.
 ///
@@ -76,6 +77,9 @@ pub struct KeySearchResult {
 }
 
 /// Classify the match type from the matched character positions.
+///
+/// `item_char_count` is the length of the haystack the positions index into
+/// (one entry per grapheme for non-ASCII text, see [`utf32_haystack`]).
 pub fn classify_match(positions: &[u32], item_char_count: usize) -> MatchType {
     if positions.is_empty() {
         return MatchType::Fuzzy;
@@ -96,19 +100,6 @@ pub fn classify_match(positions: &[u32], item_char_count: usize) -> MatchType {
     }
 }
 
-/// Compute the maximum possible score for a given pattern by scoring
-/// the query against itself (exact match = theoretical maximum).
-pub fn compute_max_score(query: &str, pattern: &Pattern, matcher: &mut Matcher) -> f64 {
-    let mut buf = Vec::new();
-    let atoms = nucleo_matcher::Utf32Str::new(query, &mut buf);
-    // A pattern without atoms scores 0 against everything; clamp to 1 so the
-    // normalization never divides by zero (0 / 0 would become NaN and pass
-    // every threshold as 1.0).
-    pattern
-        .score(atoms, matcher)
-        .map_or(1.0, |score| score.max(1) as f64)
-}
-
 /// Convert the `is_case_sensitive` flag into a `CaseMatching` variant.
 pub fn resolve_case_matching(is_case_sensitive: Option<bool>) -> CaseMatching {
     match is_case_sensitive {
@@ -124,275 +115,431 @@ thread_local! {
     static STANDALONE_MATCHER: RefCell<Matcher> = RefCell::new(Matcher::new(Config::DEFAULT));
 }
 
-/// Compute a character-presence bitmask for quick pre-filtering.
+// ─── Query parsing ──────────────────────────────────────────────────────────
+
+/// Longest query term, in characters, that can be scored.
 ///
-/// Bit layout: 0–25 = a–z (case-insensitive), 26–35 = 0–9.
-/// Characters are folded with nucleo's own normalization first so that, like
-/// the matcher, `café` sets the same bits as `cafe`. Characters outside the
-/// range are ignored (conservative — no false negatives).
-pub fn compute_char_mask(s: &str) -> u64 {
-    let mut mask = 0u64;
-    for c in s.chars() {
-        let c = chars::normalize(c);
-        let bit = match c {
-            'a'..='z' => Some(c as u32 - 'a' as u32),
-            'A'..='Z' => Some(c as u32 - 'A' as u32),
-            '0'..='9' => Some(26 + c as u32 - '0' as u32),
-            _ => None,
-        };
-        if let Some(b) = bit {
-            mask |= 1u64 << b;
-        }
-    }
-    mask
-}
+/// nucleo-matcher 0.3 scores with `u16`. A term of `m` characters scores at
+/// most `16` per matched character plus a bonus of at most `10` per character
+/// (`20` on the first one), i.e. `26 * m + 10`, which first exceeds
+/// `u16::MAX` at 2521 characters: the score would wrap around in release
+/// builds (and panic in debug builds). A query containing a longer term
+/// therefore matches nothing.
+pub const MAX_TERM_CHARS: usize = 2520;
 
-/// Extract a character-presence bitmask from a query string, considering
-/// only positive (non-inverted) terms. Inverted terms (`!term`) and
-/// syntax prefixes/suffixes (`^`, `'`, `$`) are stripped.
-pub fn compute_query_mask(query: &str) -> u64 {
-    let mut mask = 0u64;
-    for term in query.split_whitespace() {
-        if term.starts_with('!') {
-            continue;
-        }
-        let term = term.trim_start_matches(['^', '\'']);
-        let term = term.trim_end_matches('$');
-        mask |= compute_char_mask(term);
-    }
-    mask
-}
-
-/// Encode a character into a u8 bucket for bigram key construction.
+/// Replace every Unicode whitespace character in a query with an ASCII space.
 ///
-/// Characters are folded with nucleo's normalization first (so `é` lands in
-/// the `e` bucket, matching how the matcher compares them), then ASCII
-/// letters are case-folded to 0–25, digits to 26–35, and anything else is
-/// hashed into the 36–255 range.
-pub(crate) fn char_bucket(c: char) -> u8 {
-    let c = chars::normalize(c);
-    match c {
-        'a'..='z' => (c as u32 - 'a' as u32) as u8,
-        'A'..='Z' => (c as u32 - 'A' as u32) as u8,
-        '0'..='9' => (26 + c as u32 - '0' as u32) as u8,
-        _ => (36 + (c as u32 % 220)) as u8,
+/// nucleo only splits terms on ASCII spaces, so ideographic spaces (U+3000,
+/// typed by Japanese/Chinese input methods), no-break spaces, tabs and
+/// newlines (from pasted text) would otherwise become part of a term and the
+/// query would match nothing. A backslash keeps escaping the space it now
+/// precedes: `foo\<U+3000>bar` becomes the single term `foo bar`, exactly like
+/// `foo\ bar`.
+pub fn normalize_query_whitespace(query: &str) -> Cow<'_, str> {
+    if query.chars().all(|c| c == ' ' || !c.is_whitespace()) {
+        return Cow::Borrowed(query);
     }
+    Cow::Owned(
+        query
+            .chars()
+            .map(|c| if c.is_whitespace() { ' ' } else { c })
+            .collect(),
+    )
 }
 
-/// Encode a character pair into a u16 bigram key.
-pub fn bigram_key(a: char, b: char) -> u16 {
-    ((char_bucket(a) as u16) << 8) | char_bucket(b) as u16
+/// Parse a query exactly as every search function does: Unicode whitespace
+/// is normalized to ASCII spaces (see [`normalize_query_whitespace`]), then
+/// nucleo's extended syntax (`^`, `$`, `'`, `!` and `\` escapes) is applied.
+pub fn parse_query(query: &str, case_matching: CaseMatching) -> Pattern {
+    Pattern::parse(
+        &normalize_query_whitespace(query),
+        case_matching,
+        Normalization::Smart,
+    )
 }
 
-/// Extract bigram keys from a string.
-pub fn extract_bigrams(s: &str) -> Vec<u16> {
-    let chars: Vec<char> = s.chars().collect();
-    if chars.len() < 2 {
-        return Vec::new();
-    }
-    let mut bigrams = Vec::with_capacity(chars.len() - 1);
-    for pair in chars.windows(2) {
-        bigrams.push(bigram_key(pair[0], pair[1]));
-    }
-    bigrams.sort_unstable();
-    bigrams.dedup();
-    bigrams
-}
-
-/// Extract bigram keys from a query string, respecting nucleo syntax.
+/// Whether a query contains no search term at all.
 ///
-/// Skips inverted terms (`!term`) and strips syntax prefixes/suffixes (`^`, `'`, `$`).
-pub fn extract_query_bigrams(query: &str) -> Vec<u16> {
-    let mut all_bigrams = Vec::new();
-    for term in query.split_whitespace() {
-        if term.starts_with('!') {
-            continue;
-        }
-        let term = term.trim_start_matches(['^', '\'']);
-        let term = term.trim_end_matches('$');
-        let chars: Vec<char> = term.chars().collect();
-        if chars.len() < 2 {
-            continue;
-        }
-        for pair in chars.windows(2) {
-            all_bigrams.push(bigram_key(pair[0], pair[1]));
-        }
-    }
-    all_bigrams.sort_unstable();
-    all_bigrams.dedup();
-    all_bigrams
+/// True for empty and whitespace-only queries, and for queries made only of
+/// syntax characters (`^`, `'`, `$`, `!`, `^$`, ...): nucleo drops terms that
+/// are empty once their syntax is removed. Such queries return no results
+/// (or every item, with `returnAllOnEmpty`).
+pub fn is_empty_query(query: &str) -> bool {
+    parse_query(query, CaseMatching::Smart).atoms.is_empty()
 }
 
-/// Intersect two sorted slices of u32, returning a new sorted Vec.
-pub fn intersect_sorted(a: &[u32], b: &[u32]) -> Vec<u32> {
-    let mut result = Vec::with_capacity(a.len().min(b.len()));
-    let (mut i, mut j) = (0, 0);
-    while i < a.len() && j < b.len() {
-        match a[i].cmp(&b[j]) {
-            std::cmp::Ordering::Less => i += 1,
-            std::cmp::Ordering::Greater => j += 1,
-            std::cmp::Ordering::Equal => {
-                result.push(a[i]);
-                i += 1;
-                j += 1;
-            }
-        }
-    }
-    result
+/// A query parsed and prepared for scoring.
+pub struct QueryPlan {
+    /// The parsed nucleo pattern.
+    pub pattern: Pattern,
+    /// Raw score of a perfect match, used to normalize scores to 0.0-1.0.
+    pub max_score: f64,
+    /// Character mask every matching item must contain (see [`compute_char_mask`]).
+    pub char_mask: u64,
 }
 
-/// Inverted bigram index for pre-filtering candidates in FuzzyIndex.
-///
-/// Maps each bigram (pair of adjacent characters) to a sorted list of item indices
-/// that contain that bigram. At query time, posting lists are intersected to find
-/// candidates that contain all query bigrams.
-pub struct BigramIndex {
-    /// Inverted index: bigram_key → sorted list of item indices containing that bigram.
-    index: HashMap<u16, Vec<u32>>,
-    /// Total number of items in the index.
-    num_items: usize,
-}
-
-impl BigramIndex {
-    /// Build a bigram index from a slice of items.
-    pub fn new(items: &[String]) -> Self {
-        let mut index: HashMap<u16, Vec<u32>> = HashMap::new();
-        for (i, item) in items.iter().enumerate() {
-            let bigrams = extract_bigrams(item);
-            for bg in bigrams {
-                index.entry(bg).or_default().push(i as u32);
-            }
-        }
-        Self {
-            index,
-            num_items: items.len(),
-        }
-    }
-
-    /// Get candidate indices that contain all query bigrams.
+impl QueryPlan {
+    /// Parse `query` with [`parse_query`].
     ///
-    /// Returns `None` if the query has no bigrams (single-char query)
-    /// or if the intersection is not significantly smaller than the full set.
-    pub fn candidates(&self, query_bigrams: &[u16]) -> Option<Vec<u32>> {
-        if query_bigrams.is_empty() || self.num_items == 0 {
-            return None;
-        }
-
-        // Find posting lists for each query bigram, sorted by length (shortest first).
-        let mut lists: Vec<&Vec<u32>> = Vec::with_capacity(query_bigrams.len());
-        for &bg in query_bigrams {
-            match self.index.get(&bg) {
-                Some(list) => lists.push(list),
-                None => return Some(Vec::new()), // bigram not present → no candidates
-            }
-        }
-        lists.sort_by_key(|l| l.len());
-
-        // Intersect all posting lists starting from the shortest.
-        let mut result = lists[0].clone();
-        for list in &lists[1..] {
-            result = intersect_sorted(&result, list);
-            if result.is_empty() {
-                return Some(Vec::new());
-            }
-        }
-
-        // Skip if the intersection is > 80% of total items (overhead not worth it).
-        if result.len() * 5 > self.num_items * 4 {
-            return None;
-        }
-
-        Some(result)
-    }
-
-    /// Add a single item to the index.
-    pub fn add_item(&mut self, index: u32, item: &str) {
-        let bigrams = extract_bigrams(item);
-        for bg in bigrams {
-            self.index.entry(bg).or_default().push(index);
-        }
-        self.num_items += 1;
-    }
-
-    /// Handle swap_remove semantics: remove item at `removed_index`, and if the
-    /// last item was swapped in, update its index from `last_index` to `removed_index`.
-    pub fn remove_item(
-        &mut self,
-        removed_index: u32,
-        last_index: u32,
-        removed_item: &str,
-        last_item: Option<&str>,
-    ) {
-        // Remove all bigrams of the removed item.
-        let removed_bigrams = extract_bigrams(removed_item);
-        for bg in removed_bigrams {
-            if let Some(list) = self.index.get_mut(&bg) {
-                list.retain(|&x| x != removed_index);
-                if list.is_empty() {
-                    self.index.remove(&bg);
-                }
-            }
-        }
-
-        // If a swap happened (removed_index != last_index), update the swapped item's index.
-        if let Some(last_item_str) = last_item
-            && removed_index != last_index
+    /// Returns `None` when the query cannot match anything: when it has no
+    /// search term ([`is_empty_query`]) or when one of its terms is longer
+    /// than [`MAX_TERM_CHARS`].
+    pub fn new(query: &str, case_matching: CaseMatching, matcher: &mut Matcher) -> Option<Self> {
+        let pattern = parse_query(query, case_matching);
+        if pattern.atoms.is_empty()
+            || pattern
+                .atoms
+                .iter()
+                .any(|atom| atom.needle_text().len() > MAX_TERM_CHARS)
         {
-            let last_bigrams = extract_bigrams(last_item_str);
-            for bg in last_bigrams {
-                if let Some(list) = self.index.get_mut(&bg) {
-                    for val in list.iter_mut() {
-                        if *val == last_index {
-                            *val = removed_index;
-                            break;
-                        }
-                    }
-                    list.sort_unstable();
+            return None;
+        }
+        let max_score = pattern_max_score(&pattern, matcher);
+        let char_mask = pattern_char_mask(&pattern);
+        Some(Self {
+            pattern,
+            max_score,
+            char_mask,
+        })
+    }
+
+    /// Normalize a raw nucleo score to the 0.0-1.0 range.
+    pub fn normalize(&self, raw_score: u32) -> f64 {
+        (raw_score as f64 / self.max_score).min(1.0)
+    }
+}
+
+/// Raw score of the best possible match for a pattern: the sum, over its
+/// positive terms, of each term matched against its own text.
+///
+/// Every term is matched against a haystack that satisfies its own anchors
+/// (the term's text is its own prefix, suffix and exact match), so `bar$`,
+/// `^foo` or `foo\ bar` get the same maximum as `bar`, `foo` or `foo bar`.
+/// Negative terms (`!term`) never contribute to a score and are ignored.
+/// The result is at least 1 so normalization never divides by zero.
+pub fn pattern_max_score(pattern: &Pattern, matcher: &mut Matcher) -> f64 {
+    let total: u32 = pattern
+        .atoms
+        .iter()
+        .filter(|atom| !atom.negative)
+        .map(|atom| atom_max_score(atom, matcher))
+        .sum();
+    total.max(1) as f64
+}
+
+fn atom_max_score(atom: &Atom, matcher: &mut Matcher) -> u32 {
+    let needle = atom.needle_text();
+    if needle.len() > MAX_TERM_CHARS {
+        // Scoring would overflow nucleo's u16 score; use the theoretical bound.
+        return u32::try_from(needle.len())
+            .unwrap_or(u32::MAX)
+            .saturating_mul(26)
+            .saturating_add(10);
+    }
+    atom.score(needle, matcher).map_or(0, u32::from)
+}
+
+/// Compute the maximum possible score for a pattern.
+///
+/// Kept for existing callers; the `query` argument is not used. Prefer
+/// [`pattern_max_score`].
+pub fn compute_max_score(_query: &str, pattern: &Pattern, matcher: &mut Matcher) -> f64 {
+    pattern_max_score(pattern, matcher)
+}
+
+// ─── Character masks ────────────────────────────────────────────────────────
+//
+// A 64-bit character-presence mask lets the indexes skip items that cannot
+// match before running nucleo. It must never reject an item nucleo would
+// match, so it is derived from the characters nucleo actually compares:
+//
+// * a query contributes the characters of its positive terms' needles
+//   (after nucleo's parsing, grapheme segmentation and escapes);
+// * an item contributes every form nucleo may compare each of its
+//   characters as: the character itself, its simple case folding, its
+//   normalization (`é` -> `e`) and the case folding of that normalization.
+//
+// Both sides map characters to bits through the same folding, so a needle
+// character equal to any of those forms always finds its bit in the item.
+// The exhaustive test in `tests/char_mask.rs` checks this for every Unicode
+// scalar value against nucleo itself.
+
+/// Map a folded character to one of 64 bits: `a`-`z` -> 0-25, `0`-`9` ->
+/// 26-35, everything else hashed into 36-63.
+#[inline]
+fn mask_bit(c: char) -> u64 {
+    let bit = match c {
+        'a'..='z' => c as u32 - 'a' as u32,
+        '0'..='9' => 26 + (c as u32 - '0' as u32),
+        _ => 36 + c as u32 % 28,
+    };
+    1 << bit
+}
+
+/// Mask bit of a query (needle) character.
+#[inline]
+fn needle_char_bit(c: char) -> u64 {
+    if c.is_ascii() {
+        mask_bit(c.to_ascii_lowercase())
+    } else {
+        mask_bit(chars::to_lower_case(chars::normalize(c)))
+    }
+}
+
+/// Mask bits of an item (haystack) character: one bit for every form nucleo
+/// may compare it as.
+#[inline]
+fn haystack_char_bits(c: char) -> u64 {
+    if c.is_ascii() {
+        // nucleo only ever lowercases ASCII characters.
+        return mask_bit(c.to_ascii_lowercase());
+    }
+    let normalized = chars::normalize(c);
+    needle_char_bit(c)
+        | needle_char_bit(chars::to_lower_case(c))
+        | needle_char_bit(normalized)
+        | needle_char_bit(chars::to_lower_case(normalized))
+}
+
+/// Character mask of an item string.
+///
+/// Considers every codepoint of `s` (a superset of the grapheme-leading
+/// codepoints nucleo matches against), so it never rejects a match.
+pub fn compute_char_mask(s: &str) -> u64 {
+    if s.is_ascii() {
+        return s
+            .bytes()
+            .fold(0, |mask, b| mask | mask_bit(b.to_ascii_lowercase() as char));
+    }
+    s.chars().fold(0, |mask, c| mask | haystack_char_bits(c))
+}
+
+/// Character mask of a haystack, as matched by nucleo (see [`utf32_haystack`]).
+pub fn haystack_char_mask(haystack: Utf32Str<'_>) -> u64 {
+    match haystack {
+        Utf32Str::Ascii(bytes) => bytes.iter().fold(0, |mask, &b| {
+            mask | mask_bit(b.to_ascii_lowercase() as char)
+        }),
+        Utf32Str::Unicode(chars) => chars
+            .iter()
+            .fold(0, |mask, &c| mask | haystack_char_bits(c)),
+    }
+}
+
+/// Character mask every item matching `pattern` contains: the characters of
+/// its positive terms. Negative terms (`!term`) are ignored.
+pub fn pattern_char_mask(pattern: &Pattern) -> u64 {
+    pattern
+        .atoms
+        .iter()
+        .filter(|atom| !atom.negative)
+        .flat_map(|atom| atom.needle_text().chars())
+        .fold(0, |mask, c| mask | needle_char_bit(c))
+}
+
+/// Character mask of a query parsed with `Pattern::parse(query, ..)`.
+///
+/// The query is parsed as-is (without [`normalize_query_whitespace`]) to
+/// match callers that parse the raw query themselves. Prefer
+/// [`pattern_char_mask`] on the pattern actually used for matching.
+pub fn compute_query_mask(query: &str) -> u64 {
+    pattern_char_mask(&Pattern::parse(
+        query,
+        CaseMatching::Smart,
+        Normalization::Smart,
+    ))
+}
+
+/// Convert an item to the haystack nucleo matches against.
+///
+/// Produces the same representation as `Utf32String::from` (which
+/// `FuzzyIndex` stores): ASCII text as bytes, anything else as the first
+/// codepoint of each grapheme. `Utf32Str::new` differs for non-ASCII text
+/// whose graphemes all start with an ASCII character (e.g. NFD `école`): it
+/// returns the raw UTF-8 bytes, so positions and scores would count the
+/// bytes of combining marks.
+pub fn utf32_haystack<'a>(s: &'a str, buf: &'a mut Vec<char>) -> Utf32Str<'a> {
+    if s.is_ascii() {
+        Utf32Str::Ascii(s.as_bytes())
+    } else {
+        buf.clear();
+        buf.extend(chars::graphemes(s));
+        Utf32Str::Unicode(buf)
+    }
+}
+
+// ─── Search ─────────────────────────────────────────────────────────────────
+
+/// The items a search runs over.
+#[derive(Clone, Copy)]
+pub(crate) enum Corpus<'a> {
+    /// Plain strings (standalone `search`), converted to haystacks on the fly.
+    Strings(&'a [String]),
+    /// Pre-converted haystacks and character masks (`FuzzyIndex`); items
+    /// whose mask lacks a bit of the query's mask are never scored.
+    Indexed {
+        items: &'a [String],
+        haystacks: &'a [Utf32String],
+        char_masks: &'a [u64],
+    },
+}
+
+impl<'a> Corpus<'a> {
+    fn items(self) -> &'a [String] {
+        match self {
+            Corpus::Strings(items) | Corpus::Indexed { items, .. } => items,
+        }
+    }
+
+    fn haystack<'b>(self, index: usize, buf: &'b mut Vec<char>) -> Utf32Str<'b>
+    where
+        'a: 'b,
+    {
+        match self {
+            Corpus::Strings(items) => utf32_haystack(&items[index], buf),
+            Corpus::Indexed { haystacks, .. } => haystacks[index].slice(..),
+        }
+    }
+}
+
+/// A ranked match, before it is converted to a public result type.
+pub(crate) struct RankedMatch {
+    pub index: u32,
+    pub score: f64,
+    pub positions: Vec<u32>,
+    pub match_type: Option<MatchType>,
+}
+
+/// Matches of a search plus, optionally, every matching index.
+pub(crate) struct SearchOutcome {
+    /// Top-k matches, best first.
+    pub matches: Vec<RankedMatch>,
+    /// Ascending indices of every item scoring at or above `min_score`
+    /// (before `max_results` truncation), when requested and when fewer than
+    /// half of the items matched; `None` otherwise.
+    pub all_matching: Option<Vec<u32>>,
+}
+
+/// Result-shaping options of a search.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct SearchParams {
+    pub max_results: Option<u32>,
+    pub min_score: Option<f64>,
+    pub include_positions: bool,
+}
+
+/// The search algorithm shared by standalone search and `FuzzyIndex`.
+///
+/// When `candidates` is set, only those items (ascending indices) are scored.
+pub(crate) fn search_core(
+    plan: &QueryPlan,
+    matcher: &mut Matcher,
+    corpus: Corpus<'_>,
+    candidates: Option<&[u32]>,
+    params: SearchParams,
+    collect_matching: bool,
+) -> SearchOutcome {
+    let SearchParams {
+        max_results,
+        min_score,
+        include_positions,
+    } = params;
+    let items = corpus.items();
+    let threshold = min_score.unwrap_or(0.0);
+    let mut buf = Vec::new();
+
+    // Pass 1: score items, keeping only (index, score) — no String cloning.
+    let mut scored: Vec<(u32, f64)> = Vec::new();
+    let mut score_item = |index: u32| {
+        let haystack = corpus.haystack(index as usize, &mut buf);
+        if let Some(raw_score) = plan.pattern.score(haystack, matcher) {
+            let score = plan.normalize(raw_score);
+            if score >= threshold {
+                scored.push((index, score));
+            }
+        }
+    };
+    let query_mask = plan.char_mask;
+    match (corpus, candidates) {
+        (Corpus::Indexed { char_masks, .. }, None) => {
+            // A tight loop over the masks: they usually reject most items.
+            for (index, &mask) in char_masks.iter().enumerate() {
+                if mask & query_mask == query_mask {
+                    score_item(index as u32);
                 }
             }
         }
-
-        self.num_items = self.num_items.saturating_sub(1);
+        (Corpus::Indexed { char_masks, .. }, Some(candidates)) => {
+            for &index in candidates {
+                if char_masks[index as usize] & query_mask == query_mask {
+                    score_item(index);
+                }
+            }
+        }
+        (Corpus::Strings(_), Some(candidates)) => candidates.iter().for_each(|&i| score_item(i)),
+        (Corpus::Strings(items), None) => (0..items.len() as u32).for_each(score_item),
     }
 
-    /// Clear the index.
-    pub fn clear(&mut self) {
-        self.index.clear();
-        self.num_items = 0;
+    // Matching indices for the incremental cache, only when the match set is
+    // meaningfully smaller than the dataset: when most items match (e.g.
+    // short queries) narrowing the next search would not pay off.
+    let all_matching = (collect_matching && scored.len() < items.len() / 2)
+        .then(|| scored.iter().map(|&(index, _)| index).collect());
+
+    // Sort by score descending, with shorter items first as tiebreaker,
+    // then by original index for fully deterministic ordering.
+    let cmp = |a: &(u32, f64), b: &(u32, f64)| {
+        b.1.partial_cmp(&a.1)
+            .unwrap_or(Ordering::Equal)
+            .then_with(|| items[a.0 as usize].len().cmp(&items[b.0 as usize].len()))
+            .then_with(|| a.0.cmp(&b.0))
+    };
+
+    // Top-k selection: quickselect O(n) + sort O(k log k) instead of a full
+    // O(n log n) sort when maxResults is set.
+    if let Some(max) = max_results {
+        let k = max as usize;
+        if scored.len() > k {
+            scored.select_nth_unstable_by(k, cmp);
+            scored.truncate(k);
+        }
+    }
+    scored.sort_unstable_by(cmp);
+
+    // Pass 2: positions only for the final top-k items.
+    let matches = scored
+        .into_iter()
+        .map(|(index, score)| {
+            let (positions, match_type) = if include_positions {
+                let haystack = corpus.haystack(index as usize, &mut buf);
+                let mut positions = Vec::new();
+                plan.pattern.indices(haystack, matcher, &mut positions);
+                positions.sort_unstable();
+                positions.dedup();
+                let match_type = classify_match(&positions, haystack.len());
+                (positions, Some(match_type))
+            } else {
+                (Vec::new(), None)
+            };
+            RankedMatch {
+                index,
+                score,
+                positions,
+                match_type,
+            }
+        })
+        .collect();
+
+    SearchOutcome {
+        matches,
+        all_matching,
     }
 }
 
-/// Pre-computed search context for FuzzyIndex.
-pub struct PrecomputedSearch<'a> {
-    pub items: &'a [String],
-    pub utf32_items: &'a [Utf32String],
-    pub char_masks: &'a [u64],
-    /// Optional subset of item indices to search (for incremental narrowing).
-    /// When `None`, all items are searched.
-    pub candidate_indices: Option<&'a [u32]>,
-    pub matcher: &'a RefCell<Matcher>,
-}
-
-/// Result of `search_over_precomputed`: the top-k results plus all matching indices.
-pub struct PrecomputedSearchResult {
-    /// Top-k search results (sorted, truncated).
-    pub results: Vec<SearchResult>,
-    /// Indices of ALL items that matched (before truncation), for incremental cache.
-    pub all_matching_indices: Vec<u32>,
-}
-
-/// Lightweight result of `search_over_precomputed_indices`: index-only results.
-pub struct PrecomputedIndexSearchResult {
-    /// Top-k index-only results (sorted, truncated).
-    pub results: Vec<IndexSearchResult>,
-    /// Indices of ALL items that matched (before truncation), for incremental cache.
-    pub all_matching_indices: Vec<u32>,
-}
-
-/// Shared search logic over a borrowed slice of items.
+/// Fuzzy search over a borrowed slice of items (the standalone `search`).
 ///
-/// Both the standalone `search_impl` and `FuzzyIndex::search_impl` delegate
-/// to this function, which contains the core scoring/filtering/sorting logic.
+/// `FuzzyIndex` runs the same algorithm over pre-computed data and returns
+/// identical results.
 pub fn search_over_items(
     query: &str,
     items: &[String],
@@ -401,320 +548,37 @@ pub fn search_over_items(
     include_positions: bool,
     case_matching: CaseMatching,
 ) -> Vec<SearchResult> {
-    if query.trim().is_empty() || items.is_empty() {
+    if items.is_empty() {
         return Vec::new();
     }
-
     STANDALONE_MATCHER.with(|cell| {
         let mut matcher = cell.borrow_mut();
-        let pattern = Pattern::parse(query, case_matching, Normalization::Smart);
-        let max_score = compute_max_score(query, &pattern, &mut matcher);
-        let threshold = min_score.unwrap_or(0.0);
-
-        let mut buf = Vec::new();
-
-        // Pass 1: Score all items, collect (index, score) only — no String cloning.
-        let mut scored: Vec<(u32, f64)> = items
-            .iter()
-            .enumerate()
-            .filter_map(|(index, item)| {
-                buf.clear();
-                let atoms = nucleo_matcher::Utf32Str::new(item, &mut buf);
-                let raw_score = pattern.score(atoms, &mut matcher)?;
-                let normalized = (raw_score as f64 / max_score).min(1.0);
-                if normalized >= threshold {
-                    Some((index as u32, normalized))
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        // Sort by score descending, with shorter items first as tiebreaker,
-        // then by original index for fully deterministic ordering.
-        let cmp = |a: &(u32, f64), b: &(u32, f64)| {
-            let score_ord = b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal);
-            if score_ord != std::cmp::Ordering::Equal {
-                return score_ord;
-            }
-            let len_ord = items[a.0 as usize].len().cmp(&items[b.0 as usize].len());
-            if len_ord != std::cmp::Ordering::Equal {
-                return len_ord;
-            }
-            a.0.cmp(&b.0)
+        let Some(plan) = QueryPlan::new(query, case_matching, &mut matcher) else {
+            return Vec::new();
         };
-
-        // Top-k selection: use quickselect O(n) + sort O(k log k) instead of
-        // full sort O(n log n) when maxResults is set.
-        if let Some(max) = max_results {
-            let k = max as usize;
-            if scored.len() > k {
-                scored.select_nth_unstable_by(k, cmp);
-                scored.truncate(k);
-            }
-        }
-        scored.sort_unstable_by(cmp);
-
-        // Pass 2: Construct results only for the final top-k items.
-        scored
-            .into_iter()
-            .map(|(index, score)| {
-                let (positions, match_type) = if include_positions {
-                    buf.clear();
-                    let atoms = nucleo_matcher::Utf32Str::new(&items[index as usize], &mut buf);
-                    let mut indices = Vec::new();
-                    pattern.indices(atoms, &mut matcher, &mut indices);
-                    indices.sort_unstable();
-                    indices.dedup();
-                    let item_char_count = items[index as usize].chars().count();
-                    let mt = classify_match(&indices, item_char_count);
-                    (indices, Some(mt))
-                } else {
-                    (Vec::new(), None)
-                };
-
-                SearchResult {
-                    item: items[index as usize].clone(),
-                    score,
-                    index,
-                    positions,
-                    match_type,
-                }
-            })
-            .collect()
+        search_core(
+            &plan,
+            &mut matcher,
+            Corpus::Strings(items),
+            None,
+            SearchParams {
+                max_results,
+                min_score,
+                include_positions,
+            },
+            false,
+        )
+        .matches
+        .into_iter()
+        .map(|m| SearchResult {
+            item: items[m.index as usize].clone(),
+            score: m.score,
+            index: m.index,
+            positions: m.positions,
+            match_type: m.match_type,
+        })
+        .collect()
     })
-}
-
-/// Search over pre-computed Utf32String items with a reusable Matcher.
-///
-/// Used by FuzzyIndex to avoid per-search string conversion and Matcher allocation.
-/// When `ctx.candidate_indices` is set, only those items are scored (incremental search).
-pub fn search_over_precomputed(
-    query: &str,
-    ctx: &PrecomputedSearch<'_>,
-    max_results: Option<u32>,
-    min_score: Option<f64>,
-    include_positions: bool,
-    case_matching: CaseMatching,
-) -> PrecomputedSearchResult {
-    let items = ctx.items;
-    let utf32_items = ctx.utf32_items;
-    let matcher_cell = ctx.matcher;
-    if query.trim().is_empty() || items.is_empty() {
-        return PrecomputedSearchResult {
-            results: Vec::new(),
-            all_matching_indices: Vec::new(),
-        };
-    }
-
-    let mut matcher = matcher_cell.borrow_mut();
-    let pattern = Pattern::parse(query, case_matching, Normalization::Smart);
-    let max_score = compute_max_score(query, &pattern, &mut matcher);
-    let threshold = min_score.unwrap_or(0.0);
-    let query_mask = compute_query_mask(query);
-    let char_masks = ctx.char_masks;
-
-    // Scoring closure shared by both full-scan and candidate paths.
-    let mut score_item = |index: u32| -> Option<(u32, f64)> {
-        let idx = index as usize;
-        if query_mask != 0 && (char_masks[idx] & query_mask) != query_mask {
-            return None;
-        }
-        let atoms = utf32_items[idx].slice(..);
-        let raw_score = pattern.score(atoms, &mut matcher)?;
-        let normalized = (raw_score as f64 / max_score).min(1.0);
-        if normalized >= threshold {
-            Some((index, normalized))
-        } else {
-            None
-        }
-    };
-
-    // Pass 1: Score items. Use candidate_indices if provided (incremental search).
-    let mut scored: Vec<(u32, f64)> = match ctx.candidate_indices {
-        Some(candidates) => candidates.iter().filter_map(|&i| score_item(i)).collect(),
-        None => (0..utf32_items.len() as u32)
-            .filter_map(&mut score_item)
-            .collect(),
-    };
-
-    // Collect matching indices for incremental cache, but only when the match set
-    // is meaningfully smaller than the full dataset. When most items match (e.g.,
-    // short queries), the cache overhead outweighs the narrowing benefit.
-    let total = utf32_items.len();
-    let all_matching_indices: Vec<u32> = if total > 0 && scored.len() < total / 2 {
-        scored.iter().map(|&(index, _)| index).collect()
-    } else {
-        Vec::new()
-    };
-
-    // Sort by score descending, with shorter items first as tiebreaker,
-    // then by original index for fully deterministic ordering.
-    let cmp = |a: &(u32, f64), b: &(u32, f64)| {
-        let score_ord = b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal);
-        if score_ord != std::cmp::Ordering::Equal {
-            return score_ord;
-        }
-        let len_ord = items[a.0 as usize].len().cmp(&items[b.0 as usize].len());
-        if len_ord != std::cmp::Ordering::Equal {
-            return len_ord;
-        }
-        a.0.cmp(&b.0)
-    };
-
-    // Top-k selection: use quickselect O(n) + sort O(k log k) instead of
-    // full sort O(n log n) when maxResults is set.
-    if let Some(max) = max_results {
-        let k = max as usize;
-        if scored.len() > k {
-            scored.select_nth_unstable_by(k, cmp);
-            scored.truncate(k);
-        }
-    }
-    scored.sort_unstable_by(cmp);
-
-    // Pass 2: Construct results only for the final top-k items.
-    let results = scored
-        .into_iter()
-        .map(|(index, score)| {
-            let (positions, match_type) = if include_positions {
-                let atoms = utf32_items[index as usize].slice(..);
-                let mut indices = Vec::new();
-                pattern.indices(atoms, &mut matcher, &mut indices);
-                indices.sort_unstable();
-                indices.dedup();
-                let item_char_count = items[index as usize].chars().count();
-                let mt = classify_match(&indices, item_char_count);
-                (indices, Some(mt))
-            } else {
-                (Vec::new(), None)
-            };
-
-            SearchResult {
-                item: items[index as usize].clone(),
-                score,
-                index,
-                positions,
-                match_type,
-            }
-        })
-        .collect();
-
-    PrecomputedSearchResult {
-        results,
-        all_matching_indices,
-    }
-}
-
-/// Index-only variant of `search_over_precomputed`.
-///
-/// Reuses the same Pass 1 (scoring, filtering, top-k selection) but builds
-/// lightweight `IndexSearchResult` objects in Pass 2 — no String cloning.
-pub fn search_over_precomputed_indices(
-    query: &str,
-    ctx: &PrecomputedSearch<'_>,
-    max_results: Option<u32>,
-    min_score: Option<f64>,
-    include_positions: bool,
-    case_matching: CaseMatching,
-) -> PrecomputedIndexSearchResult {
-    let items = ctx.items;
-    let utf32_items = ctx.utf32_items;
-    let matcher_cell = ctx.matcher;
-    if query.trim().is_empty() || items.is_empty() {
-        return PrecomputedIndexSearchResult {
-            results: Vec::new(),
-            all_matching_indices: Vec::new(),
-        };
-    }
-
-    let mut matcher = matcher_cell.borrow_mut();
-    let pattern = Pattern::parse(query, case_matching, Normalization::Smart);
-    let max_score = compute_max_score(query, &pattern, &mut matcher);
-    let threshold = min_score.unwrap_or(0.0);
-    let query_mask = compute_query_mask(query);
-    let char_masks = ctx.char_masks;
-
-    let mut score_item = |index: u32| -> Option<(u32, f64)> {
-        let idx = index as usize;
-        if query_mask != 0 && (char_masks[idx] & query_mask) != query_mask {
-            return None;
-        }
-        let atoms = utf32_items[idx].slice(..);
-        let raw_score = pattern.score(atoms, &mut matcher)?;
-        let normalized = (raw_score as f64 / max_score).min(1.0);
-        if normalized >= threshold {
-            Some((index, normalized))
-        } else {
-            None
-        }
-    };
-
-    let mut scored: Vec<(u32, f64)> = match ctx.candidate_indices {
-        Some(candidates) => candidates.iter().filter_map(|&i| score_item(i)).collect(),
-        None => (0..utf32_items.len() as u32)
-            .filter_map(&mut score_item)
-            .collect(),
-    };
-
-    let total = utf32_items.len();
-    let all_matching_indices: Vec<u32> = if total > 0 && scored.len() < total / 2 {
-        scored.iter().map(|&(index, _)| index).collect()
-    } else {
-        Vec::new()
-    };
-
-    let cmp = |a: &(u32, f64), b: &(u32, f64)| {
-        let score_ord = b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal);
-        if score_ord != std::cmp::Ordering::Equal {
-            return score_ord;
-        }
-        let len_ord = items[a.0 as usize].len().cmp(&items[b.0 as usize].len());
-        if len_ord != std::cmp::Ordering::Equal {
-            return len_ord;
-        }
-        a.0.cmp(&b.0)
-    };
-
-    if let Some(max) = max_results {
-        let k = max as usize;
-        if scored.len() > k {
-            scored.select_nth_unstable_by(k, cmp);
-            scored.truncate(k);
-        }
-    }
-    scored.sort_unstable_by(cmp);
-
-    // Pass 2: Build IndexSearchResult without String cloning.
-    let results = scored
-        .into_iter()
-        .map(|(index, score)| {
-            let (positions, match_type) = if include_positions {
-                let atoms = utf32_items[index as usize].slice(..);
-                let mut indices = Vec::new();
-                pattern.indices(atoms, &mut matcher, &mut indices);
-                indices.sort_unstable();
-                indices.dedup();
-                let item_char_count = items[index as usize].chars().count();
-                let mt = classify_match(&indices, item_char_count);
-                (indices, Some(mt))
-            } else {
-                (Vec::new(), None)
-            };
-
-            IndexSearchResult {
-                index,
-                score,
-                positions,
-                match_type,
-            }
-        })
-        .collect();
-
-    PrecomputedIndexSearchResult {
-        results,
-        all_matching_indices,
-    }
 }
 
 /// Internal search implementation used by both the napi export and tests.

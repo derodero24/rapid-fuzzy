@@ -1,98 +1,97 @@
 use std::cell::RefCell;
 
 use nucleo_matcher::pattern::CaseMatching;
-use nucleo_matcher::{Config, Matcher, Utf32String};
+use nucleo_matcher::{Config, Matcher, Utf32String, chars};
 
 use super::{
-    BigramIndex, IndexSearchResult, PrecomputedSearch, SearchResult, compute_char_mask,
-    extract_query_bigrams, intersect_sorted, search_over_precomputed,
-    search_over_precomputed_indices,
+    Corpus, IndexSearchResult, QueryPlan, RankedMatch, SearchParams, SearchResult,
+    haystack_char_mask, normalize_query_whitespace, search_core,
 };
 
-/// Minimum dataset size for bigram pre-filtering at query time.
-/// Below this threshold, the overhead of bigram intersection exceeds the
-/// benefit of reducing pattern.score() calls.
-const BIGRAM_THRESHOLD: usize = 5_000;
+/// Matches of the last unfiltered search, reused to narrow the next one.
+struct SearchCache {
+    /// The query (after whitespace normalization) the matches belong to.
+    query: String,
+    /// Case mode the matches were computed with.
+    case_matching: CaseMatching,
+    /// Ascending indices of every item matching `query`.
+    matching: Vec<u32>,
+}
+
+/// Whether every item matching `new` provably also matches `old`, so that
+/// `old`'s matches are a complete candidate set for `new`.
+///
+/// This holds when `new` extends `old` with more characters and neither
+/// uses any query syntax: each term of `old` is then a term of `new` or a
+/// prefix of one, and a fuzzy term only matches items that also match every
+/// prefix of it. Typing an uppercase letter can switch a term from
+/// case-insensitive to case-sensitive matching, which only removes matches.
+///
+/// Refused conservatively:
+/// - syntax characters (`!`, `^`, `$`, `'`, `\`): anchors, negation and
+///   escapes change the meaning of earlier characters (`fo$` -> `fo$x`,
+///   `foo\` -> `foo\ bar`);
+/// - non-ASCII characters that nucleo would normalize (like `é`): they turn
+///   off normalization for their whole term, which can make the extended
+///   term match items the shorter one did not.
+fn refines(old: &str, new: &str) -> bool {
+    new.len() > old.len()
+        && new.starts_with(old)
+        && !new.contains(['!', '^', '$', '\'', '\\'])
+        && new
+            .chars()
+            .all(|c| c.is_ascii() || chars::normalize(c) == c)
+}
 
 /// Core state and logic for a persistent fuzzy search index.
 ///
 /// This struct contains all platform-independent state and methods.
 /// Binding crates (napi, wasm) wrap this with their own FFI layer.
+///
+/// Searches return exactly what the standalone `search` returns for the same
+/// items; the index only avoids work (pre-converted haystacks, a character
+/// mask pre-filter and an incremental cache for type-ahead queries).
 pub struct FuzzyIndexCore {
     items: Vec<String>,
-    utf32_items: Vec<Utf32String>,
+    haystacks: Vec<Utf32String>,
     char_masks: Vec<u64>,
-    bigram_index: BigramIndex,
+    /// Union of the character masks of every item ever added since the last
+    /// `destroy` (removals do not clear bits, so it may over-approximate).
+    /// A query needing a character no item has cannot match anything.
+    union_mask: u64,
     matcher: RefCell<Matcher>,
-    /// Incremental search cache: the query from the last cached search.
-    last_query: RefCell<String>,
-    /// Incremental search cache: indices of all items that matched the last cached query.
-    last_matching_indices: RefCell<Vec<u32>>,
-    /// Incremental search cache: case mode the cached candidates were matched with.
-    last_case_matching: RefCell<CaseMatching>,
+    cache: RefCell<Option<SearchCache>>,
 }
 
 impl FuzzyIndexCore {
     /// Create a new FuzzyIndexCore from a list of items.
     pub fn new(items: Vec<String>) -> Self {
-        let utf32_items: Vec<Utf32String> = items
-            .iter()
-            .map(|s| Utf32String::from(s.as_str()))
-            .collect();
-        let char_masks: Vec<u64> = items.iter().map(|s| compute_char_mask(s)).collect();
-        let bigram_index = BigramIndex::new(&items);
-        Self {
-            items,
-            utf32_items,
-            char_masks,
-            bigram_index,
+        let mut index = Self {
+            items: Vec::new(),
+            haystacks: Vec::with_capacity(items.len()),
+            char_masks: Vec::with_capacity(items.len()),
+            union_mask: 0,
             matcher: RefCell::new(Matcher::new(Config::DEFAULT)),
-            last_query: RefCell::new(String::new()),
-            last_matching_indices: RefCell::new(Vec::new()),
-            last_case_matching: RefCell::new(CaseMatching::Smart),
-        }
+            cache: RefCell::new(None),
+        };
+        index.extend(items);
+        index
     }
 
-    /// Candidates from the incremental cache, if the new query can reuse them.
-    ///
-    /// Conditions: the new query is a prefix extension of the cached query,
-    /// the cache has a non-empty candidate set, both queries use the same case
-    /// mode, and neither uses inverted terms (which break monotonicity).
-    fn cached_candidates(&self, query: &str, case_matching: CaseMatching) -> Option<Vec<u32>> {
-        let last_q = self.last_query.borrow();
-        let last_idx = self.last_matching_indices.borrow();
-        if !last_q.is_empty()
-            && !last_idx.is_empty()
-            && query.len() > last_q.len()
-            && query.starts_with(last_q.as_str())
-            && *self.last_case_matching.borrow() == case_matching
-            && !query.contains('!')
-            && !last_q.contains('!')
-        {
-            Some(last_idx.clone())
+    /// Append items, computing their haystacks and character masks.
+    fn extend(&mut self, items: Vec<String>) {
+        for item in &items {
+            let haystack = Utf32String::from(item.as_str());
+            let mask = haystack_char_mask(haystack.slice(..));
+            self.union_mask |= mask;
+            self.char_masks.push(mask);
+            self.haystacks.push(haystack);
+        }
+        if self.items.is_empty() {
+            self.items = items;
         } else {
-            None
+            self.items.extend(items);
         }
-    }
-
-    /// Store the matches of an unfiltered search for the next incremental query.
-    ///
-    /// A `min_score` threshold removes items that a longer query could still
-    /// match above the threshold, so thresholded searches (including
-    /// `closest`) leave the existing cache untouched instead of narrowing it.
-    fn update_cache(
-        &self,
-        query: &str,
-        min_score: Option<f64>,
-        case_matching: CaseMatching,
-        matching_indices: Vec<u32>,
-    ) {
-        if min_score.is_some_and(|score| score > 0.0) {
-            return;
-        }
-        *self.last_query.borrow_mut() = query.to_owned();
-        *self.last_matching_indices.borrow_mut() = matching_indices;
-        *self.last_case_matching.borrow_mut() = case_matching;
     }
 
     /// Return the number of items in the index.
@@ -105,6 +104,56 @@ impl FuzzyIndexCore {
         &self.items
     }
 
+    /// Run a search, narrowing it with the incremental cache when sound.
+    fn search_ranked(
+        &self,
+        query: &str,
+        params: SearchParams,
+        case_matching: CaseMatching,
+    ) -> Vec<RankedMatch> {
+        let query = normalize_query_whitespace(query);
+        let mut matcher = self.matcher.borrow_mut();
+        let Some(plan) = QueryPlan::new(&query, case_matching, &mut matcher) else {
+            return Vec::new();
+        };
+        if self.union_mask & plan.char_mask != plan.char_mask {
+            // Some character of the query occurs in no item.
+            return Vec::new();
+        }
+
+        // A `min_score` threshold drops items that a longer query could still
+        // match, so only unfiltered searches (including `closest` without a
+        // threshold) may refresh the cache.
+        let unfiltered = params.min_score.is_none_or(|score| score <= 0.0);
+        let corpus = Corpus::Indexed {
+            items: &self.items,
+            haystacks: &self.haystacks,
+            char_masks: &self.char_masks,
+        };
+        let outcome = {
+            let cache = self.cache.borrow();
+            let candidates = cache
+                .as_ref()
+                .filter(|cache| {
+                    cache.case_matching == case_matching
+                        && !cache.matching.is_empty()
+                        && refines(&cache.query, &query)
+                })
+                .map(|cache| cache.matching.as_slice());
+            search_core(&plan, &mut matcher, corpus, candidates, params, unfiltered)
+        };
+
+        if unfiltered {
+            *self.cache.borrow_mut() = outcome.all_matching.map(|matching| SearchCache {
+                query: query.into_owned(),
+                case_matching,
+                matching,
+            });
+        }
+
+        outcome.matches
+    }
+
     /// Search the index for items matching the query.
     pub fn search_impl(
         &self,
@@ -114,49 +163,21 @@ impl FuzzyIndexCore {
         include_positions: bool,
         case_matching: CaseMatching,
     ) -> Vec<SearchResult> {
-        let cache_candidates = self.cached_candidates(query, case_matching);
-
-        // Get bigram candidates (only for large datasets).
-        let bigram_candidates = if self.items.len() >= BIGRAM_THRESHOLD {
-            let query_bigrams = extract_query_bigrams(query);
-            self.bigram_index.candidates(&query_bigrams)
-        } else {
-            None
-        };
-
-        // Compose candidate lists: intersect cache and bigram when both available.
-        let candidates: Option<Vec<u32>> = match (cache_candidates, bigram_candidates) {
-            (Some(cache), Some(bigram)) => Some(intersect_sorted(&cache, &bigram)),
-            (Some(cache), None) => Some(cache),
-            (None, Some(bigram)) => Some(bigram),
-            (None, None) => None,
-        };
-
-        let ctx = PrecomputedSearch {
-            items: &self.items,
-            utf32_items: &self.utf32_items,
-            char_masks: &self.char_masks,
-            candidate_indices: candidates.as_deref(),
-            matcher: &self.matcher,
-        };
-
-        let outcome = search_over_precomputed(
-            query,
-            &ctx,
+        let params = SearchParams {
             max_results,
             min_score,
             include_positions,
-            case_matching,
-        );
-
-        self.update_cache(
-            query,
-            min_score,
-            case_matching,
-            outcome.all_matching_indices,
-        );
-
-        outcome.results
+        };
+        self.search_ranked(query, params, case_matching)
+            .into_iter()
+            .map(|m| SearchResult {
+                item: self.items[m.index as usize].clone(),
+                score: m.score,
+                index: m.index,
+                positions: m.positions,
+                match_type: m.match_type,
+            })
+            .collect()
     }
 
     /// Search the index, returning only indices and scores (no item strings).
@@ -168,68 +189,31 @@ impl FuzzyIndexCore {
         include_positions: bool,
         case_matching: CaseMatching,
     ) -> Vec<IndexSearchResult> {
-        let cache_candidates = self.cached_candidates(query, case_matching);
-
-        let bigram_candidates = if self.items.len() >= BIGRAM_THRESHOLD {
-            let query_bigrams = extract_query_bigrams(query);
-            self.bigram_index.candidates(&query_bigrams)
-        } else {
-            None
-        };
-
-        let candidates: Option<Vec<u32>> = match (cache_candidates, bigram_candidates) {
-            (Some(cache), Some(bigram)) => Some(intersect_sorted(&cache, &bigram)),
-            (Some(cache), None) => Some(cache),
-            (None, Some(bigram)) => Some(bigram),
-            (None, None) => None,
-        };
-
-        let ctx = PrecomputedSearch {
-            items: &self.items,
-            utf32_items: &self.utf32_items,
-            char_masks: &self.char_masks,
-            candidate_indices: candidates.as_deref(),
-            matcher: &self.matcher,
-        };
-
-        let outcome = search_over_precomputed_indices(
-            query,
-            &ctx,
+        let params = SearchParams {
             max_results,
             min_score,
             include_positions,
-            case_matching,
-        );
-
-        self.update_cache(
-            query,
-            min_score,
-            case_matching,
-            outcome.all_matching_indices,
-        );
-
-        outcome.results
+        };
+        self.search_ranked(query, params, case_matching)
+            .into_iter()
+            .map(|m| IndexSearchResult {
+                index: m.index,
+                score: m.score,
+                positions: m.positions,
+                match_type: m.match_type,
+            })
+            .collect()
     }
 
     /// Add a single item to the index.
     pub fn add(&mut self, item: String) {
-        let index = self.items.len() as u32;
-        self.utf32_items.push(Utf32String::from(item.as_str()));
-        self.char_masks.push(compute_char_mask(&item));
-        self.bigram_index.add_item(index, &item);
-        self.items.push(item);
+        self.extend(vec![item]);
         self.invalidate_cache();
     }
 
     /// Add multiple items to the index at once.
     pub fn add_many(&mut self, items: Vec<String>) {
-        let base = self.items.len() as u32;
-        for (i, item) in items.iter().enumerate() {
-            self.utf32_items.push(Utf32String::from(item.as_str()));
-            self.char_masks.push(compute_char_mask(item));
-            self.bigram_index.add_item(base + i as u32, item);
-        }
-        self.items.extend(items);
+        self.extend(items);
         self.invalidate_cache();
     }
 
@@ -239,17 +223,8 @@ impl FuzzyIndexCore {
     pub fn remove(&mut self, index: u32) -> bool {
         let idx = index as usize;
         if idx < self.items.len() {
-            let last_index = (self.items.len() - 1) as u32;
-            let removed_item = self.items[idx].clone();
-            let last_item = if idx != last_index as usize {
-                Some(self.items[last_index as usize].clone())
-            } else {
-                None
-            };
-            self.bigram_index
-                .remove_item(index, last_index, &removed_item, last_item.as_deref());
             self.items.swap_remove(idx);
-            self.utf32_items.swap_remove(idx);
+            self.haystacks.swap_remove(idx);
             self.char_masks.swap_remove(idx);
             self.invalidate_cache();
             true
@@ -261,14 +236,40 @@ impl FuzzyIndexCore {
     /// Free the internal data. After calling this, the index is empty.
     pub fn destroy(&mut self) {
         self.items = Vec::new();
-        self.utf32_items = Vec::new();
+        self.haystacks = Vec::new();
         self.char_masks = Vec::new();
-        self.bigram_index.clear();
+        self.union_mask = 0;
         self.invalidate_cache();
     }
 
     fn invalidate_cache(&self) {
-        self.last_query.borrow_mut().clear();
-        self.last_matching_indices.borrow_mut().clear();
+        *self.cache.borrow_mut() = None;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::refines;
+
+    #[test]
+    fn refines_plain_extensions() {
+        assert!(refines("fo", "foo"));
+        assert!(refines("foo", "foo bar"));
+        assert!(refines("foo", "fooB"));
+        assert!(refines("東", "東京"));
+        assert!(!refines("foo", "foo"));
+        assert!(!refines("foo", "fo"));
+        assert!(!refines("foo", "bar foo"));
+    }
+
+    #[test]
+    fn refines_refuses_syntax_and_normalizing_chars() {
+        assert!(!refines("fo$", "fo$x"));
+        assert!(!refines("foo\\", "foo\\ bar"));
+        assert!(!refines("foo\\", "foo\\$"));
+        assert!(!refines("foo", "foo !bar"));
+        assert!(!refines("foo", "foo ^bar"));
+        assert!(!refines("foo", "foo 'bar"));
+        assert!(!refines("caf", "café"));
     }
 }

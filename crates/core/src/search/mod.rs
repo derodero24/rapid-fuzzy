@@ -10,14 +10,13 @@ pub use keys::search_keys;
 pub(crate) use rapid_fuzzy_core::search::resolve_case_matching;
 
 #[cfg(test)]
-pub(crate) use rapid_fuzzy_core::search::{
-    BigramIndex, PrecomputedSearch, bigram_key, compute_char_mask, extract_bigrams,
-    extract_query_bigrams, intersect_sorted, search_over_precomputed,
-};
+pub(crate) use rapid_fuzzy_core::search::compute_char_mask;
 
-use napi::Either;
+use napi::bindgen_prelude::{FromNapiValue, Object, TypeName, Unknown, ValidateNapiValue, sys};
+use napi::{Status, ValueType};
 use napi_derive::napi;
 use nucleo_matcher::pattern::CaseMatching;
+use rapid_fuzzy_core::search::is_empty_query;
 
 // -------------------------
 // Napi-specific types
@@ -111,9 +110,10 @@ impl From<rapid_fuzzy_core::search::IndexSearchResult> for IndexSearchResult {
 }
 
 /// Options for the search function.
-#[napi(object)]
+#[napi(object, object_from_js = false)]
 pub struct SearchOptions {
-    /// Maximum number of results to return.
+    /// Maximum number of results to return: a non-negative integer, or
+    /// `Infinity` for no limit. NaN, negative and fractional values throw.
     pub max_results: Option<u32>,
     /// Minimum normalized score (0.0-1.0) to include in results.
     pub min_score: Option<f64>,
@@ -122,10 +122,149 @@ pub struct SearchOptions {
     /// If true, matching is case-sensitive. Default is smart case
     /// (case-insensitive unless the query contains uppercase characters).
     pub is_case_sensitive: Option<bool>,
-    /// If true, return all items when the query is empty (or whitespace-only).
+    /// If true, return all items when the query has no search term: empty,
+    /// whitespace-only, or only query syntax such as `^` or `!`.
     /// Useful for filter-as-you-type UIs where the full list should appear
     /// before the user starts typing. Default is false.
     pub return_all_on_empty: Option<bool>,
+}
+
+/// Validate a `maxResults` value coming from JavaScript.
+///
+/// napi's `u32` conversion wraps numbers modulo 2^32 (`Infinity`, `NaN` and
+/// `0.5` became 0, `-1` became 4294967295), so the value is read as a double
+/// and checked instead: non-negative integers are accepted (values beyond
+/// `u32::MAX` exceed any array length and mean "no limit"), `Infinity` means
+/// no limit, and NaN, negative or fractional values are rejected.
+pub(crate) fn resolve_max_results(value: f64) -> napi::Result<Option<u32>> {
+    check_max_results(value).map_err(|message| napi::Error::new(Status::InvalidArg, message))
+}
+
+/// [`resolve_max_results`] without the napi error type (which cannot be
+/// created outside a Node.js process, e.g. in unit tests).
+fn check_max_results(value: f64) -> Result<Option<u32>, String> {
+    if value == f64::INFINITY {
+        return Ok(None);
+    }
+    if value.is_nan() || value < 0.0 || value.fract() != 0.0 {
+        let shown = if value.is_nan() {
+            "NaN".to_string()
+        } else if value.is_infinite() {
+            "-Infinity".to_string()
+        } else {
+            value.to_string()
+        };
+        return Err(format!(
+            "maxResults must be a non-negative integer or Infinity, got {shown}"
+        ));
+    }
+    Ok(Some(if value >= f64::from(u32::MAX) {
+        u32::MAX
+    } else {
+        value as u32
+    }))
+}
+
+/// Read an optional property, treating `undefined` (or a missing property)
+/// as `None`, like the conversion `#[napi(object)]` generates.
+fn optional_field<T: FromNapiValue>(obj: &Object<'_>, field: &str) -> napi::Result<Option<T>> {
+    obj.get::<T>(field).map_err(|err| {
+        napi::Error::new(
+            err.status,
+            format!("{} on SearchOptions.{field}", err.reason),
+        )
+    })
+}
+
+impl FromNapiValue for SearchOptions {
+    unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> napi::Result<Self> {
+        let obj = unsafe { Object::from_napi_value(env, napi_val)? };
+        let max_results = match optional_field::<f64>(&obj, "maxResults")? {
+            Some(value) => resolve_max_results(value)?,
+            None => None,
+        };
+        Ok(Self {
+            max_results,
+            min_score: optional_field(&obj, "minScore")?,
+            include_positions: optional_field(&obj, "includePositions")?,
+            is_case_sensitive: optional_field(&obj, "isCaseSensitive")?,
+            return_all_on_empty: optional_field(&obj, "returnAllOnEmpty")?,
+        })
+    }
+}
+
+impl ValidateNapiValue for SearchOptions {}
+
+/// The `options` argument of `search`, `FuzzyIndex.search` and
+/// `FuzzyIndex.searchIndices`: a `maxResults` number or a `SearchOptions`.
+pub enum SearchOptionsArg {
+    MaxResults(Option<u32>),
+    Options(SearchOptions),
+}
+
+impl TypeName for SearchOptionsArg {
+    fn type_name() -> &'static str {
+        "number | SearchOptions"
+    }
+
+    fn value_type() -> ValueType {
+        ValueType::Unknown
+    }
+}
+
+impl FromNapiValue for SearchOptionsArg {
+    unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> napi::Result<Self> {
+        let value_type = unsafe { Unknown::from_napi_value(env, napi_val)? }.get_type()?;
+        match value_type {
+            ValueType::Number => {
+                let value = unsafe { f64::from_napi_value(env, napi_val)? };
+                Ok(Self::MaxResults(resolve_max_results(value)?))
+            }
+            ValueType::Object => Ok(Self::Options(unsafe {
+                SearchOptions::from_napi_value(env, napi_val)?
+            })),
+            _ => Err(napi::Error::new(
+                Status::InvalidArg,
+                format!(
+                    "Expected a number (maxResults) or a SearchOptions object, got {value_type}"
+                ),
+            )),
+        }
+    }
+}
+
+/// Options resolved from a `number | SearchOptions` argument.
+pub(crate) struct ResolvedSearchOptions {
+    pub max_results: Option<u32>,
+    pub min_score: Option<f64>,
+    pub include_positions: bool,
+    pub case_matching: CaseMatching,
+    pub return_all_on_empty: bool,
+}
+
+impl ResolvedSearchOptions {
+    pub(crate) fn new(options: Option<SearchOptionsArg>) -> Self {
+        match options {
+            Some(SearchOptionsArg::Options(opts)) => Self {
+                max_results: opts.max_results,
+                min_score: opts.min_score,
+                include_positions: opts.include_positions.unwrap_or(false),
+                case_matching: resolve_case_matching(opts.is_case_sensitive),
+                return_all_on_empty: opts.return_all_on_empty.unwrap_or(false),
+            },
+            Some(SearchOptionsArg::MaxResults(max_results)) => Self {
+                max_results,
+                ..Self::new(None)
+            },
+            None => Self {
+                max_results: None,
+                min_score: None,
+                include_positions: false,
+                case_matching: CaseMatching::Smart,
+                return_all_on_empty: false,
+            },
+        }
+    }
 }
 
 /// Internal search implementation wrapping the core-lib algorithm.
@@ -158,29 +297,32 @@ pub(crate) fn search_impl(
 /// Uses the nucleo algorithm (same as Helix editor), which is
 /// significantly faster than fzf/skim for large datasets.
 ///
+/// Terms are separated by any whitespace (including the ideographic space
+/// U+3000). A query without any search term (empty, whitespace-only or only
+/// syntax such as `^`) returns no results, and so does a query containing a
+/// single term longer than 2,520 characters, which cannot be scored.
+///
 /// The third argument accepts either a number (maxResults for backward
 /// compatibility) or a SearchOptions object with maxResults and minScore.
+/// `maxResults` must be a non-negative integer or `Infinity`.
 #[napi]
 pub fn search(
     query: String,
     items: Vec<String>,
-    options: Option<Either<u32, SearchOptions>>,
+    #[napi(ts_arg_type = "number | SearchOptions | undefined | null")] options: Option<
+        SearchOptionsArg,
+    >,
 ) -> Vec<SearchResult> {
-    let (max_results, min_score, include_positions, case_matching, return_all_on_empty) =
-        match options {
-            Some(Either::A(max)) => (Some(max), None, false, CaseMatching::Smart, false),
-            Some(Either::B(opts)) => (
-                opts.max_results,
-                opts.min_score,
-                opts.include_positions.unwrap_or(false),
-                resolve_case_matching(opts.is_case_sensitive),
-                opts.return_all_on_empty.unwrap_or(false),
-            ),
-            None => (None, None, false, CaseMatching::Smart, false),
-        };
+    let ResolvedSearchOptions {
+        max_results,
+        min_score,
+        include_positions,
+        case_matching,
+        return_all_on_empty,
+    } = ResolvedSearchOptions::new(options);
 
-    if return_all_on_empty && query.trim().is_empty() {
-        let limit = max_results.unwrap_or(items.len() as u32) as usize;
+    if return_all_on_empty && is_empty_query(&query) {
+        let limit = max_results.unwrap_or(u32::MAX) as usize;
         return items
             .iter()
             .enumerate()
@@ -222,11 +364,35 @@ mod tests {
     #[test]
     fn test_prefilters_fold_diacritics_like_the_matcher() {
         // nucleo matches "cafe" against "café" (Normalization::Smart), so the
-        // char-mask and bigram prefilters must not reject folded characters.
-        assert_eq!(compute_char_mask("café"), compute_char_mask("cafe"));
-        assert_eq!(compute_char_mask("Ärger"), compute_char_mask("arger"));
-        assert_eq!(bigram_key('é', 'x'), bigram_key('e', 'x'));
-        assert_eq!(extract_bigrams("naïve"), extract_bigrams("naive"));
+        // char-mask prefilter must not reject folded characters.
+        let cafe = compute_char_mask("cafe");
+        assert_eq!(compute_char_mask("café") & cafe, cafe);
+        let arger = compute_char_mask("arger");
+        assert_eq!(compute_char_mask("Ärger") & arger, arger);
+    }
+
+    #[test]
+    fn test_check_max_results() {
+        assert_eq!(check_max_results(0.0), Ok(Some(0)));
+        assert_eq!(check_max_results(-0.0), Ok(Some(0)));
+        assert_eq!(check_max_results(5.0), Ok(Some(5)));
+        assert_eq!(check_max_results(f64::INFINITY), Ok(None));
+        assert_eq!(check_max_results(4_294_967_296.0), Ok(Some(u32::MAX)));
+        assert_eq!(check_max_results(1e300), Ok(Some(u32::MAX)));
+        for (invalid, shown) in [
+            (f64::NAN, "NaN"),
+            (-1.0, "-1"),
+            (0.5, "0.5"),
+            (-0.5, "-0.5"),
+            (f64::NEG_INFINITY, "-Infinity"),
+        ] {
+            assert_eq!(
+                check_max_results(invalid),
+                Err(format!(
+                    "maxResults must be a non-negative integer or Infinity, got {shown}"
+                ))
+            );
+        }
     }
 
     #[test]
@@ -767,155 +933,6 @@ mod tests {
         }
     }
 
-    mod bigram_tests {
-        use super::*;
-
-        #[test]
-        fn test_bigram_key_ascii_case_folding() {
-            assert_eq!(bigram_key('a', 'b'), bigram_key('A', 'B'));
-            assert_eq!(bigram_key('a', 'b'), bigram_key('A', 'b'));
-            assert_eq!(bigram_key('Z', 'a'), bigram_key('z', 'A'));
-        }
-
-        #[test]
-        fn test_bigram_key_digits() {
-            assert_ne!(bigram_key('a', '0'), bigram_key('a', 'b'));
-            assert_eq!(bigram_key('0', '1'), bigram_key('0', '1'));
-        }
-
-        #[test]
-        fn test_extract_bigrams_basic() {
-            let bg = extract_bigrams("abc");
-            assert_eq!(bg.len(), 2); // "ab", "bc"
-        }
-
-        #[test]
-        fn test_extract_bigrams_case_insensitive() {
-            let lower = extract_bigrams("abc");
-            let upper = extract_bigrams("ABC");
-            assert_eq!(lower, upper);
-        }
-
-        #[test]
-        fn test_extract_bigrams_single_char() {
-            assert!(extract_bigrams("a").is_empty());
-        }
-
-        #[test]
-        fn test_extract_bigrams_empty() {
-            assert!(extract_bigrams("").is_empty());
-        }
-
-        #[test]
-        fn test_extract_bigrams_unicode() {
-            let bg = extract_bigrams("東京都");
-            assert_eq!(bg.len(), 2); // "東京", "京都"
-        }
-
-        #[test]
-        fn test_extract_query_bigrams_skips_inverted() {
-            let bg = extract_query_bigrams("hello !world");
-            let plain = extract_bigrams("hello");
-            assert_eq!(bg, plain);
-        }
-
-        #[test]
-        fn test_extract_query_bigrams_strips_syntax() {
-            let bg = extract_query_bigrams("^hello$");
-            let plain = extract_bigrams("hello");
-            assert_eq!(bg, plain);
-        }
-
-        #[test]
-        fn test_extract_query_bigrams_single_char_terms() {
-            // Single-char terms produce no bigrams
-            let bg = extract_query_bigrams("a b");
-            assert!(bg.is_empty());
-        }
-
-        #[test]
-        fn test_intersect_sorted_basic() {
-            let result = intersect_sorted(&[1, 3, 5, 7], &[2, 3, 5, 8]);
-            assert_eq!(result, vec![3, 5]);
-        }
-
-        #[test]
-        fn test_intersect_sorted_no_overlap() {
-            let result = intersect_sorted(&[1, 3], &[2, 4]);
-            assert!(result.is_empty());
-        }
-
-        #[test]
-        fn test_intersect_sorted_empty() {
-            let result = intersect_sorted(&[], &[1, 2]);
-            assert!(result.is_empty());
-        }
-
-        #[test]
-        fn test_bigram_index_basic() {
-            let items: Vec<String> = vec!["hello".into(), "world".into(), "help".into()];
-            let idx = BigramIndex::new(&items);
-            // "he" appears in "hello" and "help"
-            let bg = extract_query_bigrams("he");
-            let candidates = idx.candidates(&bg);
-            assert!(candidates.is_some());
-            let cands = candidates.unwrap();
-            assert!(cands.contains(&0)); // hello
-            assert!(cands.contains(&2)); // help
-            assert!(!cands.contains(&1)); // world
-        }
-
-        #[test]
-        fn test_bigram_index_no_match() {
-            let items: Vec<String> = vec!["hello".into(), "world".into()];
-            let idx = BigramIndex::new(&items);
-            let bg = extract_query_bigrams("zz");
-            let candidates = idx.candidates(&bg);
-            assert_eq!(candidates, Some(vec![]));
-        }
-
-        #[test]
-        fn test_bigram_index_add_item() {
-            // Add enough items so matching ones are below the 80% skip threshold.
-            let mut idx = BigramIndex::new(&[]);
-            idx.add_item(0, "hello");
-            idx.add_item(1, "help");
-            idx.add_item(2, "world");
-            idx.add_item(3, "rust");
-            idx.add_item(4, "code");
-            // "he" matches only items 0,1 = 2/5 = 40% < 80%
-            let bg = extract_query_bigrams("he");
-            let candidates = idx.candidates(&bg);
-            assert!(candidates.is_some());
-            let cands = candidates.unwrap();
-            assert!(cands.contains(&0));
-            assert!(cands.contains(&1));
-            assert!(!cands.contains(&2));
-        }
-
-        #[test]
-        fn test_bigram_index_remove_and_swap() {
-            let items: Vec<String> = vec!["abc".into(), "def".into(), "abx".into()];
-            let mut idx = BigramIndex::new(&items);
-            // Remove item 0 ("abc"), swapping in item 2 ("abx")
-            idx.remove_item(0, 2, "abc", Some("abx"));
-            // "abx" should now be at index 0
-            let bg = extract_query_bigrams("ab");
-            let candidates = idx.candidates(&bg);
-            assert!(candidates.is_some());
-            let cands = candidates.unwrap();
-            assert!(cands.contains(&0)); // "abx" was swapped to index 0
-            assert!(!cands.contains(&2)); // old index 2 no longer valid
-        }
-
-        #[test]
-        fn test_bigram_index_empty_query() {
-            let items: Vec<String> = vec!["hello".into()];
-            let idx = BigramIndex::new(&items);
-            assert_eq!(idx.candidates(&[]), None);
-        }
-    }
-
     mod proptest_search {
         use super::*;
         use proptest::prelude::*;
@@ -1111,9 +1128,7 @@ mod tests {
             // using .len() (byte length) correctly differentiates them.
             // Both items contain the query's ASCII letters (h,e,l,o)
             // so the bitmask pre-filter in the indexed path matches both.
-            use std::cell::RefCell;
-
-            use nucleo_matcher::{Config, Matcher, Utf32String};
+            use rapid_fuzzy_core::search::FuzzyIndexCore;
 
             let items = vec!["hello世界".to_string(), "helloab".to_string()];
 
@@ -1126,29 +1141,15 @@ mod tests {
                 CaseMatching::Smart,
             );
 
-            // Build precomputed context to test the indexed path.
-            let utf32_items: Vec<Utf32String> = items
-                .iter()
-                .map(|s| Utf32String::from(s.as_str()))
-                .collect();
-            let char_masks: Vec<u64> = items.iter().map(|s| compute_char_mask(s)).collect();
-            let matcher = RefCell::new(Matcher::new(Config::DEFAULT));
-            let ctx = PrecomputedSearch {
-                items: &items,
-                utf32_items: &utf32_items,
-                char_masks: &char_masks,
-                candidate_indices: None,
-                matcher: &matcher,
-            };
-            let indexed =
-                search_over_precomputed("hello", &ctx, None, None, false, CaseMatching::Smart);
+            let index = FuzzyIndexCore::new(items);
+            let indexed = index.search_impl("hello", None, None, false, CaseMatching::Smart);
 
             assert_eq!(
                 standalone.len(),
-                indexed.results.len(),
+                indexed.len(),
                 "result count differs between standalone and indexed search"
             );
-            for (s, i) in standalone.iter().zip(indexed.results.iter()) {
+            for (s, i) in standalone.iter().zip(indexed.iter()) {
                 assert_eq!(
                     s.item, i.item,
                     "ordering differs between standalone and indexed search"

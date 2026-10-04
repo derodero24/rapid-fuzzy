@@ -1,6 +1,6 @@
 use nucleo_matcher::pattern::CaseMatching;
-use rapid_fuzzy_core::search::FuzzyIndexCore;
 use rapid_fuzzy_core::search::serialization::{deserialize_fuzzy_index, serialize_fuzzy_index};
+use rapid_fuzzy_core::search::{FuzzyIndexCore, is_empty_query};
 use wasm_bindgen::prelude::*;
 
 use super::{IndexSearchResult, SearchOptions, SearchResult, resolve_case_matching, to_js};
@@ -43,7 +43,7 @@ impl FuzzyIndex {
             opts.return_all_on_empty.unwrap_or(false),
         );
 
-        if return_all_on_empty && query.trim().is_empty() {
+        if return_all_on_empty && is_empty_query(&query) {
             let items = self.core.items();
             let limit = max_results.unwrap_or(items.len() as u32) as usize;
             let results: Vec<SearchResult> = items
@@ -98,7 +98,7 @@ impl FuzzyIndex {
             opts.return_all_on_empty.unwrap_or(false),
         );
 
-        if return_all_on_empty && query.trim().is_empty() {
+        if return_all_on_empty && is_empty_query(&query) {
             let num_items = self.core.size() as usize;
             let limit = max_results.unwrap_or(num_items as u32) as usize;
             let results: Vec<IndexSearchResult> = (0..num_items)

@@ -1,11 +1,11 @@
+use napi::Task;
 use napi::bindgen_prelude::{AsyncTask, Buffer};
-use napi::{Either, Task};
 use napi_derive::napi;
 use nucleo_matcher::pattern::CaseMatching;
-use rapid_fuzzy_core::search::FuzzyIndexCore;
 use rapid_fuzzy_core::search::serialization::{deserialize_fuzzy_index, serialize_fuzzy_index};
+use rapid_fuzzy_core::search::{FuzzyIndexCore, is_empty_query};
 
-use super::{IndexSearchResult, SearchOptions, SearchResult, resolve_case_matching};
+use super::{IndexSearchResult, ResolvedSearchOptions, SearchOptionsArg, SearchResult};
 
 pub struct BuildFuzzyIndexTask {
     items: Vec<String>,
@@ -67,30 +67,31 @@ impl FuzzyIndex {
     /// Returns matches sorted by score (best match first).
     /// Scores are normalized to a 0.0-1.0 range where 1.0 is a perfect match.
     ///
+    /// Results are identical to `search(query, items, options)` over the same
+    /// items, including the query syntax and whitespace rules.
+    ///
     /// The second argument accepts either a number (maxResults shorthand) or a
-    /// SearchOptions object.
+    /// SearchOptions object. `maxResults` must be a non-negative integer or
+    /// `Infinity`.
     #[napi]
     pub fn search(
         &self,
         query: String,
-        options: Option<Either<u32, SearchOptions>>,
+        #[napi(ts_arg_type = "number | SearchOptions | undefined | null")] options: Option<
+            SearchOptionsArg,
+        >,
     ) -> Vec<SearchResult> {
-        let (max_results, min_score, include_positions, case_matching, return_all_on_empty) =
-            match options {
-                Some(Either::A(max)) => (Some(max), None, false, CaseMatching::Smart, false),
-                Some(Either::B(opts)) => (
-                    opts.max_results,
-                    opts.min_score,
-                    opts.include_positions.unwrap_or(false),
-                    resolve_case_matching(opts.is_case_sensitive),
-                    opts.return_all_on_empty.unwrap_or(false),
-                ),
-                None => (None, None, false, CaseMatching::Smart, false),
-            };
+        let ResolvedSearchOptions {
+            max_results,
+            min_score,
+            include_positions,
+            case_matching,
+            return_all_on_empty,
+        } = ResolvedSearchOptions::new(options);
 
-        if return_all_on_empty && query.trim().is_empty() {
+        if return_all_on_empty && is_empty_query(&query) {
             let items = self.core.items();
-            let limit = max_results.unwrap_or(items.len() as u32) as usize;
+            let limit = max_results.unwrap_or(u32::MAX) as usize;
             return items
                 .iter()
                 .enumerate()
@@ -131,29 +132,27 @@ impl FuzzyIndex {
     /// String cloning overhead for each result.
     ///
     /// The second argument accepts either a number (maxResults shorthand) or a
-    /// SearchOptions object.
+    /// SearchOptions object. `maxResults` must be a non-negative integer or
+    /// `Infinity`.
     #[napi]
     pub fn search_indices(
         &self,
         query: String,
-        options: Option<Either<u32, SearchOptions>>,
+        #[napi(ts_arg_type = "number | SearchOptions | undefined | null")] options: Option<
+            SearchOptionsArg,
+        >,
     ) -> Vec<IndexSearchResult> {
-        let (max_results, min_score, include_positions, case_matching, return_all_on_empty) =
-            match options {
-                Some(Either::A(max)) => (Some(max), None, false, CaseMatching::Smart, false),
-                Some(Either::B(opts)) => (
-                    opts.max_results,
-                    opts.min_score,
-                    opts.include_positions.unwrap_or(false),
-                    resolve_case_matching(opts.is_case_sensitive),
-                    opts.return_all_on_empty.unwrap_or(false),
-                ),
-                None => (None, None, false, CaseMatching::Smart, false),
-            };
+        let ResolvedSearchOptions {
+            max_results,
+            min_score,
+            include_positions,
+            case_matching,
+            return_all_on_empty,
+        } = ResolvedSearchOptions::new(options);
 
-        if return_all_on_empty && query.trim().is_empty() {
+        if return_all_on_empty && is_empty_query(&query) {
             let num_items = self.core.size() as usize;
-            let limit = max_results.unwrap_or(num_items as u32) as usize;
+            let limit = max_results.unwrap_or(u32::MAX) as usize;
             return (0..num_items)
                 .take(limit)
                 .map(|i| IndexSearchResult {
