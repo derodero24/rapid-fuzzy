@@ -1,7 +1,7 @@
 {
   "name": "rapid-fuzzy",
   "version": "2.1.1",
-  "description": "Rust-powered fuzzy search and string distance for JavaScript/TypeScript. Up to 15,000x faster than fuse.js with indexed mode.",
+  "description": "Rust-powered fuzzy search and string distance for JavaScript/TypeScript, with native Node.js bindings and a WebAssembly build for browsers, Deno and Workers.",
   "license": "MIT",
   "author": "derodero24",
   "repository": {
@@ -29,14 +29,32 @@
     "search",
     "fuse"
   ],
-  "sideEffects": false,
+  "sideEffects": [
+    "./index.js",
+    "./index.mjs",
+    "./browser.mjs",
+    "./workerd.mjs"
+  ],
   "type": "commonjs",
   "main": "index.js",
-  "module": "index.mjs",
-  "browser": "browser.js",
+  "browser": "./browser.mjs",
   "types": "index.d.ts",
   "exports": {
     ".": {
+      "workerd": {
+        "types": "./browser.d.mts",
+        "default": "./workerd.mjs"
+      },
+      "browser": {
+        "require": {
+          "types": "./index.d.ts",
+          "default": "./index.js"
+        },
+        "default": {
+          "types": "./browser.d.mts",
+          "default": "./browser.mjs"
+        }
+      },
       "import": {
         "types": "./index.d.mts",
         "default": "./index.mjs"
@@ -45,9 +63,26 @@
         "types": "./index.d.ts",
         "default": "./index.js"
       },
-      "browser": "./browser.js"
+      "default": {
+        "types": "./browser.d.mts",
+        "default": "./browser.mjs"
+      }
     },
     "./highlight": {
+      "workerd": {
+        "types": "./highlight.d.mts",
+        "default": "./highlight.browser.mjs"
+      },
+      "browser": {
+        "require": {
+          "types": "./highlight.d.ts",
+          "default": "./highlight.js"
+        },
+        "default": {
+          "types": "./highlight.d.mts",
+          "default": "./highlight.browser.mjs"
+        }
+      },
       "import": {
         "types": "./highlight.d.mts",
         "default": "./highlight.mjs"
@@ -55,9 +90,27 @@
       "require": {
         "types": "./highlight.d.ts",
         "default": "./highlight.js"
+      },
+      "default": {
+        "types": "./highlight.d.mts",
+        "default": "./highlight.browser.mjs"
       }
     },
     "./objects": {
+      "workerd": {
+        "types": "./objects.browser.d.mts",
+        "default": "./workerd.mjs"
+      },
+      "browser": {
+        "require": {
+          "types": "./objects.d.ts",
+          "default": "./objects.js"
+        },
+        "default": {
+          "types": "./objects.browser.d.mts",
+          "default": "./browser.mjs"
+        }
+      },
       "import": {
         "types": "./objects.d.mts",
         "default": "./objects.mjs"
@@ -65,8 +118,13 @@
       "require": {
         "types": "./objects.d.ts",
         "default": "./objects.js"
+      },
+      "default": {
+        "types": "./objects.browser.d.mts",
+        "default": "./browser.mjs"
       }
-    }
+    },
+    "./package.json": "./package.json"
   },
   "files": [
     "index.js",
@@ -76,20 +134,27 @@
     "objects.js",
     "objects.mjs",
     "objects.d.ts",
-    "browser.js",
+    "browser.mjs",
+    "browser.d.mts",
+    "browser-api.mjs",
+    "workerd.mjs",
     "highlight.js",
     "highlight.mjs",
     "highlight.d.ts",
     "highlight.d.mts",
     "objects.d.mts",
-    "rapid-fuzzy-wasm-bindgen.js",
-    "rapid-fuzzy-wasm-bindgen_bg.js",
+    "highlight.browser.mjs",
+    "objects.browser.mjs",
+    "objects.browser.d.mts",
+    "rapid-fuzzy-wasm-bindgen.mjs",
     "rapid-fuzzy-wasm-bindgen_bg.wasm",
-    "rapid-fuzzy-wasm-bindgen.d.ts",
-    "rapid-fuzzy-wasm-bindgen_bg.wasm.d.ts"
+    "rapid-fuzzy-wasm-bindgen.d.mts",
+    "THIRD_PARTY_NOTICES"
   ],
   "napi": {
     "binaryName": "rapid-fuzzy",
+    "constEnum": false,
+    "runtimeStringEnum": true,
     "targets": [
       "x86_64-apple-darwin",
       "aarch64-apple-darwin",
@@ -114,6 +179,7 @@
     "postbuild:wasm": "node scripts/optimize-wasm.js && node scripts/patch-binding.js",
     "build:wasm-bindgen": "node scripts/build-wasm-bindgen.js",
     "postbuild:wasm-bindgen": "node scripts/optimize-wasm.js",
+    "build:browser": "node scripts/build-browser.js",
     "optimize:wasm": "node scripts/optimize-wasm.js",
     "artifacts": "napi artifacts",
     "prepublishOnly": "napi prepublish -t npm",
@@ -127,8 +193,8 @@
     "test": "vitest run",
     "test:wasm": "vitest run __test__/wasm.spec.ts",
     "test:browser": "playwright test",
-    "test:bun": "bun test e2e/wasm-bun.test.ts",
-    "test:deno": "deno test --allow-read --allow-env --allow-net --node-modules-dir=auto e2e/wasm-deno.test.ts",
+    "test:bun": "bun test --conditions=browser e2e/wasm-bun.test.ts",
+    "test:deno": "deno test --conditions=browser --allow-read --allow-env --allow-net --node-modules-dir=auto --no-check e2e/wasm-deno.test.ts",
     "test:watch": "vitest watch",
     "bench": "vitest bench",
     "bench:ci": "vitest bench __test__/distance.bench.ts __test__/similarity.bench.ts __test__/ratio.bench.ts __test__/batch.bench.ts __test__/search.bench.ts",
@@ -136,7 +202,8 @@
     "bench:charts": "npx tsx scripts/generate-bench-charts.ts",
     "publint": "publint",
     "bench:rust": "cargo bench -p rapid-fuzzy-bench",
-    "verify": "pnpm run check && cargo clippy -- -W clippy::all && cargo test && pnpm run build && pnpm run typecheck && pnpm test",
+    "notices": "cargo fetch --locked && node scripts/third-party-notices.js",
+    "verify": "pnpm run check && cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace && pnpm run build && pnpm run typecheck && pnpm test",
     "clean": "rm -rf target coverage *.node *.wasm",
     "prepare": "lefthook install"
   },

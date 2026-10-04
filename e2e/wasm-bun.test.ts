@@ -1,25 +1,20 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
-// Bun 1.x does not implement the TC39 WebAssembly ESM integration that
-// wasm-bindgen's bundler target relies on (Bun treats .wasm imports as URL
-// strings rather than instantiated module exports). We instantiate the WASM
-// binary manually via the Node.js-compatible WebAssembly API instead.
-import * as wasm from '../rapid-fuzzy-wasm-bindgen_bg.js';
-
-const wasmPath = join(
-  dirname(fileURLToPath(import.meta.url)),
-  '../rapid-fuzzy-wasm-bindgen_bg.wasm',
-);
-const wasmModule = new WebAssembly.Module(readFileSync(wasmPath));
-const wasmInstance = new WebAssembly.Instance(wasmModule, {
-  './rapid-fuzzy-wasm-bindgen_bg.js': wasm,
-});
-wasm.__wbg_set_wasm(wasmInstance.exports);
+// Run with `bun test --conditions=browser` (pnpm run test:bun): the package then
+// resolves to its WebAssembly build (browser.mjs) instead of the Node-API addon
+// Bun loads by default. The package imports itself by name, so this exercises
+// the published entry points and their export conditions.
+import * as wasm from 'rapid-fuzzy';
+import { highlight } from 'rapid-fuzzy/highlight';
+import { FuzzyObjectIndex } from 'rapid-fuzzy/objects';
 
 describe('WASM on Bun (wasm-bindgen)', () => {
+  test('resolves the WebAssembly build', () => {
+    expect(import.meta.resolve('rapid-fuzzy')).toEndWith('/browser.mjs');
+    expect(import.meta.resolve('rapid-fuzzy/highlight')).toEndWith('/highlight.browser.mjs');
+    expect(import.meta.resolve('rapid-fuzzy/objects')).toEndWith('/browser.mjs');
+  });
+
   describe('distance functions', () => {
     test('levenshtein', () => {
       expect(wasm.levenshtein('hello', 'hello')).toBe(0);
@@ -113,8 +108,8 @@ describe('WASM on Bun (wasm-bindgen)', () => {
       const result = wasm.normalizedHammingMany('hello', ['hello', 'world', 'hi']);
       expect(result).toHaveLength(3);
       expect(result[0]).toBe(1.0);
-      // wasm-bindgen serializes None as undefined inside arrays (not null)
-      expect(result[2]).toBeUndefined();
+      // Length mismatches are null, as in the Node.js binding
+      expect(result[2]).toBeNull();
     });
   });
 
@@ -150,8 +145,8 @@ describe('WASM on Bun (wasm-bindgen)', () => {
       expect(result).not.toBeNull();
     });
 
-    test('closest returns undefined for empty items', () => {
-      expect(wasm.closest('hello', [])).toBeUndefined();
+    test('closest returns null for empty items', () => {
+      expect(wasm.closest('hello', [])).toBeNull();
     });
   });
 
@@ -171,6 +166,21 @@ describe('WASM on Bun (wasm-bindgen)', () => {
 
       index.destroy();
       expect(index.size).toBe(0);
+    });
+  });
+
+  describe('subpath exports', () => {
+    test('highlight', () => {
+      const [hit] = wasm.search('fzy', ['fuzzy'], { includePositions: true });
+      expect(hit && highlight(hit.item, hit.positions, '[', ']')).toBe('[f]uz[zy]');
+    });
+
+    test('FuzzyObjectIndex', () => {
+      const index = new FuzzyObjectIndex([{ name: 'Jane' }, { name: 'John' }], {
+        keys: ['name'],
+      });
+      expect(index.search('jane')[0]?.item).toEqual({ name: 'Jane' });
+      expect(index.closest('jon')).toEqual({ name: 'John' });
     });
   });
 });

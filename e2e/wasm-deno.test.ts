@@ -1,7 +1,19 @@
 import { assert, assertEquals, assertNotEquals } from 'jsr:@std/assert';
 
-// Use the wasm-bindgen bundler-target output which Deno supports natively.
-const wasm = await import('../rapid-fuzzy-wasm-bindgen.js');
+// The package imports itself by name: with --conditions=browser (see
+// `pnpm run test:deno`) Deno resolves it to the WebAssembly build (browser.mjs),
+// which reads the .wasm file (--allow-read). Without it Deno loads the Node.js
+// entry and its native addon. `pnpm run test:deno` passes --no-check: Deno type-checks a
+// self-referenced package as local files, not with the npm resolution users get
+// for `npm:rapid-fuzzy` (whose declarations __test__/types/browser.types.ts covers).
+import * as wasm from 'rapid-fuzzy';
+import { highlight } from 'rapid-fuzzy/highlight';
+import { FuzzyObjectIndex } from 'rapid-fuzzy/objects';
+
+Deno.test('resolves the WebAssembly build', () => {
+  assert(import.meta.resolve('rapid-fuzzy').endsWith('/browser.mjs'));
+  assert(import.meta.resolve('rapid-fuzzy/objects').endsWith('/browser.mjs'));
+});
 
 Deno.test('distance - levenshtein', () => {
   assertEquals(wasm.levenshtein('hello', 'hello'), 0);
@@ -83,8 +95,8 @@ Deno.test('many - normalizedHammingMany', () => {
   const result = wasm.normalizedHammingMany('hello', ['hello', 'world', 'hi']);
   assertEquals(result.length, 3);
   assertEquals(result[0], 1.0);
-  // wasm-bindgen serializes None as undefined inside arrays (not null)
-  assertEquals(result[2], undefined);
+  // Length mismatches are null, as in the Node.js binding
+  assertEquals(result[2], null);
 });
 
 Deno.test('token - tokenSortRatio', () => {
@@ -114,8 +126,8 @@ Deno.test('closest - returns best match', () => {
   assertNotEquals(result, null);
 });
 
-Deno.test('closest - empty items returns undefined', () => {
-  assertEquals(wasm.closest('hello', []), undefined);
+Deno.test('closest - empty items returns null', () => {
+  assertEquals(wasm.closest('hello', []), null);
 });
 
 Deno.test('FuzzyIndex - lifecycle', () => {
@@ -133,4 +145,16 @@ Deno.test('FuzzyIndex - lifecycle', () => {
 
   index.destroy();
   assertEquals(index.size, 0);
+});
+
+Deno.test('highlight - rapid-fuzzy/highlight', () => {
+  const [hit] = wasm.search('fzy', ['fuzzy'], { includePositions: true });
+  assert(hit !== undefined);
+  assertEquals(highlight(hit.item, hit.positions, '[', ']'), '[f]uz[zy]');
+});
+
+Deno.test('objects - FuzzyObjectIndex', () => {
+  const index = new FuzzyObjectIndex([{ name: 'Jane' }, { name: 'John' }], { keys: ['name'] });
+  assertEquals(index.search('jane')[0]?.item, { name: 'Jane' });
+  assertEquals(index.closest('jon'), { name: 'John' });
 });

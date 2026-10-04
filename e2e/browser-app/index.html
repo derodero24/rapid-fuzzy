@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>rapid-fuzzy browser test</title>
+  <script>
+    // Surface failures that happen before main.js runs (e.g. the .wasm failing
+    // to load while rapid-fuzzy is imported), so the test fails fast.
+    window.addEventListener('error', (event) => {
+      window.__error ??= event.message || 'script error';
+    });
+    window.addEventListener('unhandledrejection', (event) => {
+      window.__error ??= String(event.reason);
+    });
+  </script>
+</head>
+<body>
+  <h1>rapid-fuzzy browser test</h1>
+  <pre id="output">Loading rapid-fuzzy...</pre>
+  <script type="module" src="./main.mjs"></script>
+</body>
+</html>
