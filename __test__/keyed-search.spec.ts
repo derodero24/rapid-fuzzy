@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest';
 
 import {
   KeyedFuzzyIndex,
+  type KeyScoreMode,
+  type KeySearchOptions,
   type KeySearchResult,
   type SearchOptions,
   search,
   searchKeys,
 } from '../index.js';
-import { searchObjects } from '../objects.js';
+import { FuzzyObjectIndex, searchObjects } from '../objects.js';
 
 // new KeyedFuzzyIndex(keyTexts, weights).search(q, opts) must return exactly
 // what searchKeys(q, keyTexts, weights, opts) returns: same indices, scores,
@@ -123,7 +125,7 @@ function bothPaths(
   query: string,
   keyTexts: string[][],
   weights: number[],
-  options?: SearchOptions,
+  options?: KeySearchOptions,
 ): { index: KeySearchResult[]; keys: KeySearchResult[] } {
   return {
     index: new KeyedFuzzyIndex(keyTexts, weights).search(query, options),
@@ -299,5 +301,298 @@ describe('searchKeys maxResults shorthand', () => {
     for (const maxResults of [Number.NaN, -1, 0.5, Number.NEGATIVE_INFINITY]) {
       expect(() => searchKeys('a', [items], [1], maxResults)).toThrow(error);
     }
+  });
+});
+
+// ─── scoreMode (#781) ───────────────────────────────────────────────────────
+
+const MODES: readonly KeyScoreMode[] = ['weighted', 'matched', 'max'];
+
+/** The combined score of an item's key scores, as documented for each mode. */
+function combine(
+  keyScores: readonly number[],
+  weights: readonly number[],
+  mode: KeyScoreMode,
+): number {
+  let weightedSum = 0;
+  let totalWeight = 0;
+  let matchedWeight = 0;
+  let max = 0;
+  keyScores.forEach((score, k) => {
+    const weight = weights[k] ?? 0;
+    totalWeight += weight;
+    if (weight > 0) {
+      weightedSum += score * weight;
+      if (score > 0) matchedWeight += weight;
+      max = Math.max(max, score);
+    }
+  });
+  switch (mode) {
+    case 'weighted':
+      return weightedSum / totalWeight;
+    case 'matched':
+      return weightedSum > 0 ? weightedSum / matchedWeight : 0;
+    case 'max':
+      return max;
+  }
+}
+
+/** The error thrown for an invalid scoreMode; `got` describes the value. */
+function invalidScoreMode(got: string): unknown {
+  return expect.objectContaining({
+    code: 'InvalidArg',
+    message: `scoreMode must be "weighted", "matched" or "max", got ${got}`,
+  });
+}
+
+/** Results ordered by index, without their scores. */
+function matches(results: readonly KeySearchResult[]): Array<[number, number[]]> {
+  return results.map((r): [number, number[]] => [r.index, r.keyScores]).sort(([a], [b]) => a - b);
+}
+
+// name, email, bio: "John Smith" matches "smith" exactly in its name only;
+// "S. Mitchell" matches it partially in both its name and its email.
+const PEOPLE = [
+  { name: 'John Smith', email: 'john@example.com', bio: 'Engineer' },
+  { name: 'S. Mitchell', email: 'smitchell@example.com', bio: 'Designer' },
+  { name: 'Jane Doe', email: 'jane@example.com', bio: 'Writer' },
+];
+const PEOPLE_KEYS = [
+  PEOPLE.map((p) => p.name),
+  PEOPLE.map((p) => p.email),
+  PEOPLE.map((p) => p.bio),
+];
+
+/**
+ * Check that `index` (built from `keyTexts` and `weights`) returns what
+ * searchKeys() returns for `options`, also with `minScore` set to each
+ * achievable score (the early exit's boundary), which keeps that result.
+ * Returns the number of results.
+ */
+function expectIndexMatchesSearchKeys(
+  index: KeyedFuzzyIndex,
+  query: string,
+  keyTexts: string[][],
+  weights: number[],
+  options: KeySearchOptions,
+): number {
+  const context = JSON.stringify({ query, keyTexts, weights, options });
+  const expected = searchKeys(query, keyTexts, weights, options);
+  expect(index.search(query, options), context).toEqual(expected);
+  for (const r of expected) {
+    const atScore = { ...options, minScore: r.score };
+    const kept = searchKeys(query, keyTexts, weights, atScore);
+    expect(kept, context).toContainEqual(r);
+    expect(index.search(query, atScore), context).toEqual(kept);
+  }
+  return expected.length;
+}
+
+describe('scoreMode', () => {
+  it('keeps KeyedFuzzyIndex and searchKeys identical in every mode on random input', () => {
+    let nonEmpty = 0;
+    for (let seed = 0; seed < 300; seed++) {
+      const random = rng(seed);
+      const numKeys = 1 + below(random, 4);
+      const numItems = below(random, 12);
+      const keyTexts = Array.from({ length: numKeys }, () =>
+        Array.from({ length: numItems }, () => randomItem(random)),
+      );
+      const weights = Array.from({ length: numKeys }, () => randomWeight(random));
+      if (weights.reduce((a, b) => a + b, 0) <= 0) continue;
+      const index = new KeyedFuzzyIndex(keyTexts, weights);
+      for (let q = 0; q < 3; q++) {
+        const query = randomQuery(random, keyTexts.flat());
+        const base = randomOptions(random, numItems);
+        for (const scoreMode of MODES) {
+          const options = { ...base, scoreMode };
+          const found = expectIndexMatchesSearchKeys(index, query, keyTexts, weights, options);
+          nonEmpty += Math.min(found, 1);
+        }
+      }
+    }
+    expect(nonEmpty).toBeGreaterThan(300);
+  });
+
+  it('combines the key scores as documented', () => {
+    for (let seed = 0; seed < 200; seed++) {
+      const random = rng(1000 + seed);
+      const numKeys = 1 + below(random, 4);
+      const numItems = 1 + below(random, 10);
+      const keyTexts = Array.from({ length: numKeys }, () =>
+        Array.from({ length: numItems }, () => randomItem(random)),
+      );
+      const weights = Array.from({ length: numKeys }, () => randomWeight(random));
+      if (weights.reduce((a, b) => a + b, 0) <= 0) continue;
+      const query = randomQuery(random, keyTexts.flat());
+      const weighted = searchKeys(query, keyTexts, weights);
+      for (const scoreMode of MODES) {
+        const results = searchKeys(query, keyTexts, weights, { scoreMode });
+        // The same items match in every mode, with the same key scores.
+        expect(matches(results)).toEqual(matches(weighted));
+        for (const [i, r] of results.entries()) {
+          expect(r.score).toBe(combine(r.keyScores, weights, scoreMode));
+          expect(r.score).toBeLessThanOrEqual(results[i - 1]?.score ?? 1);
+        }
+      }
+    }
+  });
+
+  it("defaults to 'weighted'", () => {
+    const weights = [2, 1, 1];
+    const weighted = searchKeys('smith', PEOPLE_KEYS, weights, { scoreMode: 'weighted' });
+    expect(weighted.length).toBeGreaterThan(0);
+    const index = new KeyedFuzzyIndex(PEOPLE_KEYS, weights);
+    for (const options of [undefined, null, {}, { scoreMode: undefined }, Infinity]) {
+      expect(searchKeys('smith', PEOPLE_KEYS, weights, options)).toEqual(weighted);
+      expect(index.search('smith', options)).toEqual(weighted);
+    }
+  });
+
+  it('ranks an exact single-key match first in matched and max modes', () => {
+    const weights = [2, 1, 1];
+    const byIndex = (results: readonly KeySearchResult[]) =>
+      new Map(results.map((r) => [r.index, r]));
+
+    const weighted = searchKeys('smith', PEOPLE_KEYS, weights);
+    const exact = byIndex(weighted).get(0);
+    const partial = byIndex(weighted).get(1);
+    expect(exact?.keyScores).toEqual([1, 0, 0]);
+    expect(exact?.score).toBe(0.5);
+    const [name = 0, email = 0] = partial?.keyScores ?? [];
+    expect(name).toBeGreaterThan(0);
+    expect(email).toBeGreaterThan(0);
+    expect(partial?.score).toBe((2 * name + email) / 4);
+
+    const matched = searchKeys('smith', PEOPLE_KEYS, weights, { scoreMode: 'matched' });
+    expect(matched[0]).toEqual({ index: 0, score: 1, keyScores: [1, 0, 0] });
+    expect(byIndex(matched).get(1)?.score).toBe((2 * name + email) / 3);
+
+    const max = searchKeys('smith', PEOPLE_KEYS, weights, { scoreMode: 'max' });
+    expect(max[0]).toEqual({ index: 0, score: 1, keyScores: [1, 0, 0] });
+    expect(byIndex(max).get(1)?.score).toBe(Math.max(name, email));
+  });
+
+  it('applies minScore to the combined score of the mode', () => {
+    const weights = [1, 1, 1];
+    const index = new KeyedFuzzyIndex(PEOPLE_KEYS, weights);
+    // By default the exact surname match scores 1/3 and is dropped.
+    expect(indices(searchKeys('smith', PEOPLE_KEYS, weights, { minScore: 0.9 }))).toEqual([]);
+    for (const scoreMode of ['matched', 'max'] as const) {
+      for (const minScore of [0.95, 1]) {
+        const options = { minScore, scoreMode };
+        expect(indices(searchKeys('smith', PEOPLE_KEYS, weights, options))).toEqual([0]);
+        expect(indices(index.search('smith', options))).toEqual([0]);
+      }
+    }
+  });
+
+  it('ignores keys with weight 0 in every mode', () => {
+    const keyTexts = [
+      ['apple', 'zzz', 'pineapple'],
+      ['zzz', 'apple', 'apple'],
+    ];
+    const partial = searchKeys('apple', [keyTexts[0] ?? []], [1]).find((r) => r.index === 2);
+    const score = partial?.score ?? Number.NaN;
+    expect(score).toBeGreaterThan(0);
+    expect(score).toBeLessThan(1);
+    for (const scoreMode of MODES) {
+      const { index, keys } = bothPaths('apple', keyTexts, [1, 0], { scoreMode });
+      expect(keys).toEqual([
+        { index: 0, score: 1, keyScores: [1, 0] },
+        { index: 2, score, keyScores: [score, 1] },
+      ]);
+      expect(index).toEqual(keys);
+    }
+  });
+
+  it('returns every item with score 1 for an empty query with returnAllOnEmpty', () => {
+    for (const scoreMode of MODES) {
+      const { index, keys } = bothPaths('', PEOPLE_KEYS, [1, 0, 2], {
+        returnAllOnEmpty: true,
+        scoreMode,
+      });
+      expect(keys).toEqual(PEOPLE.map((_, i) => ({ index: i, score: 1, keyScores: [1, 1, 1] })));
+      expect(index).toEqual(keys);
+    }
+  });
+
+  it('closest() returns the first result of search() in the given mode', () => {
+    const index = new KeyedFuzzyIndex(PEOPLE_KEYS, [1, 1, 1]);
+    for (const scoreMode of [...MODES, undefined, null]) {
+      for (const minScore of [undefined, null, 0, 0.3, 0.6, 0.9, 1]) {
+        for (const query of ['smith', 'mitchell', 'jane', 'zzz']) {
+          const [best] = index.search(query, {
+            maxResults: 1,
+            minScore: minScore ?? undefined,
+            scoreMode: scoreMode ?? undefined,
+          });
+          expect(index.closest(query, minScore, scoreMode)).toBe(best?.index ?? null);
+        }
+      }
+    }
+    expect(index.closest('smith', 0.9)).toBeNull();
+    expect(index.closest('smith', 0.9, 'matched')).toBe(0);
+    expect(index.closest('smith', 0.9, 'max')).toBe(0);
+  });
+
+  it('is passed through by searchObjects() and FuzzyObjectIndex', () => {
+    const keys = [{ name: 'name', weight: 2 }, 'email', 'bio'] as const;
+    const objectIndex = new FuzzyObjectIndex(PEOPLE, { keys });
+    for (const scoreMode of MODES) {
+      for (const query of ['smith', 'mitchell', 'example']) {
+        const expected = searchKeys(query, PEOPLE_KEYS, [2, 1, 1], { scoreMode }).map((r) => ({
+          item: PEOPLE[r.index],
+          ...r,
+        }));
+        expect(searchObjects(query, PEOPLE, { keys, scoreMode })).toEqual(expected);
+        expect(objectIndex.search(query, { scoreMode })).toEqual(expected);
+        const [best] = searchObjects(query, PEOPLE, { keys, scoreMode, minScore: 0.6 });
+        expect(objectIndex.closest(query, 0.6, scoreMode)).toBe(best?.item ?? null);
+      }
+    }
+    expect(objectIndex.closest('smith', 0.9)).toBeNull();
+    expect(objectIndex.closest('smith', 0.9, 'matched')).toBe(PEOPLE[0]);
+  });
+
+  it('rejects anything but the three modes with an InvalidArg error', () => {
+    const index = new KeyedFuzzyIndex(PEOPLE_KEYS, [1, 1, 1]);
+    const objectIndex = new FuzzyObjectIndex(PEOPLE, { keys: ['name', 'email', 'bio'] });
+    const invalid: ReadonlyArray<[unknown, string]> = [
+      ['mean', '"mean"'],
+      ['Weighted', '"Weighted"'],
+      ['MAX', '"MAX"'],
+      ['', '""'],
+      [' max', '" max"'],
+      ['matched\n', '"matched\\n"'],
+      [1, 'number'],
+      [true, 'boolean'],
+      [{}, 'object'],
+      [['max'], 'object'],
+    ];
+    for (const [value, got] of invalid) {
+      const scoreMode = value as KeyScoreMode;
+      const error = invalidScoreMode(got);
+      expect(() => searchKeys('smith', PEOPLE_KEYS, [1, 1, 1], { scoreMode })).toThrow(error);
+      expect(() => index.search('smith', { scoreMode })).toThrow(error);
+      expect(() => index.closest('smith', undefined, scoreMode)).toThrow(error);
+      expect(() => searchObjects('smith', PEOPLE, { keys: ['name'], scoreMode })).toThrow(error);
+      expect(() => objectIndex.search('smith', { scoreMode })).toThrow(error);
+      expect(() => objectIndex.closest('smith', undefined, scoreMode)).toThrow(error);
+      // Also when there is nothing to search.
+      expect(() => searchKeys('', [[]], [1], { scoreMode })).toThrow(error);
+    }
+    // In an options object, null is rejected like in the other fields.
+    const nullMode = { scoreMode: null } as unknown as KeySearchOptions;
+    expect(() => searchKeys('smith', PEOPLE_KEYS, [1, 1, 1], nullMode)).toThrow(
+      invalidScoreMode('null'),
+    );
+  });
+
+  it('is not an option of search()', () => {
+    const items = PEOPLE.map((p) => p.name);
+    // Unknown SearchOptions fields are ignored, as before.
+    const options = { scoreMode: 'max' } as SearchOptions;
+    expect(search('smith', items, options)).toEqual(search('smith', items));
   });
 });

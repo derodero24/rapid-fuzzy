@@ -9,15 +9,28 @@
 //! * Every key is scored like `search()` scores an item (same query parsing,
 //!   haystack conversion and score normalization). The per-key scores are
 //!   returned as `key_scores` for every key, including keys whose weight is
-//!   zero (they are informational there).
-//! * The combined score is `sum(key_score * weight) / sum(weights)`.
+//!   zero (they are informational there), whatever the [`KeyScoreMode`].
+//! * The combined score is computed from the scores `s` of the keys with a
+//!   positive weight `w` by the [`KeyScoreMode`]:
+//!   - [`Weighted`](KeyScoreMode::Weighted) (the default):
+//!     `sum(w * s) / sum(w)`, over all keys;
+//!   - [`Matched`](KeyScoreMode::Matched): `sum(w * s) / sum(w)` over the
+//!     keys that match (`s > 0`) only;
+//!   - [`Max`](KeyScoreMode::Max): `max(s)`; weights only decide which keys
+//!     take part.
+//!
+//!   Keys whose weight is zero never contribute, in any mode.
 //! * Items whose combined score is 0 — no match on any key with a positive
-//!   weight — are excluded, as are items scoring below `min_score`.
+//!   weight — are excluded, as are items scoring below `min_score`;
+//!   `max_results` keeps the first results of the order below. Both apply
+//!   to the combined score of the mode.
 //! * Results are sorted by combined score (descending), then by the UTF-8
 //!   byte length of the best-matching key's text (shorter first, like
 //!   `search()` prefers shorter items), then by index. The best-matching key
-//!   is the one contributing the most to the combined score (`key_score *
-//!   weight`); on a tie, the first such key.
+//!   is the one contributing the most to the combined score (`w * s`, or `s`
+//!   in `Max` mode); on a tie, the first such key.
+//! * With `return_all_on_empty`, a query without a search term returns every
+//!   item with a score of 1 and key scores of 1, in every mode.
 
 use std::cmp::Ordering;
 
@@ -28,12 +41,60 @@ use super::{
     KeySearchResult, QueryPlan, is_empty_query, resolve_case_matching, utf32_haystack, with_matcher,
 };
 
+/// How a multi-key search combines the per-key scores of an item into its
+/// score (see the module documentation).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum KeyScoreMode {
+    /// The weighted mean over all keys: `sum(w * s) / sum(w)`. A key that
+    /// does not match counts as 0.
+    #[default]
+    Weighted,
+    /// The weighted mean over the keys that match (`s > 0`): an item whose
+    /// only matching key matches exactly scores 1.
+    Matched,
+    /// The best score of any key with a positive weight.
+    Max,
+}
+
+impl KeyScoreMode {
+    /// The mode's name in the JavaScript API (`scoreMode`).
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Weighted => "weighted",
+            Self::Matched => "matched",
+            Self::Max => "max",
+        }
+    }
+
+    /// Parse a `scoreMode` value: `"weighted"`, `"matched"` or `"max"`
+    /// (case-sensitive). Anything else is rejected with the message both
+    /// bindings report.
+    pub fn from_name(name: &str) -> Result<Self, String> {
+        match name {
+            "weighted" => Ok(Self::Weighted),
+            "matched" => Ok(Self::Matched),
+            "max" => Ok(Self::Max),
+            _ => Err(invalid_score_mode(&format!("{name:?}"))),
+        }
+    }
+}
+
+/// The error message for an invalid `scoreMode`; `got` describes the value
+/// (a quoted string, or the type of a value that is not a string).
+pub fn invalid_score_mode(got: &str) -> String {
+    format!("scoreMode must be \"weighted\", \"matched\" or \"max\", got {got}")
+}
+
 /// Search options for the `search_keys_impl` function.
+#[derive(Clone, Copy, Debug, Default)]
 pub struct SearchKeysOptions {
     pub max_results: Option<u32>,
     pub min_score: Option<f64>,
     pub is_case_sensitive: Option<bool>,
     pub return_all_on_empty: Option<bool>,
+    /// How per-key scores are combined; `None` means
+    /// [`KeyScoreMode::Weighted`].
+    pub score_mode: Option<KeyScoreMode>,
 }
 
 /// Validate multi-key search input and return the total weight.
@@ -224,14 +285,21 @@ pub(crate) struct KeyedSearchParams {
     pub min_score: Option<f64>,
     pub case_matching: CaseMatching,
     pub return_all_on_empty: bool,
+    pub score_mode: KeyScoreMode,
 }
 
-/// Relative slack of the early-exit bound, in units of the total weight.
+/// Relative slack of the early-exit bound, in units of the weight the bound
+/// divides by (the total weight, or the weight of the matched and remaining
+/// keys in `Matched` mode).
 ///
 /// The bound and the final combined score are computed with different
-/// floating-point summation orders, which may differ by a few ULPs of the
-/// total weight; this slack is orders of magnitude larger, so the early exit
-/// never rejects an item whose combined score reaches `min_score`.
+/// floating-point summation orders, which may differ by a few ULPs of that
+/// weight; this slack is orders of magnitude larger, so the early exit never
+/// rejects an item whose combined score reaches `min_score`. When that weight
+/// is so small (below ~2.5e-315) that the slack underflows to 0, every weight
+/// involved is subnormal: a product `w * s` rounds to at most `w` and
+/// sums are exact, so the bound still never rejects a qualifying item
+/// (`tests/keyed_search.rs` checks such weights).
 const EARLY_EXIT_SLACK: f64 = 1e-9;
 
 /// A matching item during pass 1.
@@ -244,6 +312,153 @@ struct Candidate {
     score: f64,
     index: u32,
     slot: u32,
+}
+
+/// How the item-by-item scan rejects an item before all of its keys are
+/// scored, once `min_score` is set: after each active key, it checks whether
+/// even perfect scores on the remaining keys could reach `min_score`.
+trait EarlyExit {
+    /// Whether to first skip items none of whose active keys can match (by
+    /// character mask), in one tight check.
+    const MASK_FIRST: bool;
+
+    /// Start the next item.
+    fn start(&mut self);
+
+    /// Account for an active key of weight `weight` scoring `score`. True
+    /// when the item cannot reach `min_score`, whatever the active keys after
+    /// it (of total weight `remaining`) score.
+    fn unreachable(&mut self, score: f64, weight: f64, remaining: f64) -> bool;
+}
+
+/// Without `min_score`, and in `Max` mode (where any remaining key may still
+/// score 1): every item is scored in full.
+struct NoEarlyExit;
+
+impl EarlyExit for NoEarlyExit {
+    const MASK_FIRST: bool = true;
+
+    #[inline(always)]
+    fn start(&mut self) {}
+
+    #[inline(always)]
+    fn unreachable(&mut self, _score: f64, _weight: f64, _remaining: f64) -> bool {
+        false
+    }
+}
+
+/// `Weighted` mode: the final weighted sum is at most the sum so far plus
+/// the remaining weight, and must reach `min_score * total_weight`.
+struct WeightedExit {
+    /// `min_score * total_weight`, minus the slack.
+    required: f64,
+    weighted_sum: f64,
+}
+
+impl EarlyExit for WeightedExit {
+    // Items none of whose keys can match are usually rejected after their
+    // first key, sooner than by checking all of their masks first.
+    const MASK_FIRST: bool = false;
+
+    #[inline(always)]
+    fn start(&mut self) {
+        self.weighted_sum = 0.0;
+    }
+
+    #[inline(always)]
+    fn unreachable(&mut self, score: f64, weight: f64, remaining: f64) -> bool {
+        self.weighted_sum += score * weight;
+        self.weighted_sum + remaining < self.required
+    }
+}
+
+/// `Matched` mode. The final score is
+/// `(weighted_sum + a) / (matched_weight + b)`, where `b` is the weight of
+/// the remaining keys that match and `a <= b` what they add. As
+/// `weighted_sum <= matched_weight`, it is at most
+/// `(weighted_sum + R) / (matched_weight + R)`, `R` being the weight of all
+/// remaining keys: adding a perfect match never lowers a mean of scores of at
+/// most 1. While no key has matched, that bound is 1, so items are only
+/// rejected once they match partially.
+struct MatchedExit {
+    threshold: f64,
+    weighted_sum: f64,
+    matched_weight: f64,
+}
+
+impl EarlyExit for MatchedExit {
+    // The bound of an item that has matched no key yet stays at 1.
+    const MASK_FIRST: bool = true;
+
+    #[inline(always)]
+    fn start(&mut self) {
+        self.weighted_sum = 0.0;
+        self.matched_weight = 0.0;
+    }
+
+    #[inline(always)]
+    fn unreachable(&mut self, score: f64, weight: f64, remaining: f64) -> bool {
+        self.weighted_sum += score * weight;
+        if score > 0.0 {
+            self.matched_weight += weight;
+        }
+        let bound_weight = self.matched_weight + remaining;
+        self.weighted_sum + remaining
+            < self.threshold * bound_weight - bound_weight * EARLY_EXIT_SLACK
+    }
+}
+
+/// The item-by-item scan of corpora with character masks.
+struct MaskedScan<'a, C> {
+    corpus: &'a C,
+    plan: &'a QueryPlan,
+    num_items: usize,
+    /// The keys with a positive weight.
+    active_keys: &'a [usize],
+    weights: &'a [f64],
+    /// `remaining_weight[j]`: the total weight of `active_keys[j..]`.
+    remaining_weight: &'a [f64],
+}
+
+impl<C: KeyedCorpus> MaskedScan<'_, C> {
+    /// Score the items one by one, stopping as soon as `exit` rejects one,
+    /// and pass every item that matches an active key to `select`, with its
+    /// active-key scores. Monomorphized per [`EarlyExit`], so that each mode
+    /// gets a loop of its own.
+    fn run<E: EarlyExit>(
+        &self,
+        mut exit: E,
+        matcher: &mut Matcher,
+        buf: &mut Vec<char>,
+        item_scores: &mut [f64],
+        select: &mut impl FnMut(usize, &[f64]),
+    ) {
+        let query_mask = self.plan.char_mask;
+        'items: for i in 0..self.num_items {
+            if E::MASK_FIRST
+                && !self
+                    .active_keys
+                    .iter()
+                    .any(|&k| self.corpus.may_match(k, i, query_mask))
+            {
+                continue;
+            }
+            exit.start();
+            let mut matched = false;
+            for (j, &k) in self.active_keys.iter().enumerate() {
+                let score = self.corpus.key_score(self.plan, matcher, buf, k, i);
+                item_scores[j] = score;
+                matched |= score > 0.0;
+                if exit.unreachable(score, self.weights[k], self.remaining_weight[j + 1]) {
+                    continue 'items;
+                }
+            }
+            // Without a matching active key the combined score is 0.
+            if matched {
+                select(i, item_scores);
+            }
+        }
+    }
 }
 
 /// The multi-key search algorithm shared by `search_keys_impl` and
@@ -264,6 +479,7 @@ pub(crate) fn keyed_search_core<C: KeyedCorpus>(
         min_score,
         case_matching,
         return_all_on_empty,
+        score_mode,
     } = params;
     let key_texts = corpus.key_texts();
     let num_keys = key_texts.len();
@@ -299,9 +515,6 @@ pub(crate) fn keyed_search_core<C: KeyedCorpus>(
     }
 
     let threshold = min_score.unwrap_or(0.0);
-    // NaN thresholds never prune (and the final check rejects every item).
-    let early_exit = threshold > 0.0;
-    let required_weighted_sum = threshold * total_weight - total_weight * EARLY_EXIT_SLACK;
 
     let num_active = active_keys.len();
     let mut buf = Vec::new();
@@ -318,16 +531,33 @@ pub(crate) fn keyed_search_core<C: KeyedCorpus>(
     // so both strategies below select exactly the same items.
     let mut select = |i: usize, item_scores: &[f64]| {
         let mut weighted_sum = 0.0;
-        // (contribution, key) of the best-matching key so far.
+        // Weight of the keys that match (`Matched` mode).
+        let mut matched_weight = 0.0;
+        // (contribution, key) of the best-matching key so far; in `Max` mode
+        // its contribution is the combined score.
         let mut best: Option<(f64, usize)> = None;
         for (&score, &k) in item_scores.iter().zip(&active_keys) {
-            let contribution = score * weights[k];
-            weighted_sum += contribution;
+            let weighted = score * weights[k];
+            weighted_sum += weighted;
+            if score > 0.0 {
+                matched_weight += weights[k];
+            }
+            let contribution = match score_mode {
+                KeyScoreMode::Max => score,
+                KeyScoreMode::Weighted | KeyScoreMode::Matched => weighted,
+            };
             if contribution > best.map_or(0.0, |(c, _)| c) {
                 best = Some((contribution, k));
             }
         }
-        let combined = weighted_sum / total_weight;
+        let combined = match score_mode {
+            KeyScoreMode::Weighted => weighted_sum / total_weight,
+            // matched_weight > 0 whenever weighted_sum > 0; otherwise the
+            // item is not selected (best is None).
+            KeyScoreMode::Matched if weighted_sum > 0.0 => weighted_sum / matched_weight,
+            KeyScoreMode::Matched => 0.0,
+            KeyScoreMode::Max => best.map_or(0.0, |(c, _)| c),
+        };
         match best {
             Some((_, best_key)) if combined > 0.0 && combined >= threshold => {
                 candidates.push(Candidate {
@@ -344,33 +574,37 @@ pub(crate) fn keyed_search_core<C: KeyedCorpus>(
 
     if C::HAS_CHAR_MASKS {
         // Item by item, so that items can be rejected early.
-        let query_mask = plan.char_mask;
-        'items: for i in 0..num_items {
-            // Without min_score, reject items none of whose weighted keys
-            // can match (by character mask) in one tight check. With
-            // min_score the early exit below usually rejects them sooner.
-            if !early_exit
-                && !active_keys
-                    .iter()
-                    .any(|&k| corpus.may_match(k, i, query_mask))
-            {
-                continue;
+        let scan = MaskedScan {
+            corpus,
+            plan: &plan,
+            num_items,
+            active_keys: &active_keys,
+            weights,
+            remaining_weight: &remaining_weight,
+        };
+        let (buf, item_scores, select) = (&mut buf, &mut item_scores, &mut select);
+        // NaN thresholds never prune (and the final check rejects every item).
+        let prune = threshold > 0.0;
+        match score_mode {
+            _ if !prune => scan.run(NoEarlyExit, matcher, buf, item_scores, select),
+            KeyScoreMode::Weighted => {
+                let exit = WeightedExit {
+                    required: threshold * total_weight - total_weight * EARLY_EXIT_SLACK,
+                    weighted_sum: 0.0,
+                };
+                scan.run(exit, matcher, buf, item_scores, select);
             }
-            let mut weighted_sum = 0.0;
-            for (j, &k) in active_keys.iter().enumerate() {
-                let score = corpus.key_score(&plan, matcher, &mut buf, k, i);
-                item_scores[j] = score;
-                weighted_sum += score * weights[k];
-                // Early exit: even perfect scores on the remaining keys
-                // cannot reach min_score.
-                if early_exit && weighted_sum + remaining_weight[j + 1] < required_weighted_sum {
-                    continue 'items;
-                }
+            KeyScoreMode::Matched => {
+                let exit = MatchedExit {
+                    threshold,
+                    weighted_sum: 0.0,
+                    matched_weight: 0.0,
+                };
+                scan.run(exit, matcher, buf, item_scores, select);
             }
-            // A weighted sum of 0 means a combined score of 0: not selected.
-            if weighted_sum > 0.0 {
-                select(i, &item_scores);
-            }
+            // Any remaining key may still score 1: only the final check can
+            // reject an item.
+            KeyScoreMode::Max => scan.run(NoEarlyExit, matcher, buf, item_scores, select),
         }
     } else {
         // Key by key: one key over all items, then the next.
@@ -444,8 +678,9 @@ pub(crate) fn keyed_search_core<C: KeyedCorpus>(
 /// All inner arrays must have the same length (the number of items).
 /// `weights` specifies the relative importance of each key.
 ///
-/// Returns results sorted by combined weighted score (best match first),
-/// exactly like [`KeyedFuzzyIndexCore::search`](super::KeyedFuzzyIndexCore::search)
+/// Returns results sorted by combined score (best match first; see the
+/// module documentation and [`KeyScoreMode`]), exactly like
+/// [`KeyedFuzzyIndexCore::search`](super::KeyedFuzzyIndexCore::search)
 /// on the same input. Returns an error, with the same message as
 /// `KeyedFuzzyIndexCore::new`, when the input is invalid (see
 /// [`validate_keyed_input`]).
@@ -457,19 +692,13 @@ pub fn search_keys_impl(
 ) -> Result<Vec<KeySearchResult>, String> {
     let total_weight = validate_keyed_input(key_texts, weights)?;
 
-    let params = match options {
-        Some(opts) => KeyedSearchParams {
-            max_results: opts.max_results,
-            min_score: opts.min_score,
-            case_matching: resolve_case_matching(opts.is_case_sensitive),
-            return_all_on_empty: opts.return_all_on_empty.unwrap_or(false),
-        },
-        None => KeyedSearchParams {
-            max_results: None,
-            min_score: None,
-            case_matching: CaseMatching::Smart,
-            return_all_on_empty: false,
-        },
+    let opts = options.unwrap_or_default();
+    let params = KeyedSearchParams {
+        max_results: opts.max_results,
+        min_score: opts.min_score,
+        case_matching: resolve_case_matching(opts.is_case_sensitive),
+        return_all_on_empty: opts.return_all_on_empty.unwrap_or(false),
+        score_mode: opts.score_mode.unwrap_or_default(),
     };
 
     Ok(with_matcher(|matcher| {

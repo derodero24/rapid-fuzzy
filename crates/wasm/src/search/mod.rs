@@ -6,8 +6,11 @@ pub use index::FuzzyIndex;
 pub use keyed_index::KeyedFuzzyIndex;
 pub use keys::search_keys;
 
+use std::fmt;
+
 use nucleo_matcher::pattern::CaseMatching;
 use rapid_fuzzy_core::search as core;
+use serde::de::{self, DeserializeOwned, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use tsify::Tsify;
 use wasm_bindgen::prelude::*;
@@ -142,20 +145,190 @@ pub struct SearchOptions {
 }
 
 impl SearchOptions {
-    /// Read the `options` argument of `search`, `searchKeys` and the
-    /// indexes' `search` / `searchIndices`: `undefined`/`null`, a number
-    /// (shorthand for `{ maxResults }`, as in the Node.js binding) or a
-    /// `SearchOptions` object.
+    /// Read the `options` argument of `search` and `FuzzyIndex`'s `search` /
+    /// `searchIndices`: `undefined`/`null`, a number (shorthand for
+    /// `{ maxResults }`, as in the Node.js binding) or a `SearchOptions`
+    /// object.
     pub(crate) fn from_js_or_max_results(options: Option<JsValue>) -> Result<Self, JsValue> {
-        match options {
-            None => Ok(Self::default()),
-            Some(max_results) => match max_results.as_f64() {
-                Some(value) => Ok(Self {
-                    max_results: core::check_max_results(value).map_err(|e| type_error(&e))?,
-                    ..Self::default()
-                }),
-                None => from_js(max_results, "SearchOptions"),
+        options_from_js(options, "SearchOptions", |max_results| Self {
+            max_results,
+            ..Self::default()
+        })
+    }
+}
+
+/// Read an `options` argument: `undefined`/`null` (the defaults), a number
+/// (shorthand for `{ maxResults }`, built by `with_max_results`) or an
+/// options object `T` named `what` in errors.
+fn options_from_js<T: DeserializeOwned + Default>(
+    options: Option<JsValue>,
+    what: &str,
+    with_max_results: impl FnOnce(Option<u32>) -> T,
+) -> Result<T, JsValue> {
+    match options {
+        None => Ok(T::default()),
+        Some(value) => match value.as_f64() {
+            Some(number) => Ok(with_max_results(
+                core::check_max_results(number).map_err(|e| type_error(&e))?,
+            )),
+            None => from_js(value, what),
+        },
+    }
+}
+
+/// How multi-key search combines the per-key scores (`keyScores`) of an item
+/// into its `score` (see `KeySearchOptions.scoreMode`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Tsify)]
+#[serde(rename_all = "lowercase")]
+pub enum KeyScoreMode {
+    /// The weighted mean over all keys (the default).
+    Weighted,
+    /// The weighted mean over the keys that match.
+    Matched,
+    /// The highest score of any key with a positive weight.
+    Max,
+}
+
+impl From<core::KeyScoreMode> for KeyScoreMode {
+    fn from(mode: core::KeyScoreMode) -> Self {
+        match mode {
+            core::KeyScoreMode::Weighted => Self::Weighted,
+            core::KeyScoreMode::Matched => Self::Matched,
+            core::KeyScoreMode::Max => Self::Max,
+        }
+    }
+}
+
+impl From<KeyScoreMode> for core::KeyScoreMode {
+    fn from(mode: KeyScoreMode) -> Self {
+        match mode {
+            KeyScoreMode::Weighted => Self::Weighted,
+            KeyScoreMode::Matched => Self::Matched,
+            KeyScoreMode::Max => Self::Max,
+        }
+    }
+}
+
+impl KeyScoreMode {
+    /// Read a `scoreMode` argument, rejecting anything but `"weighted"`,
+    /// `"matched"` and `"max"` with a `TypeError` (the message of the Node.js
+    /// binding).
+    pub(crate) fn from_js(value: &JsValue) -> Result<Self, JsValue> {
+        let mode = match value.as_string() {
+            Some(name) => core::KeyScoreMode::from_name(&name),
+            None => Err(core::invalid_score_mode(
+                &value.js_typeof().as_string().unwrap_or_default(),
+            )),
+        };
+        mode.map(Self::from).map_err(|e| type_error(&e))
+    }
+}
+
+impl<'de> Deserialize<'de> for KeyScoreMode {
+    /// Parsed by [`core::KeyScoreMode::from_name`], so that an unknown mode
+    /// is reported with the message of the Node.js binding.
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct ScoreModeVisitor;
+
+        impl<'de> Visitor<'de> for ScoreModeVisitor {
+            type Value = KeyScoreMode;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str(r#""weighted", "matched" or "max""#)
+            }
+
+            fn visit_str<E: de::Error>(self, name: &str) -> Result<KeyScoreMode, E> {
+                core::KeyScoreMode::from_name(name)
+                    .map(KeyScoreMode::from)
+                    .map_err(E::custom)
+            }
+
+            fn visit_bool<E: de::Error>(self, _: bool) -> Result<KeyScoreMode, E> {
+                Err(E::custom(core::invalid_score_mode("boolean")))
+            }
+
+            fn visit_i64<E: de::Error>(self, _: i64) -> Result<KeyScoreMode, E> {
+                Err(E::custom(core::invalid_score_mode("number")))
+            }
+
+            fn visit_u64<E: de::Error>(self, _: u64) -> Result<KeyScoreMode, E> {
+                Err(E::custom(core::invalid_score_mode("number")))
+            }
+
+            fn visit_f64<E: de::Error>(self, _: f64) -> Result<KeyScoreMode, E> {
+                Err(E::custom(core::invalid_score_mode("number")))
+            }
+
+            fn visit_map<A: de::MapAccess<'de>>(self, _: A) -> Result<KeyScoreMode, A::Error> {
+                Err(de::Error::custom(core::invalid_score_mode("object")))
+            }
+
+            fn visit_seq<A: de::SeqAccess<'de>>(self, _: A) -> Result<KeyScoreMode, A::Error> {
+                Err(de::Error::custom(core::invalid_score_mode("object")))
+            }
+        }
+
+        // deserialize_any: serde-wasm-bindgen then calls the visitor method of
+        // the actual JS type, which reports it like the Node.js binding.
+        deserializer.deserialize_any(ScoreModeVisitor)
+    }
+}
+
+/// Options for multi-key search: `searchKeys()`, `KeyedFuzzyIndex.search()`
+/// and the object search built on them (`searchObjects()`,
+/// `FuzzyObjectIndex.search()`). `includePositions` has no effect there:
+/// multi-key results have no match positions.
+#[derive(Debug, Clone, Default, Deserialize, Tsify)]
+#[serde(rename_all = "camelCase")]
+pub struct KeySearchOptions {
+    #[serde(flatten)]
+    pub search: SearchOptions,
+    /// How the per-key scores (`keyScores`) of an item are combined into its
+    /// `score`. Only keys with a positive weight take part:
+    ///
+    /// - `"weighted"` (default): the weighted mean over all keys,
+    ///   `sum(weight * keyScore) / sum(weight)`. A key that does not match
+    ///   counts as 0, so an exact match on one key out of several scores only
+    ///   that key's share of the total weight.
+    /// - `"matched"`: the weighted mean over the keys that match
+    ///   (`keyScore > 0`) only. An item whose only matching key matches
+    ///   exactly scores 1.
+    /// - `"max"`: the highest score of any key. Weights then only select the
+    ///   keys that take part (weight > 0).
+    ///
+    /// `keyScores` are the same in every mode; `minScore` and `maxResults`
+    /// apply to the combined score. Equal scores are ordered by the length of
+    /// the best-matching key's text (the key contributing most to the score:
+    /// highest `weight * keyScore`, or highest `keyScore` in `"max"` mode;
+    /// the first one on a tie), then by index. Any other value throws a
+    /// `TypeError`.
+    #[tsify(optional)]
+    #[serde(default)]
+    pub score_mode: Option<KeyScoreMode>,
+}
+
+impl KeySearchOptions {
+    /// Read the `options` argument of `searchKeys` and
+    /// `KeyedFuzzyIndex.search`: `undefined`/`null`, a number (shorthand for
+    /// `{ maxResults }`) or a `KeySearchOptions` object.
+    pub(crate) fn from_js_or_max_results(options: Option<JsValue>) -> Result<Self, JsValue> {
+        options_from_js(options, "KeySearchOptions", |max_results| Self {
+            search: SearchOptions {
+                max_results,
+                ..SearchOptions::default()
             },
+            score_mode: None,
+        })
+    }
+
+    /// The options of the shared core-lib search.
+    pub(crate) fn to_core(&self) -> core::SearchKeysOptions {
+        core::SearchKeysOptions {
+            max_results: self.search.max_results,
+            min_score: self.search.min_score,
+            is_case_sensitive: self.search.is_case_sensitive,
+            return_all_on_empty: self.search.return_all_on_empty,
+            score_mode: self.score_mode.map(Into::into),
         }
     }
 }

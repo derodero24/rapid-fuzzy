@@ -7,7 +7,7 @@ use std::hint::black_box;
 use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
 use nucleo_matcher::pattern::CaseMatching;
 use rapid_fuzzy_core::distance;
-use rapid_fuzzy_core::search::{FuzzyIndexCore, KeyedFuzzyIndexCore, search_impl};
+use rapid_fuzzy_core::search::{FuzzyIndexCore, KeyScoreMode, KeyedFuzzyIndexCore, search_impl};
 
 const WORDS: [&str; 20] = [
     "async",
@@ -135,7 +135,14 @@ fn bench_keyed_index(c: &mut Criterion) {
         for (name, query) in QUERIES {
             group.bench_function(BenchmarkId::new(format!("search_{name}"), size), |b| {
                 b.iter(|| {
-                    index.search(black_box(query), Some(10), None, CaseMatching::Smart, false)
+                    index.search(
+                        black_box(query),
+                        Some(10),
+                        None,
+                        CaseMatching::Smart,
+                        false,
+                        KeyScoreMode::Weighted,
+                    )
                 });
             });
         }

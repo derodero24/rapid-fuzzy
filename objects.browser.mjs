@@ -188,6 +188,8 @@ function assertSearchOptions(options) {
  * @param {number} [options.maxResults] - Maximum results to return.
  * @param {number} [options.minScore] - Minimum score threshold.
  * @param {boolean} [options.isCaseSensitive] - Enable case-sensitive matching.
+ * @param {'weighted' | 'matched' | 'max'} [options.scoreMode] - How the
+ *   per-key scores are combined (default `'weighted'`).
  * @returns {Array<{ item: T; index: number; score: number; keyScores: number[] }>}
  */
 function searchObjects(query, items, options) {
@@ -269,8 +271,8 @@ class FuzzyObjectIndex {
   /**
    * Search the index for objects matching the query.
    * @param {string} query
-   * @param {number | { maxResults?: number; minScore?: number; isCaseSensitive?: boolean; returnAllOnEmpty?: boolean } | null} [options]
-   *   A SearchOptions object, or a number as a shorthand for `maxResults`.
+   * @param {number | { maxResults?: number; minScore?: number; isCaseSensitive?: boolean; returnAllOnEmpty?: boolean; scoreMode?: 'weighted' | 'matched' | 'max' } | null} [options]
+   *   A KeySearchOptions object, or a number as a shorthand for `maxResults`.
    * @returns {Array<{ item: T; index: number; score: number; keyScores: number[] }>}
    */
   search(query, options) {
@@ -284,13 +286,16 @@ class FuzzyObjectIndex {
   }
 
   /**
-   * Find the closest matching object.
+   * Find the closest matching object: the item of the first result of
+   * `search(query, { maxResults: 1, minScore, scoreMode })`.
    * @param {string} query
    * @param {number | null} [minScore]
+   * @param {'weighted' | 'matched' | 'max' | null} [scoreMode] - How the
+   *   per-key scores are combined (default `'weighted'`).
    * @returns {T | null}
    */
-  closest(query, minScore) {
-    const index = this.#index.closest(query, minScore);
+  closest(query, minScore, scoreMode) {
+    const index = this.#index.closest(query, minScore, scoreMode);
     return index === null ? null : this.#items[index];
   }
 

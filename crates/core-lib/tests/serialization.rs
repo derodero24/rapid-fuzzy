@@ -15,7 +15,7 @@ use rapid_fuzzy_core::search::serialization::{
     deserialize_keyed_index, serialize_fuzzy_index, serialize_items, serialize_keyed,
     serialize_keyed_index,
 };
-use rapid_fuzzy_core::search::{FuzzyIndexCore, KeyedFuzzyIndexCore};
+use rapid_fuzzy_core::search::{FuzzyIndexCore, KeyScoreMode, KeyedFuzzyIndexCore};
 
 // ---------------------------------------------------------------------------
 // Allocation tracking
@@ -759,7 +759,14 @@ fn legacy_zero_key_payload_restores_as_destroyed() {
     assert!(restored.weights().is_empty());
     assert!(
         restored
-            .search("a", None, None, CaseMatching::Smart, true)
+            .search(
+                "a",
+                None,
+                None,
+                CaseMatching::Smart,
+                true,
+                KeyScoreMode::Weighted
+            )
             .is_empty()
     );
     assert_eq!(

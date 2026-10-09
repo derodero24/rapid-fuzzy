@@ -5,7 +5,7 @@ pub mod serialization;
 
 pub use fuzzy_index::FuzzyIndexCore;
 pub use keyed_index::KeyedFuzzyIndexCore;
-pub use keys::{SearchKeysOptions, search_keys_impl};
+pub use keys::{KeyScoreMode, SearchKeysOptions, invalid_score_mode, search_keys_impl};
 
 use std::borrow::Cow;
 use std::cell::RefCell;
@@ -68,7 +68,8 @@ pub struct IndexSearchResult {
 pub struct KeySearchResult {
     /// The index of the item in the original input array.
     pub index: u32,
-    /// The combined weighted score normalized to 0.0-1.0 range.
+    /// The combined score (0.0-1.0) of the key scores, as set by the
+    /// search's [`KeyScoreMode`].
     pub score: f64,
     /// Per-key scores in the same order as the input keys.
     /// A score of 0.0 means the item did not match on that key.
