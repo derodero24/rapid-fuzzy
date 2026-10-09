@@ -1132,4 +1132,19 @@ describe('closest() options', () => {
       );
     }
   });
+
+  it('name KeySearchOptions when FuzzyObjectIndex.search() rejects an argument', () => {
+    const objects = objectIndex();
+    for (const [value, type] of [
+      ['5', 'string'],
+      [true, 'boolean'],
+      [() => 5, 'function'],
+    ] as const) {
+      const error = thrownBy(() => callUnchecked(objects.search.bind(objects), 'tokyo', value));
+      expect(error).toBeInstanceOf(TypeError);
+      expect(error.message).toBe(
+        `options must be a number (maxResults) or a KeySearchOptions object, got ${type}`,
+      );
+    }
+  });
 });

@@ -477,6 +477,9 @@ describe.skipIf(!wasmAvailable)('browser.mjs (the WebAssembly build)', () => {
         const opts = bad as unknown as number;
         expect(() => native.closest('john', opts)).toThrow(new TypeError(message));
         expect(() => index.closest('john', opts)).toThrow(new TypeError(message));
+        const searchMessage = `options must be a number (maxResults) or a KeySearchOptions object, got ${typeof bad}`;
+        expect(() => native.search('john', opts)).toThrow(new TypeError(searchMessage));
+        expect(() => index.search('john', opts)).toThrow(new TypeError(searchMessage));
       }
       index.destroy();
     });

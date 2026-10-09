@@ -271,7 +271,7 @@ class FuzzyObjectIndex {
    * @returns {Array<{ item: T; index: number; score: number; keyScores: number[] }>}
    */
   search(query, options) {
-    assertOptions(options, 'maxResults', 'SearchOptions');
+    assertOptions(options, 'maxResults', 'KeySearchOptions');
     return this.#index.search(query, options).map((r) => ({
       item: this.#items[r.index],
       index: r.index,
