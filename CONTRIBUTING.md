@@ -200,6 +200,8 @@ Releases are automated by `.github/workflows/release.yml`:
 2. Once that PR is merged and the version is not on npm yet, the workflow opens or updates the "chore(release): release vX.Y.Z" PR from `develop` to `main`.
 3. Merging the release PR builds the binaries for every target and the wasm-bindgen browser build, loads each binary on its own platform, publishes the nine platform packages and then `rapid-fuzzy` to npm with provenance, and finally tags the released commit and creates the GitHub release.
 
+Only `main` publishes. Besides the push of the merged release PR, the publishing jobs run when the Release workflow is started by hand on `main` (**Actions** → **Release** → **Run workflow**), which retries a failed release as long as the version in `package.json` is not on npm yet. Select `main` in that form: it preselects `develop`, the default branch, and a run on any other branch publishes nothing.
+
 ### npm trusted publishing
 
 The publish job is ready for [npm trusted publishing](https://docs.npmjs.com/trusted-publishers) (OIDC instead of the long-lived `NPM_TOKEN` secret): it has `id-token: write` and pins an npm CLI recent enough for it (trusted publishing needs npm 11.5.1 or later and Node 22.14.0 or later). For each package, `npm publish` tries OIDC first and falls back to the token, so registering trusted publishers cannot break a release. Cut-over:

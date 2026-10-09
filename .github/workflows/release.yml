@@ -72,11 +72,13 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ──── On main push: check if publish is needed ────
+  # Publishing happens only from main: a push there (the merged release PR) or
+  # a manual run on main, which exists to retry a failed release. A manual run
+  # on any other branch (the Run workflow form preselects develop, the default
+  # branch) skips this job and with it every job below, which all need it.
   check:
     name: Check Version
-    if: |
-      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-      github.event_name == 'workflow_dispatch'
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
