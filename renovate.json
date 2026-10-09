@@ -4,6 +4,7 @@
   "baseBranchPatterns": ["develop"],
   "minimumReleaseAge": "3 days",
   "prConcurrentLimit": 0,
+  "prHourlyLimit": 0,
   "ignoreDeps": ["string-similarity", "@types/string-similarity"],
   "lockFileMaintenance": {
     "enabled": true,
@@ -34,6 +35,13 @@
       "matchManagers": ["github-actions"],
       "matchUpdateTypes": ["digest"],
       "minimumReleaseAge": "0 days"
+    },
+    {
+      "description": "The pnpm-workspace.yaml overrides are security floors that must stay within the major their dependents ask for (see the comment there): never propose a major bump",
+      "matchFileNames": ["pnpm-workspace.yaml"],
+      "matchDepTypes": ["pnpm-workspace.overrides"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
     },
     {
       "description": "Group Rust crate updates",
