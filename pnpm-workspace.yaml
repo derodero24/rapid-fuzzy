@@ -7,7 +7,8 @@ allowBuilds:
 # Security floors for transitive dependencies (all dev-only). Keep each one
 # within the major its dependents ask for: an open-ended '>=x' floor resolves
 # to the newest major, which is how ajv (fast-uri ^3) ended up on a vulnerable
-# fast-uri 4 and cosmiconfig (js-yaml ^4) on js-yaml 5. CI runs
+# fast-uri 4 and cosmiconfig (js-yaml ^4) on js-yaml 5. Renovate therefore
+# never proposes a major bump of these (see renovate.json). CI runs
 # `pnpm audit --audit-level=high` over all dependencies.
 overrides:
   axios: ^1.20.0
