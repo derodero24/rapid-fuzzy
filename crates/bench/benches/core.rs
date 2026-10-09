@@ -7,7 +7,10 @@ use std::hint::black_box;
 use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
 use nucleo_matcher::pattern::CaseMatching;
 use rapid_fuzzy_core::distance;
-use rapid_fuzzy_core::search::{FuzzyIndexCore, KeyScoreMode, KeyedFuzzyIndexCore, search_impl};
+use rapid_fuzzy_core::search::{
+    FuzzyIndexCore, KeyMatchMode, KeyScoreMode, KeyedFuzzyIndexCore, SearchKeysOptions,
+    search_impl, search_keys_impl,
+};
 
 const WORDS: [&str; 20] = [
     "async",
@@ -54,6 +57,15 @@ const QUERIES: [(&str, &str); 3] = [
     ("fuzzy", "hndlr"),
     ("miss", "zqxjv"),
 ];
+/// Queries whose terms are in different keys, for cross-key matching:
+/// - `terms`: a `handler_*` item and a "Handles incoming requests"
+///   description (one item in 60 has both);
+/// - `terms_miss`: the second term matches nothing.
+const TERM_QUERIES: [(&str, &str); 2] = [
+    ("terms", "handler requests"),
+    ("terms_miss", "handler zqxjv"),
+];
+
 /// Keystrokes of a user typing `handler`; each step may reuse the previous
 /// step's matches, and the next round starts over because "h" is shorter.
 const TYPING: [&str; 5] = ["h", "ha", "han", "hand", "handl"];
@@ -127,11 +139,30 @@ fn bench_search(c: &mut Criterion) {
     group.finish();
 }
 
+/// Search options returning the 10 best matches with `match_mode`.
+fn top_ten(match_mode: KeyMatchMode) -> SearchKeysOptions {
+    SearchKeysOptions {
+        max_results: Some(10),
+        match_mode: Some(match_mode),
+        ..SearchKeysOptions::default()
+    }
+}
+
 fn bench_keyed_index(c: &mut Criterion) {
     let mut group = c.benchmark_group("core_keyed_index");
     for size in INDEX_SIZES {
         let index = KeyedFuzzyIndexCore::new(vec![items(size), descriptions(size)], vec![2.0, 1.0])
             .expect("equal-length key columns and valid weights");
+        for (name, query) in QUERIES.iter().chain(&TERM_QUERIES) {
+            group.bench_function(
+                BenchmarkId::new(format!("search_cross_key_{name}"), size),
+                |b| {
+                    b.iter(|| {
+                        index.search_with_options(black_box(query), top_ten(KeyMatchMode::CrossKey))
+                    });
+                },
+            );
+        }
         for (name, query) in QUERIES {
             group.bench_function(BenchmarkId::new(format!("search_{name}"), size), |b| {
                 b.iter(|| {
@@ -188,11 +219,46 @@ fn bench_distance_many(c: &mut Criterion) {
     group.finish();
 }
 
+/// The standalone multi-key search (`searchKeys()`), which converts the key
+/// texts on every search.
+fn bench_search_keys(c: &mut Criterion) {
+    let mut group = c.benchmark_group("core_search_keys");
+    let size = 10_000;
+    let key_texts = vec![items(size), descriptions(size)];
+    let weights = [2.0, 1.0];
+    for (name, query) in QUERIES {
+        group.bench_function(format!("search_{name}"), |b| {
+            b.iter(|| {
+                search_keys_impl(
+                    black_box(query),
+                    &key_texts,
+                    &weights,
+                    Some(top_ten(KeyMatchMode::PerKey)),
+                )
+            });
+        });
+    }
+    for (name, query) in QUERIES.iter().chain(&TERM_QUERIES) {
+        group.bench_function(format!("search_cross_key_{name}"), |b| {
+            b.iter(|| {
+                search_keys_impl(
+                    black_box(query),
+                    &key_texts,
+                    &weights,
+                    Some(top_ten(KeyMatchMode::CrossKey)),
+                )
+            });
+        });
+    }
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_fuzzy_index,
     bench_search,
     bench_keyed_index,
+    bench_search_keys,
     bench_distance_many
 );
 criterion_main!(benches);
