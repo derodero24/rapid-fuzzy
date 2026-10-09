@@ -395,7 +395,7 @@ jobs:
           name: bindings-x86_64-unknown-linux-gnu
           path: .
       - name: JS coverage
-        run: pnpm test -- --coverage
+        run: pnpm test --coverage
 
       # Upload to Codecov
       - name: Upload coverage to Codecov
