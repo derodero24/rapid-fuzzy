@@ -1,4 +1,10 @@
-import type { KeyClosestOptions, KeyMatchMode, KeyScoreMode, KeySearchOptions } from './index';
+import type {
+  KeyClosestOptions,
+  KeyMatchMode,
+  KeyScoreMode,
+  KeySearchOptions,
+  NodeBuffer,
+} from './index';
 
 type Primitive = string | number | bigint | boolean | symbol | null | undefined;
 type AnyFunction = (...args: never) => unknown;
@@ -373,12 +379,13 @@ export declare class FuzzyObjectIndex<T, S extends string = string, C extends st
   destroy(): void;
 
   /**
-   * Serialize the index and its items to a Buffer.
+   * Serialize the index and its items to a Buffer (`NodeBuffer`: a `Uint8Array`
+   * in TypeScript programs without the Node.js types).
    *
    * Items must be JSON-serializable. Pass the result to
    * `FuzzyObjectIndex.deserialize()` to reconstruct the index.
    */
-  serialize(): Buffer;
+  serialize(): NodeBuffer;
 
   /**
    * Reconstruct a `FuzzyObjectIndex` from data produced by `serialize()`:

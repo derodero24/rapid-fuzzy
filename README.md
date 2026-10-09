@@ -104,6 +104,8 @@ TypeScript does not apply the `browser` condition on its own, so a browser proje
 }
 ```
 
+These declarations compile on their own, with `skipLibCheck` off: they need neither the Node.js types (`@types/node`) nor a `lib` newer than `ES2022` + `DOM` (use `"customConditions": ["workerd"]` for Cloudflare Workers).
+
 #### CDN (no bundler required)
 
 The browser build is plain ES modules, so it runs directly from a CDN that serves the package files unmodified, such as [jsDelivr](https://www.jsdelivr.com/) or [unpkg](https://unpkg.com/):

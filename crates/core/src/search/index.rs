@@ -292,7 +292,7 @@ impl FuzzyIndex {
     /// `deserialize()` recomputes it, so loading takes about as long as
     /// building the index from an array. The format is versioned; data
     /// written by a different format version is rejected.
-    #[napi]
+    #[napi(ts_return_type = "NodeBuffer")]
     pub fn serialize(&self) -> Buffer {
         self.serialize_impl().into()
     }

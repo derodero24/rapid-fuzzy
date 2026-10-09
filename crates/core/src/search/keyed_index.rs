@@ -196,7 +196,7 @@ impl KeyedFuzzyIndex {
     /// The returned Buffer can be written to disk, stored in IndexedDB,
     /// or transferred over the network. Use `KeyedFuzzyIndex.deserialize()` to
     /// reconstruct the index.
-    #[napi]
+    #[napi(ts_return_type = "NodeBuffer")]
     pub fn serialize(&self) -> Buffer {
         self.serialize_impl().into()
     }

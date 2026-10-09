@@ -985,3 +985,12 @@ export function initSync(module: { module: SyncInitInput } | SyncInitInput): Ini
  * @returns {Promise<InitOutput>}
  */
 export default function __wbg_init (module_or_path?: { module_or_path: InitInput | Promise<InitInput> } | InitInput | Promise<InitInput>): Promise<InitOutput>;
+
+// `[Symbol.dispose]()` needs `SymbolConstructor.dispose`, which only the
+// `esnext.disposable` lib (TypeScript 5.2+) and @types/node declare: declared
+// here like @types/node does, so that these declarations compile with any `lib`.
+declare global {
+    interface SymbolConstructor {
+        readonly dispose: unique symbol;
+    }
+}

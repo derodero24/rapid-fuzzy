@@ -27,6 +27,21 @@ export function hammingResults(n: typeof Node, b: typeof Browser): Array<number 
   return [...fromNode, ...fromBrowser];
 }
 
+// ─── serialize() returns exactly Node.js's Buffer when @types/node is loaded ─
+// (`NodeBuffer` falls back to `Uint8Array` in programs without the Node.js
+// types; __test__/types-browser checks that case.)
+
+export type SerializeReturnsBuffer = [
+  Expect<Equal<Node.NodeBuffer, Buffer>>,
+  Expect<Equal<ReturnType<Node.FuzzyIndex['serialize']>, Buffer>>,
+  Expect<Equal<ReturnType<Node.KeyedFuzzyIndex['serialize']>, Buffer>>,
+  Expect<Equal<ReturnType<Node.FuzzyObjectIndex<unknown>['serialize']>, Buffer>>,
+];
+
+export function bufferMethods(index: Node.FuzzyIndex): string {
+  return index.serialize().toString('base64');
+}
+
 // ─── deserialize() takes any Uint8Array, not only a Buffer ──────────────────
 
 export function deserializeUint8Array(n: typeof Node, bytes: Uint8Array): number {

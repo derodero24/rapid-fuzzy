@@ -100,6 +100,7 @@ function rewriteGlue(source) {
  * - The optional fields of the options objects accept an explicit `undefined`
  *   (`field?: T | undefined`, see scripts/declarations.js): tsify declares an
  *   optional `Option<T>` field as `field?: T`.
+ * - `SymbolConstructor.dispose` is declared (see `declareSymbolDispose`).
  */
 function rewriteDeclarations(dts) {
   const declaration = /^(\s*(?:export function \w+|(?:static )?\w+|constructor))\(/;
@@ -124,7 +125,9 @@ function rewriteDeclarations(dts) {
       return line;
     })
     .join('\n');
-  const rewritten = inputFieldsAcceptUndefined(arraysRewritten, `${OUT_NAME}.d.mts`);
+  const rewritten = declareSymbolDispose(
+    inputFieldsAcceptUndefined(arraysRewritten, `${OUT_NAME}.d.mts`),
+  );
   // Fail loudly if wasm-bindgen changes its output format and the rewrite stops applying.
   for (const expected of [
     'export function levenshteinBatch(pairs: ReadonlyArray<ReadonlyArray<string>>)',
@@ -133,12 +136,37 @@ function rewriteDeclarations(dts) {
     '    maxResults?: number | undefined;',
     '    scoreMode?: KeyScoreMode | undefined;',
     '    matchMode?: KeyMatchMode | undefined;',
+    '    [Symbol.dispose](): void;',
+    '        readonly dispose: unique symbol;',
   ]) {
     if (!rewritten.includes(expected)) {
       throw new Error(`build-wasm-bindgen: expected \`${expected}\` in the declarations`);
     }
   }
   return rewritten;
+}
+
+/**
+ * Declare `SymbolConstructor.dispose`, which the `[Symbol.dispose](): void`
+ * methods of the generated classes need. Only the `esnext.disposable` lib
+ * (TypeScript 5.2+) and @types/node declare it, so the declarations failed to
+ * compile in a browser project with e.g. `lib: ["ES2022", "DOM"]` and no
+ * Node.js types. It is declared the way @types/node declares it, which merges
+ * with that lib; a `/// <reference lib="esnext.disposable" />` would instead
+ * break TypeScript 5.0 and 5.1, which lack the lib.
+ */
+function declareSymbolDispose(dts) {
+  const augmentation = [
+    '// `[Symbol.dispose]()` needs `SymbolConstructor.dispose`, which only the',
+    '// `esnext.disposable` lib (TypeScript 5.2+) and @types/node declare: declared',
+    '// here like @types/node does, so that these declarations compile with any `lib`.',
+    'declare global {',
+    '    interface SymbolConstructor {',
+    '        readonly dispose: unique symbol;',
+    '    }',
+    '}',
+  ];
+  return `${dts.trimEnd()}\n\n${augmentation.join('\n')}\n`;
 }
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wasm-pack-'));

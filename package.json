@@ -189,7 +189,7 @@
     "format": "biome format --write",
     "lint": "biome check",
     "lint:fix": "biome check --write",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p __test__/types-browser && tsc -p __test__/types-browser/tsconfig.workerd.json && tsc -p __test__/types-browser/tsconfig.esnext.json",
     "test": "vitest run",
     "test:wasm": "vitest run __test__/wasm.spec.ts",
     "test:browser": "playwright test",
