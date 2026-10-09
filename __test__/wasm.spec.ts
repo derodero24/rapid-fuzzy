@@ -595,6 +595,29 @@ describe.skipIf(!wasmAvailable)('wasm', () => {
       );
     });
 
+    it.each([
+      'levenshteinMany',
+      'damerauLevenshteinMany',
+      'indelMany',
+      'hammingMany',
+      'levenshteinManyU32',
+      'hammingManyU32',
+    ])('%s validates maxDistance like native (no modulo-2^32 wrapping)', (name) => {
+      const cands = ['kitten', 'sitting', 'kitchen'];
+      const plain = Array.from(wasm[name]('kitten', cands));
+      for (const maxDistance of [Number.POSITIVE_INFINITY, 2 ** 32, 2 ** 32 + 2]) {
+        expect(Array.from(wasm[name]('kitten', cands, maxDistance))).toEqual(plain);
+      }
+      expect(Array.from(wasm[name]('kitten', cands, 1))).toEqual(
+        Array.from(native[name]('kitten', cands, 1)),
+      );
+      for (const maxDistance of [Number.NaN, -1, 2.9]) {
+        expect(() => wasm[name]('kitten', cands, maxDistance)).toThrow(
+          `maxDistance must be a non-negative integer or Infinity, got ${maxDistance}`,
+        );
+      }
+    });
+
     describe('remove() validates its index like native (no modulo-2^32 wrapping)', () => {
       const create = (m: typeof wasm) => [
         new m.FuzzyIndex(['a', 'b', 'c']),

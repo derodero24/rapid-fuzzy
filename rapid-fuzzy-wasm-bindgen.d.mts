@@ -462,7 +462,9 @@ export function damerauLevenshteinBatch(pairs: ReadonlyArray<ReadonlyArray<strin
  *
  * Returns an array of distances, one per candidate, in the same order as the input.
  * If `maxDistance` is provided, candidates with distance exceeding the threshold
- * will return `maxDistance + 1` (enabling early termination for better performance).
+ * will return `maxDistance + 1`, at most 4294967295 (enabling early termination
+ * for better performance). `maxDistance` must be a non-negative integer or
+ * `Infinity` (no limit); NaN, negative and fractional values throw an `Error`.
  */
 export function damerauLevenshteinMany(reference: string, candidates: ReadonlyArray<string>, maxDistance?: number | null): Uint32Array;
 
@@ -494,6 +496,8 @@ export function hammingBatch(pairs: ReadonlyArray<ReadonlyArray<string>>): (numb
  * Returns `null` for candidates with a different length than the reference.
  * If `maxDistance` is provided, candidates with distance exceeding the threshold
  * will also return `null` (enabling early termination for better performance).
+ * `maxDistance` must be a non-negative integer or `Infinity` (no limit); NaN,
+ * negative and fractional values throw an `Error`.
  */
 export function hammingMany(reference: string, candidates: ReadonlyArray<string>, maxDistance?: number | null): (number | null)[];
 
@@ -525,7 +529,9 @@ export function indelBatch(pairs: ReadonlyArray<ReadonlyArray<string>>): Uint32A
  *
  * Returns an array of distances, one per candidate, in the same order as the input.
  * If `maxDistance` is provided, candidates with distance exceeding the threshold
- * will return `maxDistance + 1` (enabling early termination for better performance).
+ * will return `maxDistance + 1`, at most 4294967295 (enabling early termination
+ * for better performance). `maxDistance` must be a non-negative integer or
+ * `Infinity` (no limit); NaN, negative and fractional values throw an `Error`.
  */
 export function indelMany(reference: string, candidates: ReadonlyArray<string>, maxDistance?: number | null): Uint32Array;
 
@@ -607,7 +613,9 @@ export function levenshteinBatch(pairs: ReadonlyArray<ReadonlyArray<string>>): U
  *
  * Returns an array of distances, one per candidate, in the same order as the input.
  * If `maxDistance` is provided, candidates with distance exceeding the threshold
- * will return `maxDistance + 1` (enabling early termination for better performance).
+ * will return `maxDistance + 1`, at most 4294967295 (enabling early termination
+ * for better performance). `maxDistance` must be a non-negative integer or
+ * `Infinity` (no limit); NaN, negative and fractional values throw an `Error`.
  */
 export function levenshteinMany(reference: string, candidates: ReadonlyArray<string>, maxDistance?: number | null): Uint32Array;
 
@@ -878,7 +886,7 @@ export interface InitOutput {
     readonly closest: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
     readonly damerauLevenshtein: (a: number, b: number, c: number, d: number) => number;
     readonly damerauLevenshteinBatch: (a: number, b: number) => void;
-    readonly damerauLevenshteinMany: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+    readonly damerauLevenshteinMany: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
     readonly fuzzyindex_add: (a: number, b: number, c: number) => void;
     readonly fuzzyindex_addMany: (a: number, b: number, c: number) => void;
     readonly fuzzyindex_closest: (a: number, b: number, c: number, d: number, e: number) => number;
@@ -893,10 +901,10 @@ export interface InitOutput {
     readonly fuzzyindex_size: (a: number) => number;
     readonly hamming: (a: number, b: number, c: number, d: number) => number;
     readonly hammingBatch: (a: number, b: number) => void;
-    readonly hammingMany: (a: number, b: number, c: number, d: number, e: number) => number;
+    readonly hammingMany: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
     readonly indel: (a: number, b: number, c: number, d: number) => number;
     readonly indelBatch: (a: number, b: number) => void;
-    readonly indelMany: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+    readonly indelMany: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
     readonly jaro: (a: number, b: number, c: number, d: number) => number;
     readonly jaroBatch: (a: number, b: number) => void;
     readonly jaroMany: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
@@ -915,7 +923,7 @@ export interface InitOutput {
     readonly keyedfuzzyindex_size: (a: number) => number;
     readonly levenshtein: (a: number, b: number, c: number, d: number) => number;
     readonly levenshteinBatch: (a: number, b: number) => void;
-    readonly levenshteinMany: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+    readonly levenshteinMany: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
     readonly normalizedHamming: (a: number, b: number, c: number, d: number) => number;
     readonly normalizedHammingBatch: (a: number, b: number) => void;
     readonly normalizedHammingMany: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;

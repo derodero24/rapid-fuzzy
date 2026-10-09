@@ -913,6 +913,42 @@ describe.skipIf(!wasmAvailable)('wasm-bindgen runtime', () => {
     });
   });
 
+  // maxDistance used to be a u32 parameter, wrapping it modulo 2^32: Infinity,
+  // NaN and 2 ** 32 became 0 and -1 disabled the limit.
+  describe('maxDistance validation (like the Node.js binding)', () => {
+    const cands = ['kitten', 'sitting', 'kitchen', 'a much longer candidate'];
+    const fns = () =>
+      [
+        ['levenshteinMany', wasm.levenshteinMany, napi.levenshteinMany],
+        ['damerauLevenshteinMany', wasm.damerauLevenshteinMany, napi.damerauLevenshteinMany],
+        ['indelMany', wasm.indelMany, napi.indelMany],
+        ['hammingMany', wasm.hammingMany, napi.hammingMany],
+      ] as const;
+
+    it('treats Infinity and values >= 2^32 as no limit', () => {
+      for (const [name, fn, native] of fns()) {
+        const plain = Array.from(fn('kitten', cands));
+        expect(plain, name).toEqual(Array.from(native('kitten', cands)));
+        for (const maxDistance of [Number.POSITIVE_INFINITY, 2 ** 32, 2 ** 32 + 2]) {
+          expect(Array.from(fn('kitten', cands, maxDistance)), name).toEqual(plain);
+        }
+      }
+    });
+
+    it('throws an Error with the Node.js message for NaN, negative and fractional values', () => {
+      for (const [name, fn, native] of fns()) {
+        for (const maxDistance of [Number.NaN, -1, 2.9, Number.NEGATIVE_INFINITY, 'x', {}]) {
+          const err = thrown(() => callUnchecked(fn, 'kitten', cands, maxDistance));
+          expect(err, `${name}(${String(maxDistance)})`).toBeInstanceOf(Error);
+          if (typeof maxDistance === 'number') {
+            const nodeErr = thrown(() => native('kitten', cands, maxDistance));
+            expect(err).toHaveProperty('message', (nodeErr as Error).message);
+          }
+        }
+      }
+    });
+  });
+
   // The index used to be a u32 parameter, which wraps numbers modulo 2^32 and
   // converts anything else to a number: remove(NaN), remove(2 ** 32) and
   // remove(undefined) (a missed Map lookup) removed item 0 and returned true.

@@ -244,7 +244,9 @@ export declare function damerauLevenshteinBatch(pairs: ReadonlyArray<ReadonlyArr
  * Returns an array of distances, one per candidate, in the same order as the input.
  * If `maxDistance` is provided, candidates with distance exceeding the threshold
  * will return `maxDistance + 1`, at most 4294967295 (enabling early termination
- * for better performance).
+ * for better performance). `maxDistance` must be a non-negative integer or
+ * `Infinity` (no limit); NaN, negative and fractional values throw an
+ * `InvalidArg` error.
  */
 export declare function damerauLevenshteinMany(reference: string, candidates: ReadonlyArray<string>, maxDistance?: number | undefined | null): Array<number>
 
@@ -280,6 +282,8 @@ export declare function hammingBatch(pairs: ReadonlyArray<ReadonlyArray<string>>
  * Returns `null` for candidates with a different length than the reference.
  * If `maxDistance` is provided, candidates with distance exceeding the threshold
  * will also return `null` (enabling early termination for better performance).
+ * `maxDistance` must be a non-negative integer or `Infinity` (no limit); NaN,
+ * negative and fractional values throw an `InvalidArg` error.
  */
 export declare function hammingMany(reference: string, candidates: ReadonlyArray<string>, maxDistance?: number | undefined | null): Array<number | undefined | null>
 
@@ -323,7 +327,9 @@ export declare function indelBatch(pairs: ReadonlyArray<ReadonlyArray<string>>):
  * Returns an array of distances, one per candidate, in the same order as the input.
  * If `maxDistance` is provided, candidates with distance exceeding the threshold
  * will return `maxDistance + 1`, at most 4294967295 (enabling early termination
- * for better performance).
+ * for better performance). `maxDistance` must be a non-negative integer or
+ * `Infinity` (no limit); NaN, negative and fractional values throw an
+ * `InvalidArg` error.
  */
 export declare function indelMany(reference: string, candidates: ReadonlyArray<string>, maxDistance?: number | undefined | null): Array<number>
 
@@ -609,7 +615,9 @@ export declare function levenshteinBatch(pairs: ReadonlyArray<ReadonlyArray<stri
  * Returns an array of distances, one per candidate, in the same order as the input.
  * If `maxDistance` is provided, candidates with distance exceeding the threshold
  * will return `maxDistance + 1`, at most 4294967295 (enabling early termination
- * for better performance).
+ * for better performance). `maxDistance` must be a non-negative integer or
+ * `Infinity` (no limit); NaN, negative and fractional values throw an
+ * `InvalidArg` error.
  */
 export declare function levenshteinMany(reference: string, candidates: ReadonlyArray<string>, maxDistance?: number | undefined | null): Array<number>
 

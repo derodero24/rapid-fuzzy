@@ -758,7 +758,7 @@ Serialized indexes contain the item strings plus 4 bytes per item (see [Index Se
 - `hamming()` / `normalizedHamming()` return `null` when the input strings have different lengths.
 - `closest()` returns `null` if no item matches the query, if the best match scores below `minScore`, or if the item list is empty.
 - Methods of a `FuzzyIndex`, `FuzzyObjectIndex` or `KeyedFuzzyIndex` do not throw after `.destroy()`: the index behaves as an empty one and accepts new items.
-- `maxResults` must be a non-negative integer or `Infinity`; `NaN`, negative or fractional values throw.
+- `maxResults`, and the `maxDistance` of `levenshteinMany`, `damerauLevenshteinMany`, `indelMany`, `hammingMany` and their `*ManyU32` variants, must be a non-negative integer or `Infinity` (no limit); `NaN`, negative or fractional values throw.
 - `remove(index)` of a `FuzzyIndex`, `KeyedFuzzyIndex` or `FuzzyObjectIndex` returns `false` for an index out of range (negative, or not less than `size`), and throws a `TypeError` for an index that is not a number and a `RangeError` for one that is not an integer (`NaN`, `±Infinity` or a fraction).
 - `*Batch` functions throw if a pair is not exactly two strings; `*Many` similarity functions throw on a `NaN` `minSimilarity`.
 - `FuzzyIndex.deserialize()` / `FuzzyObjectIndex.deserialize()` throw on corrupt data or data from another format version.

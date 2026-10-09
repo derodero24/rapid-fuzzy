@@ -530,7 +530,9 @@ export function damerauLevenshteinBatch(pairs) {
  *
  * Returns an array of distances, one per candidate, in the same order as the input.
  * If `maxDistance` is provided, candidates with distance exceeding the threshold
- * will return `maxDistance + 1` (enabling early termination for better performance).
+ * will return `maxDistance + 1`, at most 4294967295 (enabling early termination
+ * for better performance). `maxDistance` must be a non-negative integer or
+ * `Infinity` (no limit); NaN, negative and fractional values throw an `Error`.
  * @param {string} reference
  * @param {string[]} candidates
  * @param {number | null} [maxDistance]
@@ -543,9 +545,14 @@ export function damerauLevenshteinMany(reference, candidates, maxDistance) {
         const len0 = WASM_VECTOR_LEN;
         const ptr1 = passArrayJsValueToWasm0(candidates, wasm.__wbindgen_export);
         const len1 = WASM_VECTOR_LEN;
-        wasm.damerauLevenshteinMany(retptr, ptr0, len0, ptr1, len1, isLikeNone(maxDistance) ? Number.MAX_SAFE_INTEGER : (maxDistance) >>> 0);
+        wasm.damerauLevenshteinMany(retptr, ptr0, len0, ptr1, len1, !isLikeNone(maxDistance), isLikeNone(maxDistance) ? 0 : maxDistance);
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        if (r3) {
+            throw takeObject(r2);
+        }
         var v3 = getArrayU32FromWasm0(r0, r1).slice();
         wasm.__wbindgen_export4(r0, r1 * 4, 4);
         return v3;
@@ -608,18 +615,31 @@ export function hammingBatch(pairs) {
  * Returns `null` for candidates with a different length than the reference.
  * If `maxDistance` is provided, candidates with distance exceeding the threshold
  * will also return `null` (enabling early termination for better performance).
+ * `maxDistance` must be a non-negative integer or `Infinity` (no limit); NaN,
+ * negative and fractional values throw an `Error`.
  * @param {string} reference
  * @param {string[]} candidates
  * @param {number | null} [maxDistance]
  * @returns {(number | null)[]}
  */
 export function hammingMany(reference, candidates, maxDistance) {
-    const ptr0 = passStringToWasm0(reference, wasm.__wbindgen_export, wasm.__wbindgen_export2);
-    const len0 = WASM_VECTOR_LEN;
-    const ptr1 = passArrayJsValueToWasm0(candidates, wasm.__wbindgen_export);
-    const len1 = WASM_VECTOR_LEN;
-    const ret = wasm.hammingMany(ptr0, len0, ptr1, len1, isLikeNone(maxDistance) ? Number.MAX_SAFE_INTEGER : (maxDistance) >>> 0);
-    return takeObject(ret);
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passStringToWasm0(reference, wasm.__wbindgen_export, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArrayJsValueToWasm0(candidates, wasm.__wbindgen_export);
+        const len1 = WASM_VECTOR_LEN;
+        wasm.hammingMany(retptr, ptr0, len0, ptr1, len1, !isLikeNone(maxDistance), isLikeNone(maxDistance) ? 0 : maxDistance);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        if (r2) {
+            throw takeObject(r1);
+        }
+        return takeObject(r0);
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
 }
 
 /**
@@ -679,7 +699,9 @@ export function indelBatch(pairs) {
  *
  * Returns an array of distances, one per candidate, in the same order as the input.
  * If `maxDistance` is provided, candidates with distance exceeding the threshold
- * will return `maxDistance + 1` (enabling early termination for better performance).
+ * will return `maxDistance + 1`, at most 4294967295 (enabling early termination
+ * for better performance). `maxDistance` must be a non-negative integer or
+ * `Infinity` (no limit); NaN, negative and fractional values throw an `Error`.
  * @param {string} reference
  * @param {string[]} candidates
  * @param {number | null} [maxDistance]
@@ -692,9 +714,14 @@ export function indelMany(reference, candidates, maxDistance) {
         const len0 = WASM_VECTOR_LEN;
         const ptr1 = passArrayJsValueToWasm0(candidates, wasm.__wbindgen_export);
         const len1 = WASM_VECTOR_LEN;
-        wasm.indelMany(retptr, ptr0, len0, ptr1, len1, isLikeNone(maxDistance) ? Number.MAX_SAFE_INTEGER : (maxDistance) >>> 0);
+        wasm.indelMany(retptr, ptr0, len0, ptr1, len1, !isLikeNone(maxDistance), isLikeNone(maxDistance) ? 0 : maxDistance);
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        if (r3) {
+            throw takeObject(r2);
+        }
         var v3 = getArrayU32FromWasm0(r0, r1).slice();
         wasm.__wbindgen_export4(r0, r1 * 4, 4);
         return v3;
@@ -918,7 +945,9 @@ export function levenshteinBatch(pairs) {
  *
  * Returns an array of distances, one per candidate, in the same order as the input.
  * If `maxDistance` is provided, candidates with distance exceeding the threshold
- * will return `maxDistance + 1` (enabling early termination for better performance).
+ * will return `maxDistance + 1`, at most 4294967295 (enabling early termination
+ * for better performance). `maxDistance` must be a non-negative integer or
+ * `Infinity` (no limit); NaN, negative and fractional values throw an `Error`.
  * @param {string} reference
  * @param {string[]} candidates
  * @param {number | null} [maxDistance]
@@ -931,9 +960,14 @@ export function levenshteinMany(reference, candidates, maxDistance) {
         const len0 = WASM_VECTOR_LEN;
         const ptr1 = passArrayJsValueToWasm0(candidates, wasm.__wbindgen_export);
         const len1 = WASM_VECTOR_LEN;
-        wasm.levenshteinMany(retptr, ptr0, len0, ptr1, len1, isLikeNone(maxDistance) ? Number.MAX_SAFE_INTEGER : (maxDistance) >>> 0);
+        wasm.levenshteinMany(retptr, ptr0, len0, ptr1, len1, !isLikeNone(maxDistance), isLikeNone(maxDistance) ? 0 : maxDistance);
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        if (r3) {
+            throw takeObject(r2);
+        }
         var v3 = getArrayU32FromWasm0(r0, r1).slice();
         wasm.__wbindgen_export4(r0, r1 * 4, 4);
         return v3;

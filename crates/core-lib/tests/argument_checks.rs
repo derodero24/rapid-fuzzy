@@ -2,6 +2,7 @@
 //! as doubles, which napi-rs and wasm-bindgen would otherwise wrap modulo
 //! 2^32 (or compare against silently).
 
+use rapid_fuzzy_core::distance::{self as d, DistanceError, check_max_distance};
 use rapid_fuzzy_core::search::{FuzzyIndexCore, KeyedFuzzyIndexCore, check_remove_index};
 
 #[test]
@@ -56,4 +57,76 @@ fn checked_out_of_range_indexes_remove_nothing() {
         assert!(!removed && !removed_keyed, "{value}");
     }
     assert_eq!((index.size(), keyed.size()), (3, 3));
+}
+
+#[test]
+fn max_distance_accepts_integers_and_infinity() {
+    assert_eq!(check_max_distance(None), Ok(None));
+    assert_eq!(check_max_distance(Some(f64::INFINITY)), Ok(None));
+    assert_eq!(check_max_distance(Some(0.0)), Ok(Some(0)));
+    assert_eq!(check_max_distance(Some(-0.0)), Ok(Some(0)));
+    assert_eq!(check_max_distance(Some(2.0)), Ok(Some(2)));
+    assert_eq!(
+        check_max_distance(Some(f64::from(u32::MAX) - 1.0)),
+        Ok(Some(u32::MAX - 1))
+    );
+    // No distance reaches u32::MAX, so larger thresholds mean no limit
+    // instead of wrapping modulo 2^32 (2^32 used to mean 0).
+    for value in [f64::from(u32::MAX), 4_294_967_296.0, 4_294_967_298.0, 1e300] {
+        assert_eq!(check_max_distance(Some(value)), Ok(None), "{value}");
+    }
+}
+
+#[test]
+fn max_distance_rejects_nan_negative_and_fractional_values() {
+    for (value, shown) in [
+        (f64::NAN, "NaN"),
+        (f64::NEG_INFINITY, "-Infinity"),
+        (-1.0, "-1"),
+        (-4_294_967_295.0, "-4294967295"),
+        (2.9, "2.9"),
+        (0.5, "0.5"),
+    ] {
+        let err = check_max_distance(Some(value)).unwrap_err();
+        assert!(
+            matches!(err, DistanceError::InvalidMaxDistance(v) if v.to_bits() == value.to_bits()),
+            "{err:?}"
+        );
+        assert_eq!(
+            err.to_string(),
+            format!("maxDistance must be a non-negative integer or Infinity, got {shown}")
+        );
+    }
+}
+
+#[test]
+fn unlimited_max_distances_give_the_unfiltered_distances() {
+    let candidates: Vec<String> = [
+        "kitten",
+        "sitting",
+        "kitchen",
+        "",
+        "a much longer candidate",
+    ]
+    .map(String::from)
+    .to_vec();
+    for value in [f64::INFINITY, 4_294_967_296.0, f64::from(u32::MAX)] {
+        let max = check_max_distance(Some(value)).unwrap();
+        assert_eq!(
+            d::levenshtein_many("kitten", &candidates, max),
+            d::levenshtein_many("kitten", &candidates, None)
+        );
+        assert_eq!(
+            d::damerau_levenshtein_many("kitten", &candidates, max),
+            d::damerau_levenshtein_many("kitten", &candidates, None)
+        );
+        assert_eq!(
+            d::indel_many("kitten", &candidates, max),
+            d::indel_many("kitten", &candidates, None)
+        );
+        assert_eq!(
+            d::hamming_many("kitten", &candidates, max),
+            d::hamming_many("kitten", &candidates, None)
+        );
+    }
 }
