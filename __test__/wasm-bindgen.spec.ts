@@ -59,6 +59,67 @@ function thrown(fn: () => unknown): unknown {
 
 const FRUITS = ['apple', 'banana', 'grape', 'orange', 'pineapple', 'apricot'];
 
+/**
+ * Values that are neither a `scoreMode` nor a `matchMode`: every build
+ * rejects them in an options object, and reports a value that is not a
+ * string by its `typeof` (`null` as null).
+ */
+const BAD_MODES: readonly unknown[] = [
+  'mean',
+  'Max',
+  'cross',
+  'CrossKey',
+  '',
+  1,
+  true,
+  {},
+  null,
+  1n,
+  Symbol('x'),
+  () => {},
+  new String('max'),
+];
+
+/** A keyed-search mode option set to a value that is not a mode. */
+interface BadModeCase {
+  field: 'scoreMode' | 'matchMode';
+  bad: unknown;
+  /** What the message of the Node.js binding must match. */
+  nodeMessage: RegExp;
+  keyTexts: string[][];
+  weights: number[];
+  /** `closest()` of a wasm `KeyedFuzzyIndex` with the mode argument `mode`. */
+  closest: (mode: unknown) => unknown;
+  /** `search()` of the same index. */
+  search: (options: WasmBindgen.KeySearchOptions) => unknown;
+}
+
+/**
+ * Expect `{ [field]: bad }` to be rejected by wasm `searchKeys()` and
+ * `KeyedFuzzyIndex.search()`, and `bad` as a `closest()` argument (unless it
+ * is null, which means the default mode there), with a `TypeError` carrying
+ * the message of the Node.js binding.
+ */
+function expectModeRejected(c: BadModeCase): void {
+  const options = { [c.field]: c.bad } as WasmBindgen.KeySearchOptions;
+  const nodeError = thrown(() =>
+    callUnchecked(napi.searchKeys, 'type', c.keyTexts, c.weights, options),
+  );
+  const nodeMessage = nodeError instanceof Error ? nodeError.message : '';
+  expect(nodeMessage).toMatch(c.nodeMessage);
+  const errors = [
+    thrown(() => wasm.searchKeys('type', c.keyTexts, c.weights, options)),
+    thrown(() => c.search(options)),
+  ];
+  if (c.bad !== null) {
+    errors.push(thrown(() => c.closest(c.bad)));
+  }
+  for (const err of errors) {
+    expect(err).toBeInstanceOf(TypeError);
+    expect(err).toHaveProperty('message', expect.stringContaining(nodeMessage));
+  }
+}
+
 describe('wasm-bindgen TypeScript declarations', () => {
   // wasm-bindgen appends the initialization API (InitInput, InitOutput with the
   // raw WebAssembly exports, initSync, init); check the public API before it.
@@ -341,22 +402,16 @@ describe.skipIf(!wasmAvailable)('wasm-bindgen runtime', () => {
 
       it('rejects unknown modes with a TypeError carrying the Node.js message', () => {
         const w = new wasm.KeyedFuzzyIndex(keyTexts, weights);
-        for (const bad of ['mean', 'Max', '', 1, true, {}]) {
-          const options = { scoreMode: bad };
-          const nodeError = thrown(() =>
-            callUnchecked(napi.searchKeys, 'type', keyTexts, weights, options),
-          );
-          const nodeMessage = nodeError instanceof Error ? nodeError.message : '';
-          expect(nodeMessage).toMatch(/^scoreMode must be "weighted", "matched" or "max", got /);
-          const errors = [
-            thrown(() => callUnchecked(wasm.searchKeys, 'type', keyTexts, weights, options)),
-            thrown(() => callUnchecked(w.search.bind(w), 'type', options)),
-            thrown(() => callUnchecked(w.closest.bind(w), 'type', null, bad)),
-          ];
-          for (const err of errors) {
-            expect(err).toBeInstanceOf(TypeError);
-            expect(err).toHaveProperty('message', expect.stringContaining(nodeMessage));
-          }
+        for (const bad of BAD_MODES) {
+          expectModeRejected({
+            field: 'scoreMode',
+            bad,
+            nodeMessage: /^scoreMode must be "weighted", "matched" or "max", got /,
+            keyTexts,
+            weights,
+            closest: (mode) => w.closest('type', null, mode as WasmBindgen.KeyScoreMode),
+            search: (options) => w.search('type', options),
+          });
         }
         w.free();
       });
@@ -465,22 +520,16 @@ describe.skipIf(!wasmAvailable)('wasm-bindgen runtime', () => {
 
       it('rejects unknown modes with a TypeError carrying the Node.js message', () => {
         const w = new wasm.KeyedFuzzyIndex(keyTexts, weights);
-        for (const bad of ['cross', 'CrossKey', '', 1, true, {}]) {
-          const options = { matchMode: bad };
-          const nodeError = thrown(() =>
-            callUnchecked(napi.searchKeys, 'type', keyTexts, weights, options),
-          );
-          const nodeMessage = nodeError instanceof Error ? nodeError.message : '';
-          expect(nodeMessage).toMatch(/^matchMode must be "perKey" or "crossKey", got /);
-          const errors = [
-            thrown(() => callUnchecked(wasm.searchKeys, 'type', keyTexts, weights, options)),
-            thrown(() => callUnchecked(w.search.bind(w), 'type', options)),
-            thrown(() => callUnchecked(w.closest.bind(w), 'type', null, null, bad)),
-          ];
-          for (const err of errors) {
-            expect(err).toBeInstanceOf(TypeError);
-            expect(err).toHaveProperty('message', expect.stringContaining(nodeMessage));
-          }
+        for (const bad of BAD_MODES) {
+          expectModeRejected({
+            field: 'matchMode',
+            bad,
+            nodeMessage: /^matchMode must be "perKey" or "crossKey", got /,
+            keyTexts,
+            weights,
+            closest: (mode) => w.closest('type', null, null, mode as WasmBindgen.KeyMatchMode),
+            search: (options) => w.search('type', options),
+          });
         }
         w.free();
       });

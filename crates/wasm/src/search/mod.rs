@@ -6,11 +6,9 @@ pub use index::FuzzyIndex;
 pub use keyed_index::KeyedFuzzyIndex;
 pub use keys::search_keys;
 
-use std::fmt;
-
 use nucleo_matcher::pattern::CaseMatching;
 use rapid_fuzzy_core::search as core;
-use serde::de::{self, DeserializeOwned, Visitor};
+use serde::de::{self, DeserializeOwned};
 use serde::{Deserialize, Deserializer, Serialize};
 use tsify::Tsify;
 use wasm_bindgen::prelude::*;
@@ -223,18 +221,6 @@ impl KeyScoreMode {
     }
 }
 
-impl<'de> Deserialize<'de> for KeyScoreMode {
-    /// Parsed by [`core::KeyScoreMode::from_name`], so that an unknown mode
-    /// is reported with the message of the Node.js binding.
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        deserializer.deserialize_any(ModeVisitor {
-            from_name: Self::from_name,
-            invalid: core::invalid_score_mode,
-            expecting: r#""weighted", "matched" or "max""#,
-        })
-    }
-}
-
 /// How multi-key search matches the query against the keys of an item (see
 /// `KeySearchOptions.matchMode`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Tsify)]
@@ -277,85 +263,72 @@ impl KeyMatchMode {
     }
 }
 
-impl<'de> Deserialize<'de> for KeyMatchMode {
-    /// Parsed by [`core::KeyMatchMode::from_name`], so that an unknown mode
-    /// is reported with the message of the Node.js binding.
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        deserializer.deserialize_any(ModeVisitor {
-            from_name: Self::from_name,
-            invalid: core::invalid_match_mode,
-            expecting: r#""perKey" or "crossKey""#,
-        })
-    }
-}
-
-/// Read a mode argument (`scoreMode`, `matchMode`): a string parsed by
-/// `from_name`; any other value is reported by `invalid` with its `typeof`.
-/// Errors are `TypeError`s.
+/// Read a mode argument (`scoreMode`, `matchMode`) of `closest()`, which
+/// `null` and `undefined` leave unset: see [`parse_mode`]. Errors are
+/// `TypeError`s.
 fn mode_from_js<T>(
     value: &JsValue,
     from_name: fn(&str) -> Result<T, String>,
     invalid: fn(&str) -> String,
 ) -> Result<T, JsValue> {
-    let mode = match value.as_string() {
-        Some(name) => from_name(&name),
-        None => Err(invalid(&value.js_typeof().as_string().unwrap_or_default())),
-    };
-    mode.map_err(|e| type_error(&e))
+    parse_mode(value, from_name, invalid).map_err(|e| type_error(&e))
 }
 
-/// Deserializes a mode field of an options object like [`mode_from_js`]
-/// reads a mode argument: a string parsed by `from_name`, any other value
-/// reported by `invalid` with the name of its JavaScript type.
-///
-/// Used with `deserialize_any`: serde-wasm-bindgen then calls the visitor
-/// method of the actual JS type, which reports it like the Node.js binding.
-struct ModeVisitor<T> {
+/// Parse a mode value like the Node.js binding does: a string is parsed by
+/// `from_name`, and any other value is reported by `invalid` with its
+/// `typeof` (`null` for null).
+fn parse_mode<T>(
+    value: &JsValue,
     from_name: fn(&str) -> Result<T, String>,
     invalid: fn(&str) -> String,
-    expecting: &'static str,
-}
-
-impl<T> ModeVisitor<T> {
-    fn wrong_type<E: de::Error>(&self, type_name: &str) -> Result<T, E> {
-        Err(E::custom((self.invalid)(type_name)))
+) -> Result<T, String> {
+    match value.as_string() {
+        Some(name) => from_name(&name),
+        None if value.is_null() => Err(invalid("null")),
+        None => Err(invalid(&value.js_typeof().as_string().unwrap_or_default())),
     }
 }
 
-impl<'de, T> Visitor<'de> for ModeVisitor<T> {
-    type Value = T;
-
-    fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.expecting)
+/// Deserialize a mode field of an options object like the Node.js binding
+/// reads it: `undefined` (or a missing field) leaves it unset, and any other
+/// value goes through [`parse_mode`], so that `null` is rejected like the
+/// other values that are not a mode. The field is read as the `JsValue`
+/// itself: serde-wasm-bindgen reports `null` and `undefined` alike as a
+/// unit, and other types with its own messages.
+fn deserialize_mode<'de, D: Deserializer<'de>, T>(
+    deserializer: D,
+    from_name: fn(&str) -> Result<T, String>,
+    invalid: fn(&str) -> String,
+) -> Result<Option<T>, D::Error> {
+    let value: JsValue = serde_wasm_bindgen::preserve::deserialize(deserializer)?;
+    if value.is_undefined() {
+        return Ok(None);
     }
+    parse_mode(&value, from_name, invalid)
+        .map(Some)
+        .map_err(de::Error::custom)
+}
 
-    fn visit_str<E: de::Error>(self, name: &str) -> Result<T, E> {
-        (self.from_name)(name).map_err(E::custom)
-    }
+/// `KeySearchOptions.scoreMode` (see [`deserialize_mode`]).
+fn deserialize_score_mode<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<KeyScoreMode>, D::Error> {
+    deserialize_mode(
+        deserializer,
+        KeyScoreMode::from_name,
+        core::invalid_score_mode,
+    )
+}
 
-    fn visit_bool<E: de::Error>(self, _: bool) -> Result<T, E> {
-        self.wrong_type("boolean")
-    }
-
-    fn visit_i64<E: de::Error>(self, _: i64) -> Result<T, E> {
-        self.wrong_type("number")
-    }
-
-    fn visit_u64<E: de::Error>(self, _: u64) -> Result<T, E> {
-        self.wrong_type("number")
-    }
-
-    fn visit_f64<E: de::Error>(self, _: f64) -> Result<T, E> {
-        self.wrong_type("number")
-    }
-
-    fn visit_map<A: de::MapAccess<'de>>(self, _: A) -> Result<T, A::Error> {
-        self.wrong_type("object")
-    }
-
-    fn visit_seq<A: de::SeqAccess<'de>>(self, _: A) -> Result<T, A::Error> {
-        self.wrong_type("object")
-    }
+/// `KeySearchOptions.matchMode` (see [`deserialize_mode`]).
+fn deserialize_match_mode<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<KeyMatchMode>, D::Error> {
+    deserialize_mode(
+        deserializer,
+        KeyMatchMode::from_name,
+        core::invalid_match_mode,
+    )
 }
 
 /// Options for multi-key search: `searchKeys()`, `KeyedFuzzyIndex.search()`
@@ -423,7 +396,7 @@ pub struct KeySearchOptions {
     /// key in proportion to the share of the query it matches, and `"max"`
     /// scores each term by the key it matches best (see `matchMode`).
     #[tsify(optional)]
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_score_mode")]
     pub score_mode: Option<KeyScoreMode>,
     /// How the query is matched against the keys of an item:
     ///
@@ -452,7 +425,7 @@ pub struct KeySearchOptions {
     /// without exclusions, both modes return the same results. Any other
     /// value throws a `TypeError`.
     #[tsify(optional)]
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_match_mode")]
     pub match_mode: Option<KeyMatchMode>,
 }
 

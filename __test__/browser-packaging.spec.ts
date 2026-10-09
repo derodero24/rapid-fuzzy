@@ -411,6 +411,29 @@ describe.skipIf(!wasmAvailable)('browser.mjs (the WebAssembly build)', () => {
       index.destroy();
     });
 
+    it('rejects a null scoreMode or matchMode option like the Node.js implementation', async () => {
+      const browser = await load();
+      const index = new browser.FuzzyObjectIndex(users, { keys });
+      const native = new NodeFuzzyObjectIndex(users, { keys });
+      for (const options of [{ scoreMode: null }, { matchMode: null }]) {
+        const opts = options as unknown as ObjectIndexSearchOptions;
+        const field = Object.keys(options)[0];
+        const message = new RegExp(`^${field} must be .*, got null$`);
+        expect(() => native.search('john', opts)).toThrow(message);
+        expect(() => searchObjects('john', users, { keys, ...opts })).toThrow(message);
+        expect(() => index.search('john', opts)).toThrow(TypeError);
+        expect(() => index.search('john', opts)).toThrow(
+          new RegExp(`${field} must be .*, got null$`),
+        );
+        expect(() => browser.searchObjects('john', users, { keys, ...opts })).toThrow(TypeError);
+      }
+      // As closest() arguments, null means the default mode.
+      expect(index.closest('john', null, null, null)).toEqual(
+        native.closest('john', null, null, null),
+      );
+      index.destroy();
+    });
+
     it('leaves out the Buffer-based serialize() / deserialize()', async () => {
       const browser = await load();
       expect('serialize' in browser.FuzzyObjectIndex.prototype).toBe(false);
