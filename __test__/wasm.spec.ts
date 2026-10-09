@@ -618,6 +618,25 @@ describe.skipIf(!wasmAvailable)('wasm', () => {
       }
     });
 
+    // Known upstream bug, kept visible: @emnapi/core's stringToUTF8 and
+    // lengthBytesUTF8 (2.0.0-alpha.6, and 1.11.3 stable) read every code unit
+    // in 0xD800-0xDFFF as the lead of a surrogate pair and swallow the next
+    // one, so a lone surrogate eats the following character in the WASI
+    // build ('ab\uD800cd' arrives as 'ab𐁣d'), while the native and
+    // browser builds turn it into U+FFFD. `it.fails` passes while the builds
+    // disagree; once a fixed emnapi is pinned this fails, so drop `.fails`.
+    it.fails('handles lone UTF-16 surrogates like native (emnapi bug)', () => {
+      const items = ['ab\uD800cd', 'end\uD800', 'x\uDC00y'];
+      for (const item of items) {
+        expect(wasm.search('', [item], { returnAllOnEmpty: true })[0]?.item).toBe(
+          native.search('', [item], { returnAllOnEmpty: true })[0]?.item,
+        );
+      }
+      expect(wasm.levenshtein('a\uD800', 'a�')).toBe(native.levenshtein('a\uD800', 'a�'));
+      expect(wasm.levenshtein('\uD800日', 'x')).toBe(native.levenshtein('\uD800日', 'x'));
+      expect(wasm.hamming('\uD800日', 'ab')).toBe(native.hamming('\uD800日', 'ab'));
+    });
+
     it('deserialize() accepts a plain Uint8Array like native', () => {
       const bytes = new Uint8Array(new wasm.FuzzyIndex(['apple', 'banana']).serialize());
       expect(wasm.FuzzyIndex.deserialize(bytes).size).toBe(2);

@@ -55,7 +55,10 @@ impl From<rapid_fuzzy_core::search::MatchType> for MatchType {
 /// A single fuzzy search result with the matched item and its score.
 #[napi(object)]
 pub struct SearchResult {
-    /// The original string that matched.
+    /// The matched item. Strings are converted to UTF-8 on the way into
+    /// Rust, so this is the same string as `items[index]` unless that one
+    /// contains a lone UTF-16 surrogate (for example from slicing an emoji in
+    /// half), which becomes U+FFFD; `index` always identifies your string.
     pub item: String,
     /// The match score normalized to 0.0-1.0 range (1.0 is a perfect match).
     pub score: f64,
@@ -746,7 +749,9 @@ pub fn search(
 
 /// Find the closest matching string from a list.
 ///
-/// Returns the best match, or null if no match is found.
+/// Returns the best match, or null if no match is found. Like
+/// `SearchResult.item`, the returned string is converted to UTF-8: a lone
+/// UTF-16 surrogate in it becomes U+FFFD.
 /// If minScore is provided, returns null when the best match scores below the
 /// threshold. A NaN minScore throws an `InvalidArg` error.
 #[napi]

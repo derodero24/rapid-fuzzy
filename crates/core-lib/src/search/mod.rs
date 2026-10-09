@@ -35,7 +35,9 @@ pub enum MatchType {
 /// A single fuzzy search result with the matched item and its score.
 #[derive(Debug, Clone)]
 pub struct SearchResult {
-    /// The original string that matched.
+    /// The matched item, as converted to UTF-8 by the bindings: a lone UTF-16
+    /// surrogate of the caller's string is U+FFFD here (see the bindings'
+    /// `SearchResult.item`).
     pub item: String,
     /// The match score normalized to 0.0-1.0 range (1.0 is a perfect match).
     pub score: f64,

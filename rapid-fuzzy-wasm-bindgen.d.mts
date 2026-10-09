@@ -33,7 +33,10 @@ export interface IndexSearchResult {
  */
 export interface SearchResult {
     /**
-     * The original string that matched.
+     * The matched item. Strings are converted to UTF-8 on the way into
+     * Rust, so this is the same string as `items[index]` unless that one
+     * contains a lone UTF-16 surrogate (for example from slicing an emoji in
+     * half), which becomes U+FFFD; `index` always identifies your string.
      */
     item: string;
     /**
@@ -284,7 +287,8 @@ export class FuzzyIndex {
     /**
      * Find the closest matching string in the index.
      *
-     * Returns the best match, or null if no match is found.
+     * Returns the best match, or null if no match is found: the index's
+     * copy of the item, converted to UTF-8 like `SearchResult.item`.
      * If `minScore` is provided, returns null when the best match scores below
      * the threshold. A NaN `minScore` throws a `TypeError`.
      */
@@ -438,7 +442,9 @@ export class KeyedFuzzyIndex {
 /**
  * Find the closest matching string from a list.
  *
- * Returns the best match, or null if no match is found.
+ * Returns the best match, or null if no match is found. Like
+ * `SearchResult.item`, the returned string is converted to UTF-8: a lone
+ * UTF-16 surrogate in it becomes U+FFFD.
  * If `minScore` is provided, returns null when the best match scores below
  * the threshold. A NaN `minScore` throws a `TypeError`.
  */
