@@ -17,7 +17,8 @@ use napi::{Status, ValueType};
 use napi_derive::napi;
 use nucleo_matcher::pattern::CaseMatching;
 use rapid_fuzzy_core::search::{
-    KeyScoreMode, SearchKeysOptions, check_max_results, invalid_score_mode, is_empty_query,
+    KeyMatchMode, KeyScoreMode, SearchKeysOptions, check_max_results, invalid_match_mode,
+    invalid_score_mode, is_empty_query,
 };
 
 // -------------------------
@@ -214,7 +215,7 @@ impl ValidateNapiValue for SearchOptions {}
 /// Options for multi-key search: `searchKeys()`, `KeyedFuzzyIndex.search()`
 /// and the object search built on them (`searchObjects()`,
 /// `FuzzyObjectIndex.search()`). The `SearchOptions` fields, plus
-/// `scoreMode`.
+/// `scoreMode` and `matchMode`.
 #[napi(object, object_from_js = false, object_to_js = false)]
 pub struct KeySearchOptions {
     /// Maximum number of results to return: a non-negative integer, or
@@ -254,8 +255,40 @@ pub struct KeySearchOptions {
     /// highest `weight * keyScore`, or highest `keyScore` in `'max'` mode;
     /// the first one on a tie), then by index. Any other value throws an
     /// `InvalidArg` error.
+    ///
+    /// With `matchMode: 'crossKey'`, `'matched'` counts the weight of each
+    /// key in proportion to the share of the query it matches, and `'max'`
+    /// scores each term by the key it matches best (see `matchMode`).
     #[napi(ts_type = "KeyScoreMode")]
     pub score_mode: Option<KeyScoreMode>,
+    /// How the query is matched against the keys of an item:
+    ///
+    /// - `'perKey'` (default): every key is matched against the whole query,
+    ///   like `search()` matches an item. A key scores 0 unless it matches
+    ///   every term of the query and none of its `!term` exclusions.
+    /// - `'crossKey'`: every term is matched against the keys on its own, so
+    ///   the terms may match different keys: `'john tokyo'` finds an item
+    ///   whose name is "John Smith" and whose city is "Tokyo". Every term
+    ///   must match at least one key, and a `!term` matching any key
+    ///   excludes the item. A key's score (`keyScores`) is the share of the
+    ///   query it matches: the scores of the terms it matches, each counting
+    ///   in proportion to the score of a perfect match of the term (which
+    ///   grows with its length), so a key matching every term perfectly
+    ///   scores 1. `scoreMode` combines these key scores: `'weighted'` as
+    ///   `sum(weight * keyScore) / sum(weight)`, as in `'perKey'` mode;
+    ///   `'matched'` as `sum(weight * keyScore) / sum(weight * coverage)`,
+    ///   where a key's coverage is the share of the query made up by the
+    ///   terms it matches (in `'perKey'` mode, 1 for a key that matches and
+    ///   0 otherwise); `'max'` by taking each term's score on the key it
+    ///   matches best. In `'matched'` and `'max'` mode, an item whose every
+    ///   term matches some key perfectly scores 1.
+    ///
+    /// Only keys with a positive weight take part in either mode; keys whose
+    /// weight is 0 still get `keyScores`. For a query of a single term
+    /// without exclusions, both modes return the same results. Any other
+    /// value throws an `InvalidArg` error.
+    #[napi(ts_type = "KeyMatchMode")]
+    pub match_mode: Option<KeyMatchMode>,
 }
 
 impl OptionsObject for KeySearchOptions {
@@ -266,6 +299,7 @@ impl OptionsObject for KeySearchOptions {
         let base = read_search_options(obj, Self::NAME)?;
         Ok(Self {
             score_mode: obj.get::<ScoreModeArg>("scoreMode")?.map(|arg| arg.0),
+            match_mode: obj.get::<MatchModeArg>("matchMode")?.map(|arg| arg.0),
             ..base.into()
         })
     }
@@ -280,6 +314,7 @@ impl From<SearchOptions> for KeySearchOptions {
             is_case_sensitive: opts.is_case_sensitive,
             return_all_on_empty: opts.return_all_on_empty,
             score_mode: None,
+            match_mode: None,
         }
     }
 }
@@ -306,6 +341,34 @@ impl FromNapiValue for ScoreModeArg {
             }
             // `typeof`-style names: number, null, object, ...
             other => Err(invalid_score_mode(&other.to_string().to_lowercase())),
+        };
+        mode.map(Self)
+            .map_err(|message| napi::Error::new(Status::InvalidArg, message))
+    }
+}
+
+/// A `matchMode` value: `'perKey'` or `'crossKey'`. Anything else (including
+/// other types) is rejected with an `InvalidArg` error.
+pub struct MatchModeArg(pub KeyMatchMode);
+
+impl TypeName for MatchModeArg {
+    fn type_name() -> &'static str {
+        "KeyMatchMode"
+    }
+
+    fn value_type() -> ValueType {
+        ValueType::String
+    }
+}
+
+impl FromNapiValue for MatchModeArg {
+    unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> napi::Result<Self> {
+        let mode = match unsafe { Unknown::from_napi_value(env, napi_val)? }.get_type()? {
+            ValueType::String => {
+                KeyMatchMode::from_name(&unsafe { String::from_napi_value(env, napi_val)? })
+            }
+            // `typeof`-style names: number, null, object, ...
+            other => Err(invalid_match_mode(&other.to_string().to_lowercase())),
         };
         mode.map(Self)
             .map_err(|message| napi::Error::new(Status::InvalidArg, message))
@@ -369,6 +432,7 @@ impl KeySearchOptionsArg {
                 is_case_sensitive: opts.is_case_sensitive,
                 return_all_on_empty: opts.return_all_on_empty,
                 score_mode: opts.score_mode,
+                match_mode: opts.match_mode,
             },
             Some(OptionsArg::MaxResults(max_results)) => SearchKeysOptions {
                 max_results,

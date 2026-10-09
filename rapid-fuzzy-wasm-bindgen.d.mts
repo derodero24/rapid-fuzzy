@@ -74,8 +74,10 @@ export interface KeySearchResult {
      */
     score: number;
     /**
-     * Per-key scores in the same order as the input keys.
-     * A score of 0.0 means the item did not match on that key.
+     * Per-key scores in the same order as the input keys: how well each
+     * key matches the query (with `matchMode: "crossKey"`, the share of the
+     * query it matches). A score of 0.0 means the item did not match on
+     * that key.
      */
     keyScores: number[];
 }
@@ -96,6 +98,12 @@ export type MatchType = "Exact" | "Prefix" | "Contains" | "Fuzzy";
  * into its `score` (see `KeySearchOptions.scoreMode`).
  */
 export type KeyScoreMode = "weighted" | "matched" | "max";
+
+/**
+ * How multi-key search matches the query against the keys of an item (see
+ * `KeySearchOptions.matchMode`).
+ */
+export type KeyMatchMode = "perKey" | "crossKey";
 
 /**
  * Options for multi-key search: `searchKeys()`, `KeyedFuzzyIndex.search()`
@@ -124,8 +132,41 @@ export interface KeySearchOptions extends SearchOptions {
      * highest `weight * keyScore`, or highest `keyScore` in `"max"` mode;
      * the first one on a tie), then by index. Any other value throws a
      * `TypeError`.
+     *
+     * With `matchMode: "crossKey"`, `"matched"` counts the weight of each
+     * key in proportion to the share of the query it matches, and `"max"`
+     * scores each term by the key it matches best (see `matchMode`).
      */
     scoreMode?: KeyScoreMode;
+    /**
+     * How the query is matched against the keys of an item:
+     *
+     * - `"perKey"` (default): every key is matched against the whole query,
+     *   like `search()` matches an item. A key scores 0 unless it matches
+     *   every term of the query and none of its `!term` exclusions.
+     * - `"crossKey"`: every term is matched against the keys on its own, so
+     *   the terms may match different keys: `"john tokyo"` finds an item
+     *   whose name is "John Smith" and whose city is "Tokyo". Every term
+     *   must match at least one key, and a `!term` matching any key
+     *   excludes the item. A key's score (`keyScores`) is the share of the
+     *   query it matches: the scores of the terms it matches, each counting
+     *   in proportion to the score of a perfect match of the term (which
+     *   grows with its length), so a key matching every term perfectly
+     *   scores 1. `scoreMode` combines these key scores: `"weighted"` as
+     *   `sum(weight * keyScore) / sum(weight)`, as in `"perKey"` mode;
+     *   `"matched"` as `sum(weight * keyScore) / sum(weight * coverage)`,
+     *   where a key's coverage is the share of the query made up by the
+     *   terms it matches (in `"perKey"` mode, 1 for a key that matches and
+     *   0 otherwise); `"max"` by taking each term's score on the key it
+     *   matches best. In `"matched"` and `"max"` mode, an item whose every
+     *   term matches some key perfectly scores 1.
+     *
+     * Only keys with a positive weight take part in either mode; keys whose
+     * weight is 0 still get `keyScores`. For a query of a single term
+     * without exclusions, both modes return the same results. Any other
+     * value throws a `TypeError`.
+     */
+    matchMode?: KeyMatchMode;
 }
 
 /**
@@ -267,11 +308,12 @@ export class KeyedFuzzyIndex {
      *
      * Returns the index of the best match, or null if no match is found.
      * If `minScore` is provided, returns null when the best match scores below the threshold.
-     * `scoreMode` combines the per-key scores like the `search()` option of
-     * the same name (default `"weighted"`): the result is the first result of
-     * `search(query, { maxResults: 1, minScore, scoreMode })`.
+     * `scoreMode` and `matchMode` work like the `search()` options of the
+     * same names (defaults `"weighted"` and `"perKey"`): the result is the
+     * first result of
+     * `search(query, { maxResults: 1, minScore, scoreMode, matchMode })`.
      */
-    closest(query: string, minScore?: number | null, scoreMode?: KeyScoreMode | null): number | null;
+    closest(query: string, minScore?: number | null, scoreMode?: KeyScoreMode | null, matchMode?: KeyMatchMode | null): number | null;
     /**
      * Reconstruct a KeyedFuzzyIndex from a previously serialized Uint8Array.
      */
@@ -303,7 +345,8 @@ export class KeyedFuzzyIndex {
      * Returns results sorted by combined score (best match first), exactly
      * like `searchKeys()` on the same key texts and weights. The second
      * argument accepts either a number (maxResults) or a KeySearchOptions
-     * object, whose `scoreMode` selects how the per-key scores are combined.
+     * object, whose `matchMode` selects how the query is matched against
+     * the keys and `scoreMode` how the per-key scores are combined.
      */
     search(query: string, options?: number | KeySearchOptions | null): KeySearchResult[];
     /**
@@ -635,7 +678,8 @@ export function search(query: string, items: ReadonlyArray<string>, options?: nu
  * `keyTexts[k]` is an array of strings for key `k`, one per item.
  * `weights` specifies the relative importance of each key.
  * `options` is a `KeySearchOptions` object or a number (maxResults); its
- * `scoreMode` selects how the per-key scores are combined.
+ * `matchMode` selects how the query is matched against the keys and its
+ * `scoreMode` how the per-key scores are combined.
  *
  * Returns results sorted by combined score (best match first), exactly like
  * `KeyedFuzzyIndex.search` on the same key texts and weights.
@@ -643,7 +687,7 @@ export function search(query: string, items: ReadonlyArray<string>, options?: nu
  * weight count that differs from the key count, negative, NaN or infinite
  * weights, or weights summing to 0 or Infinity), like the `KeyedFuzzyIndex`
  * constructor, and a `TypeError` for invalid options (such as an unknown
- * `scoreMode`).
+ * `scoreMode` or `matchMode`).
  */
 export function searchKeys(query: string, keyTexts: ReadonlyArray<ReadonlyArray<string>>, weights: ArrayLike<number>, options?: number | KeySearchOptions | null): KeySearchResult[];
 
@@ -791,7 +835,7 @@ export interface InitOutput {
     readonly jaroWinklerMany: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
     readonly keyedfuzzyindex_add: (a: number, b: number, c: number) => void;
     readonly keyedfuzzyindex_addMany: (a: number, b: number, c: number) => void;
-    readonly keyedfuzzyindex_closest: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
+    readonly keyedfuzzyindex_closest: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => void;
     readonly keyedfuzzyindex_deserialize: (a: number, b: number, c: number) => void;
     readonly keyedfuzzyindex_destroy: (a: number) => void;
     readonly keyedfuzzyindex_new: (a: number, b: number, c: number, d: number) => void;

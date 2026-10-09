@@ -190,6 +190,9 @@ function assertSearchOptions(options) {
  * @param {boolean} [options.isCaseSensitive] - Enable case-sensitive matching.
  * @param {'weighted' | 'matched' | 'max'} [options.scoreMode] - How the
  *   per-key scores are combined (default `'weighted'`).
+ * @param {'perKey' | 'crossKey'} [options.matchMode] - How the query is
+ *   matched against the keys (default `'perKey'`; with `'crossKey'` the
+ *   query's terms may match different keys).
  * @returns {Array<{ item: T; index: number; score: number; keyScores: number[] }>}
  */
 function searchObjects(query, items, options) {
@@ -271,7 +274,7 @@ class FuzzyObjectIndex {
   /**
    * Search the index for objects matching the query.
    * @param {string} query
-   * @param {number | { maxResults?: number; minScore?: number; isCaseSensitive?: boolean; returnAllOnEmpty?: boolean; scoreMode?: 'weighted' | 'matched' | 'max' } | null} [options]
+   * @param {number | { maxResults?: number; minScore?: number; isCaseSensitive?: boolean; returnAllOnEmpty?: boolean; scoreMode?: 'weighted' | 'matched' | 'max'; matchMode?: 'perKey' | 'crossKey' } | null} [options]
    *   A KeySearchOptions object, or a number as a shorthand for `maxResults`.
    * @returns {Array<{ item: T; index: number; score: number; keyScores: number[] }>}
    */
@@ -287,15 +290,17 @@ class FuzzyObjectIndex {
 
   /**
    * Find the closest matching object: the item of the first result of
-   * `search(query, { maxResults: 1, minScore, scoreMode })`.
+   * `search(query, { maxResults: 1, minScore, scoreMode, matchMode })`.
    * @param {string} query
    * @param {number | null} [minScore]
    * @param {'weighted' | 'matched' | 'max' | null} [scoreMode] - How the
    *   per-key scores are combined (default `'weighted'`).
+   * @param {'perKey' | 'crossKey' | null} [matchMode] - How the query is
+   *   matched against the keys (default `'perKey'`).
    * @returns {T | null}
    */
-  closest(query, minScore, scoreMode) {
-    const index = this.#index.closest(query, minScore, scoreMode);
+  closest(query, minScore, scoreMode, matchMode) {
+    const index = this.#index.closest(query, minScore, scoreMode, matchMode);
     return index === null ? null : this.#items[index];
   }
 

@@ -321,6 +321,35 @@ describe.skipIf(!wasmAvailable)('browser.mjs (the WebAssembly build)', () => {
       expect(index.size).toBe(0);
     });
 
+    it('passes matchMode through like the Node.js implementation (#782)', async () => {
+      const browser = await load();
+      const index = new browser.FuzzyObjectIndex(users, { keys });
+      const native = new NodeFuzzyObjectIndex(users, { keys });
+      for (const matchMode of ['perKey', 'crossKey'] as const) {
+        for (const scoreMode of ['weighted', 'matched', 'max'] as const) {
+          for (const query of ['john boston', 'smith example', 'john !boston', 'denver']) {
+            const options = { matchMode, scoreMode };
+            const expected = searchObjects(query, users, { keys, ...options });
+            expect(browser.searchObjects(query, users, { keys, ...options })).toEqual(expected);
+            expect(index.search(query, options)).toEqual(native.search(query, options));
+            expect(index.closest(query, 0.6, scoreMode, matchMode)).toEqual(
+              native.closest(query, 0.6, scoreMode, matchMode),
+            );
+          }
+        }
+      }
+      // The terms of 'john boston' are in different keys of John Smith.
+      expect(index.search('john boston')).toEqual([]);
+      expect(index.closest('john boston', null, 'max', 'crossKey')).toEqual(users[0]);
+      const bogus = 'cross' as 'crossKey';
+      expect(() => index.search('john', { matchMode: bogus })).toThrow(TypeError);
+      expect(() => index.closest('john', null, null, bogus)).toThrow(TypeError);
+      expect(() => browser.searchObjects('john', users, { keys, matchMode: bogus })).toThrow(
+        TypeError,
+      );
+      index.destroy();
+    });
+
     it('passes scoreMode through like the Node.js implementation (#781)', async () => {
       const browser = await load();
       const index = new browser.FuzzyObjectIndex(users, { keys });

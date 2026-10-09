@@ -139,9 +139,9 @@ export declare class KeyedFuzzyIndex {
    * like `searchKeys()` on the same key texts and weights.
    *
    * The second argument accepts either a number (maxResults shorthand) or a
-   * KeySearchOptions object, whose `scoreMode` selects how the per-key
-   * scores are combined. `maxResults` must be a non-negative integer or
-   * `Infinity`.
+   * KeySearchOptions object, whose `matchMode` selects how the query is
+   * matched against the keys and `scoreMode` how the per-key scores are
+   * combined. `maxResults` must be a non-negative integer or `Infinity`.
    */
   search(query: string, options?: number | KeySearchOptions | undefined | null): Array<KeySearchResult>
   /**
@@ -149,13 +149,14 @@ export declare class KeyedFuzzyIndex {
    *
    * Returns the index of the best match, or null if no match is found.
    * If `minScore` is provided, returns null when the best match scores below the threshold.
-   * `scoreMode` combines the per-key scores like the `search()` option of
-   * the same name (default `'weighted'`): the result is the first result of
-   * `search(query, { maxResults: 1, minScore, scoreMode })`.
+   * `scoreMode` and `matchMode` work like the `search()` options of the
+   * same names (defaults `'weighted'` and `'perKey'`): the result is the
+   * first result of
+   * `search(query, { maxResults: 1, minScore, scoreMode, matchMode })`.
    *
    * Use the returned index to look up the item in your own data array.
    */
-  closest(query: string, minScore?: number | undefined | null, scoreMode?: KeyScoreMode | undefined | null): number | null
+  closest(query: string, minScore?: number | undefined | null, scoreMode?: KeyScoreMode | undefined | null, matchMode?: KeyMatchMode | undefined | null): number | null
   /**
    * Add a single item to the index.
    *
@@ -415,7 +416,7 @@ export declare function jaroWinklerManyF64(reference: string, candidates: Readon
  * Options for multi-key search: `searchKeys()`, `KeyedFuzzyIndex.search()`
  * and the object search built on them (`searchObjects()`,
  * `FuzzyObjectIndex.search()`). The `SearchOptions` fields, plus
- * `scoreMode`.
+ * `scoreMode` and `matchMode`.
  */
 export interface KeySearchOptions {
   /**
@@ -466,9 +467,51 @@ export interface KeySearchOptions {
    * highest `weight * keyScore`, or highest `keyScore` in `'max'` mode;
    * the first one on a tie), then by index. Any other value throws an
    * `InvalidArg` error.
+   *
+   * With `matchMode: 'crossKey'`, `'matched'` counts the weight of each
+   * key in proportion to the share of the query it matches, and `'max'`
+   * scores each term by the key it matches best (see `matchMode`).
    */
   scoreMode?: KeyScoreMode | undefined
+  /**
+   * How the query is matched against the keys of an item:
+   *
+   * - `'perKey'` (default): every key is matched against the whole query,
+   *   like `search()` matches an item. A key scores 0 unless it matches
+   *   every term of the query and none of its `!term` exclusions.
+   * - `'crossKey'`: every term is matched against the keys on its own, so
+   *   the terms may match different keys: `'john tokyo'` finds an item
+   *   whose name is "John Smith" and whose city is "Tokyo". Every term
+   *   must match at least one key, and a `!term` matching any key
+   *   excludes the item. A key's score (`keyScores`) is the share of the
+   *   query it matches: the scores of the terms it matches, each counting
+   *   in proportion to the score of a perfect match of the term (which
+   *   grows with its length), so a key matching every term perfectly
+   *   scores 1. `scoreMode` combines these key scores: `'weighted'` as
+   *   `sum(weight * keyScore) / sum(weight)`, as in `'perKey'` mode;
+   *   `'matched'` as `sum(weight * keyScore) / sum(weight * coverage)`,
+   *   where a key's coverage is the share of the query made up by the
+   *   terms it matches (in `'perKey'` mode, 1 for a key that matches and
+   *   0 otherwise); `'max'` by taking each term's score on the key it
+   *   matches best. In `'matched'` and `'max'` mode, an item whose every
+   *   term matches some key perfectly scores 1.
+   *
+   * Only keys with a positive weight take part in either mode; keys whose
+   * weight is 0 still get `keyScores`. For a query of a single term
+   * without exclusions, both modes return the same results. Any other
+   * value throws an `InvalidArg` error.
+   */
+  matchMode?: KeyMatchMode | undefined
 }
+
+/**
+ * How multi-key search (`searchKeys()`, `KeyedFuzzyIndex`, `searchObjects()`,
+ * `FuzzyObjectIndex`) matches the query against the keys of an item:
+ * `'perKey'` (the default: every key against the whole query) or
+ * `'crossKey'` (every term against the keys on its own). See
+ * `KeySearchOptions.matchMode`.
+ */
+export type KeyMatchMode = 'perKey' | 'crossKey'
 
 /**
  * How multi-key search (`searchKeys()`, `KeyedFuzzyIndex`, `searchObjects()`,
@@ -488,8 +531,10 @@ export interface KeySearchResult {
    */
   score: number
   /**
-   * Per-key scores in the same order as the input keys.
-   * A score of 0.0 means the item did not match on that key.
+   * Per-key scores in the same order as the input keys: how well each
+   * key matches the query (with `matchMode: 'crossKey'`, the share of the
+   * query it matches). A score of 0.0 means the item did not match on
+   * that key.
    */
   keyScores: Array<number>
 }
@@ -723,9 +768,12 @@ export declare function search(query: string, items: ReadonlyArray<string>, opti
  * All inner arrays must have the same length (the number of items).
  * `weights` specifies the relative importance of each key.
  *
- * Every key is scored like `search()` scores an item; `keyScores` holds
- * these scores for every key, including keys whose weight is 0. By default
- * the combined score is `sum(keyScore * weight) / sum(weights)`; the
+ * By default every key is scored like `search()` scores an item, against
+ * the whole query; with `matchMode: 'crossKey'` every term of the query is
+ * matched against the keys on its own, so the terms may match different
+ * keys (see `KeySearchOptions.matchMode`). `keyScores` holds the key
+ * scores for every key, including keys whose weight is 0. By default the
+ * combined score is `sum(keyScore * weight) / sum(weights)`; the
  * `scoreMode` option selects another way to combine them (see
  * `KeySearchOptions.scoreMode`). Items whose combined score is 0 (no match
  * on a key with a positive weight) are not returned.
@@ -740,7 +788,7 @@ export declare function search(query: string, items: ReadonlyArray<string>, opti
  * when there is not exactly one weight per key, or when a weight is
  * negative, NaN or infinite, or the weights sum to 0 or to Infinity (the
  * same errors as the `KeyedFuzzyIndex` constructor), and for an unknown
- * `scoreMode`.
+ * `scoreMode` or `matchMode`.
  */
 export declare function searchKeys(query: string, keyTexts: ReadonlyArray<ReadonlyArray<string>>, weights: ReadonlyArray<number>, options?: number | KeySearchOptions | undefined | null): Array<KeySearchResult>
 

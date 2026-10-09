@@ -108,31 +108,54 @@ function optionalFieldsAcceptUndefined(dts, name) {
 }
 
 /**
- * The values of `KeySearchOptions.scoreMode`, which the Rust side types as
- * `KeyScoreMode` (`#[napi(ts_type)]`): napi-rs declares string enums as TS
- * enums, which do not accept string literals. Keep in sync with
- * `KeyScoreMode::from_name` in crates/core-lib/src/search/keys.rs.
+ * The string-literal types of `KeySearchOptions.scoreMode` and `matchMode`,
+ * which the Rust side types as `KeyScoreMode` / `KeyMatchMode`
+ * (`#[napi(ts_type)]`): napi-rs declares string enums as TS enums, which do
+ * not accept string literals. Keep in sync with `KeyScoreMode::from_name` and
+ * `KeyMatchMode::from_name` in crates/core-lib/src/search/keys.rs.
  */
-const KEY_SCORE_MODE = [
-  '/**',
-  ' * How multi-key search (`searchKeys()`, `KeyedFuzzyIndex`, `searchObjects()`,',
-  ' * `FuzzyObjectIndex`) combines the per-key scores of an item into its score:',
-  " * `'weighted'` (the default), `'matched'` or `'max'`. See",
-  ' * `KeySearchOptions.scoreMode`.',
-  ' */',
-  "export type KeyScoreMode = 'weighted' | 'matched' | 'max'",
-].join('\n');
+const KEY_MODE_TYPES = [
+  [
+    'KeyScoreMode',
+    [
+      '/**',
+      ' * How multi-key search (`searchKeys()`, `KeyedFuzzyIndex`, `searchObjects()`,',
+      ' * `FuzzyObjectIndex`) combines the per-key scores of an item into its score:',
+      " * `'weighted'` (the default), `'matched'` or `'max'`. See",
+      ' * `KeySearchOptions.scoreMode`.',
+      ' */',
+      "export type KeyScoreMode = 'weighted' | 'matched' | 'max'",
+    ],
+  ],
+  [
+    'KeyMatchMode',
+    [
+      '/**',
+      ' * How multi-key search (`searchKeys()`, `KeyedFuzzyIndex`, `searchObjects()`,',
+      ' * `FuzzyObjectIndex`) matches the query against the keys of an item:',
+      " * `'perKey'` (the default: every key against the whole query) or",
+      " * `'crossKey'` (every term against the keys on its own). See",
+      ' * `KeySearchOptions.matchMode`.',
+      ' */',
+      "export type KeyMatchMode = 'perKey' | 'crossKey'",
+    ],
+  ],
+];
 
-/** Declare `KeyScoreMode` after the `KeySearchOptions` interface. Idempotent. */
-function declareKeyScoreMode(dts) {
-  if (dts.includes('export type KeyScoreMode =')) return dts;
-  const start = dts.indexOf('export interface KeySearchOptions {');
-  const end = start === -1 ? -1 : dts.indexOf('\n}\n', start);
-  if (end === -1) {
-    throw new Error('patch-binding: interface KeySearchOptions not found in index.d.ts');
+/** Declare the key mode types after the `KeySearchOptions` interface. Idempotent. */
+function declareKeyModeTypes(dts) {
+  let declared = dts;
+  for (const [name, lines] of KEY_MODE_TYPES) {
+    if (declared.includes(`export type ${name} =`)) continue;
+    const start = declared.indexOf('export interface KeySearchOptions {');
+    const end = start === -1 ? -1 : declared.indexOf('\n}\n', start);
+    if (end === -1) {
+      throw new Error('patch-binding: interface KeySearchOptions not found in index.d.ts');
+    }
+    const at = end + '\n}\n'.length;
+    declared = `${declared.slice(0, at)}\n${lines.join('\n')}\n${declared.slice(at)}`;
   }
-  const at = end + '\n}\n'.length;
-  return `${dts.slice(0, at)}\n${KEY_SCORE_MODE}\n${dts.slice(at)}`;
+  return declared;
 }
 
 function refineDeclarations(dts) {
@@ -140,14 +163,16 @@ function refineDeclarations(dts) {
   for (const name of ['SearchOptions', 'KeySearchOptions']) {
     refined = optionalFieldsAcceptUndefined(refined, name);
   }
-  refined = declareKeyScoreMode(refined);
+  refined = declareKeyModeTypes(refined);
   // Fail loudly if napi-rs changes its output format and the refinements stop applying.
   for (const expected of [
     'export declare function search(query: string, items: ReadonlyArray<string>,',
     '  constructor(items: ReadonlyArray<string>)',
     '  maxResults?: number | undefined',
     '  scoreMode?: KeyScoreMode | undefined',
+    '  matchMode?: KeyMatchMode | undefined',
     "export type KeyScoreMode = 'weighted' | 'matched' | 'max'",
+    "export type KeyMatchMode = 'perKey' | 'crossKey'",
   ]) {
     if (!refined.includes(expected)) {
       throw new Error(`patch-binding: expected \`${expected}\` in index.d.ts`);

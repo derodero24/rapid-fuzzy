@@ -1,3 +1,4 @@
+mod cross_key;
 mod fuzzy_index;
 mod keyed_index;
 mod keys;
@@ -5,7 +6,10 @@ pub mod serialization;
 
 pub use fuzzy_index::FuzzyIndexCore;
 pub use keyed_index::KeyedFuzzyIndexCore;
-pub use keys::{KeyScoreMode, SearchKeysOptions, invalid_score_mode, search_keys_impl};
+pub use keys::{
+    KeyMatchMode, KeyScoreMode, SearchKeysOptions, invalid_match_mode, invalid_score_mode,
+    search_keys_impl,
+};
 
 use std::borrow::Cow;
 use std::cell::RefCell;
@@ -71,8 +75,9 @@ pub struct KeySearchResult {
     /// The combined score (0.0-1.0) of the key scores, as set by the
     /// search's [`KeyScoreMode`].
     pub score: f64,
-    /// Per-key scores in the same order as the input keys.
-    /// A score of 0.0 means the item did not match on that key.
+    /// Per-key scores in the same order as the input keys, as set by the
+    /// search's [`KeyMatchMode`]. A score of 0.0 means the item did not
+    /// match on that key.
     pub key_scores: Vec<f64>,
 }
 
@@ -272,7 +277,11 @@ pub fn pattern_max_score(pattern: &Pattern, matcher: &mut Matcher) -> f64 {
     total.max(1) as f64
 }
 
-fn atom_max_score(atom: &Atom, matcher: &mut Matcher) -> u32 {
+/// Raw score of the best possible match for one term (`atom`): its needle
+/// matched against itself, or the theoretical bound for terms longer than
+/// [`MAX_TERM_CHARS`]. 0 for negative terms, which never contribute to a
+/// score.
+pub(crate) fn atom_max_score(atom: &Atom, matcher: &mut Matcher) -> u32 {
     let needle = atom.needle_text();
     if needle.len() > MAX_TERM_CHARS {
         // Scoring would overflow nucleo's u16 score; use the theoretical bound.
@@ -378,7 +387,15 @@ pub fn pattern_char_mask(pattern: &Pattern) -> u64 {
         .atoms
         .iter()
         .filter(|atom| !atom.negative)
-        .flat_map(|atom| atom.needle_text().chars())
+        .fold(0, |mask, atom| mask | atom_char_mask(atom))
+}
+
+/// Character mask every text matched by one term (`atom`) contains: the
+/// characters of its needle, whether the term is positive or negative (a
+/// `!term` excludes only the texts that its needle matches).
+pub(crate) fn atom_char_mask(atom: &Atom) -> u64 {
+    atom.needle_text()
+        .chars()
         .fold(0, |mask, c| mask | needle_char_bit(c))
 }
 

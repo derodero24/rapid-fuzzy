@@ -210,17 +210,16 @@ impl From<KeyScoreMode> for core::KeyScoreMode {
 }
 
 impl KeyScoreMode {
+    /// The mode named `name` (see [`core::KeyScoreMode::from_name`]).
+    fn from_name(name: &str) -> Result<Self, String> {
+        core::KeyScoreMode::from_name(name).map(Self::from)
+    }
+
     /// Read a `scoreMode` argument, rejecting anything but `"weighted"`,
     /// `"matched"` and `"max"` with a `TypeError` (the message of the Node.js
     /// binding).
     pub(crate) fn from_js(value: &JsValue) -> Result<Self, JsValue> {
-        let mode = match value.as_string() {
-            Some(name) => core::KeyScoreMode::from_name(&name),
-            None => Err(core::invalid_score_mode(
-                &value.js_typeof().as_string().unwrap_or_default(),
-            )),
-        };
-        mode.map(Self::from).map_err(|e| type_error(&e))
+        mode_from_js(value, Self::from_name, core::invalid_score_mode)
     }
 }
 
@@ -228,49 +227,134 @@ impl<'de> Deserialize<'de> for KeyScoreMode {
     /// Parsed by [`core::KeyScoreMode::from_name`], so that an unknown mode
     /// is reported with the message of the Node.js binding.
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct ScoreModeVisitor;
+        deserializer.deserialize_any(ModeVisitor {
+            from_name: Self::from_name,
+            invalid: core::invalid_score_mode,
+            expecting: r#""weighted", "matched" or "max""#,
+        })
+    }
+}
 
-        impl<'de> Visitor<'de> for ScoreModeVisitor {
-            type Value = KeyScoreMode;
+/// How multi-key search matches the query against the keys of an item (see
+/// `KeySearchOptions.matchMode`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Tsify)]
+#[serde(rename_all = "camelCase")]
+pub enum KeyMatchMode {
+    /// Every key is matched against the whole query (the default).
+    PerKey,
+    /// Every term of the query is matched against the keys on its own.
+    CrossKey,
+}
 
-            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str(r#""weighted", "matched" or "max""#)
-            }
-
-            fn visit_str<E: de::Error>(self, name: &str) -> Result<KeyScoreMode, E> {
-                core::KeyScoreMode::from_name(name)
-                    .map(KeyScoreMode::from)
-                    .map_err(E::custom)
-            }
-
-            fn visit_bool<E: de::Error>(self, _: bool) -> Result<KeyScoreMode, E> {
-                Err(E::custom(core::invalid_score_mode("boolean")))
-            }
-
-            fn visit_i64<E: de::Error>(self, _: i64) -> Result<KeyScoreMode, E> {
-                Err(E::custom(core::invalid_score_mode("number")))
-            }
-
-            fn visit_u64<E: de::Error>(self, _: u64) -> Result<KeyScoreMode, E> {
-                Err(E::custom(core::invalid_score_mode("number")))
-            }
-
-            fn visit_f64<E: de::Error>(self, _: f64) -> Result<KeyScoreMode, E> {
-                Err(E::custom(core::invalid_score_mode("number")))
-            }
-
-            fn visit_map<A: de::MapAccess<'de>>(self, _: A) -> Result<KeyScoreMode, A::Error> {
-                Err(de::Error::custom(core::invalid_score_mode("object")))
-            }
-
-            fn visit_seq<A: de::SeqAccess<'de>>(self, _: A) -> Result<KeyScoreMode, A::Error> {
-                Err(de::Error::custom(core::invalid_score_mode("object")))
-            }
+impl From<core::KeyMatchMode> for KeyMatchMode {
+    fn from(mode: core::KeyMatchMode) -> Self {
+        match mode {
+            core::KeyMatchMode::PerKey => Self::PerKey,
+            core::KeyMatchMode::CrossKey => Self::CrossKey,
         }
+    }
+}
 
-        // deserialize_any: serde-wasm-bindgen then calls the visitor method of
-        // the actual JS type, which reports it like the Node.js binding.
-        deserializer.deserialize_any(ScoreModeVisitor)
+impl From<KeyMatchMode> for core::KeyMatchMode {
+    fn from(mode: KeyMatchMode) -> Self {
+        match mode {
+            KeyMatchMode::PerKey => Self::PerKey,
+            KeyMatchMode::CrossKey => Self::CrossKey,
+        }
+    }
+}
+
+impl KeyMatchMode {
+    /// The mode named `name` (see [`core::KeyMatchMode::from_name`]).
+    fn from_name(name: &str) -> Result<Self, String> {
+        core::KeyMatchMode::from_name(name).map(Self::from)
+    }
+
+    /// Read a `matchMode` argument, rejecting anything but `"perKey"` and
+    /// `"crossKey"` with a `TypeError` (the message of the Node.js binding).
+    pub(crate) fn from_js(value: &JsValue) -> Result<Self, JsValue> {
+        mode_from_js(value, Self::from_name, core::invalid_match_mode)
+    }
+}
+
+impl<'de> Deserialize<'de> for KeyMatchMode {
+    /// Parsed by [`core::KeyMatchMode::from_name`], so that an unknown mode
+    /// is reported with the message of the Node.js binding.
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserializer.deserialize_any(ModeVisitor {
+            from_name: Self::from_name,
+            invalid: core::invalid_match_mode,
+            expecting: r#""perKey" or "crossKey""#,
+        })
+    }
+}
+
+/// Read a mode argument (`scoreMode`, `matchMode`): a string parsed by
+/// `from_name`; any other value is reported by `invalid` with its `typeof`.
+/// Errors are `TypeError`s.
+fn mode_from_js<T>(
+    value: &JsValue,
+    from_name: fn(&str) -> Result<T, String>,
+    invalid: fn(&str) -> String,
+) -> Result<T, JsValue> {
+    let mode = match value.as_string() {
+        Some(name) => from_name(&name),
+        None => Err(invalid(&value.js_typeof().as_string().unwrap_or_default())),
+    };
+    mode.map_err(|e| type_error(&e))
+}
+
+/// Deserializes a mode field of an options object like [`mode_from_js`]
+/// reads a mode argument: a string parsed by `from_name`, any other value
+/// reported by `invalid` with the name of its JavaScript type.
+///
+/// Used with `deserialize_any`: serde-wasm-bindgen then calls the visitor
+/// method of the actual JS type, which reports it like the Node.js binding.
+struct ModeVisitor<T> {
+    from_name: fn(&str) -> Result<T, String>,
+    invalid: fn(&str) -> String,
+    expecting: &'static str,
+}
+
+impl<T> ModeVisitor<T> {
+    fn wrong_type<E: de::Error>(&self, type_name: &str) -> Result<T, E> {
+        Err(E::custom((self.invalid)(type_name)))
+    }
+}
+
+impl<'de, T> Visitor<'de> for ModeVisitor<T> {
+    type Value = T;
+
+    fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.expecting)
+    }
+
+    fn visit_str<E: de::Error>(self, name: &str) -> Result<T, E> {
+        (self.from_name)(name).map_err(E::custom)
+    }
+
+    fn visit_bool<E: de::Error>(self, _: bool) -> Result<T, E> {
+        self.wrong_type("boolean")
+    }
+
+    fn visit_i64<E: de::Error>(self, _: i64) -> Result<T, E> {
+        self.wrong_type("number")
+    }
+
+    fn visit_u64<E: de::Error>(self, _: u64) -> Result<T, E> {
+        self.wrong_type("number")
+    }
+
+    fn visit_f64<E: de::Error>(self, _: f64) -> Result<T, E> {
+        self.wrong_type("number")
+    }
+
+    fn visit_map<A: de::MapAccess<'de>>(self, _: A) -> Result<T, A::Error> {
+        self.wrong_type("object")
+    }
+
+    fn visit_seq<A: de::SeqAccess<'de>>(self, _: A) -> Result<T, A::Error> {
+        self.wrong_type("object")
     }
 }
 
@@ -302,9 +386,42 @@ pub struct KeySearchOptions {
     /// highest `weight * keyScore`, or highest `keyScore` in `"max"` mode;
     /// the first one on a tie), then by index. Any other value throws a
     /// `TypeError`.
+    ///
+    /// With `matchMode: "crossKey"`, `"matched"` counts the weight of each
+    /// key in proportion to the share of the query it matches, and `"max"`
+    /// scores each term by the key it matches best (see `matchMode`).
     #[tsify(optional)]
     #[serde(default)]
     pub score_mode: Option<KeyScoreMode>,
+    /// How the query is matched against the keys of an item:
+    ///
+    /// - `"perKey"` (default): every key is matched against the whole query,
+    ///   like `search()` matches an item. A key scores 0 unless it matches
+    ///   every term of the query and none of its `!term` exclusions.
+    /// - `"crossKey"`: every term is matched against the keys on its own, so
+    ///   the terms may match different keys: `"john tokyo"` finds an item
+    ///   whose name is "John Smith" and whose city is "Tokyo". Every term
+    ///   must match at least one key, and a `!term` matching any key
+    ///   excludes the item. A key's score (`keyScores`) is the share of the
+    ///   query it matches: the scores of the terms it matches, each counting
+    ///   in proportion to the score of a perfect match of the term (which
+    ///   grows with its length), so a key matching every term perfectly
+    ///   scores 1. `scoreMode` combines these key scores: `"weighted"` as
+    ///   `sum(weight * keyScore) / sum(weight)`, as in `"perKey"` mode;
+    ///   `"matched"` as `sum(weight * keyScore) / sum(weight * coverage)`,
+    ///   where a key's coverage is the share of the query made up by the
+    ///   terms it matches (in `"perKey"` mode, 1 for a key that matches and
+    ///   0 otherwise); `"max"` by taking each term's score on the key it
+    ///   matches best. In `"matched"` and `"max"` mode, an item whose every
+    ///   term matches some key perfectly scores 1.
+    ///
+    /// Only keys with a positive weight take part in either mode; keys whose
+    /// weight is 0 still get `keyScores`. For a query of a single term
+    /// without exclusions, both modes return the same results. Any other
+    /// value throws a `TypeError`.
+    #[tsify(optional)]
+    #[serde(default)]
+    pub match_mode: Option<KeyMatchMode>,
 }
 
 impl KeySearchOptions {
@@ -318,6 +435,7 @@ impl KeySearchOptions {
                 ..SearchOptions::default()
             },
             score_mode: None,
+            match_mode: None,
         })
     }
 
@@ -329,6 +447,7 @@ impl KeySearchOptions {
             is_case_sensitive: self.search.is_case_sensitive,
             return_all_on_empty: self.search.return_all_on_empty,
             score_mode: self.score_mode.map(Into::into),
+            match_mode: self.match_mode.map(Into::into),
         }
     }
 }
