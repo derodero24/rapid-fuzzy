@@ -11,9 +11,11 @@
 //! positive weight `w` take part in a search. Keys whose weight is zero are
 //! informational: the returned items get key scores for them, but they never
 //! change which items are returned, their scores or their order. Only the
-//! ratios between the weights matter: multiplying every weight by the same
-//! power of two changes no result, even when the weights are subnormal (by
-//! any other positive factor, results change by rounding only).
+//! ratios between the weights matter: multiplying every weight exactly by the
+//! same power of two changes no result, even when the weights are subnormal
+//! (unless they span some 300 orders of magnitude, where the smallest ones
+//! lose precision anyway); any other positive factor changes results by
+//! rounding only.
 //!
 //! The [`KeyMatchMode`] decides how the query is matched against the keys,
 //! which gives the key scores `s` (`key_scores`, one per key, the same in
