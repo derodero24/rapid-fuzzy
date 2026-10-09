@@ -60,6 +60,12 @@ const OBSOLETE_FILES = [
  *   and the call's shadow-stack space and leaves an index permanently borrowed.
  *   `string[]` parameters are taken as `JsValue` and checked with
  *   `strings_from_js` instead (crates/wasm/src/convert.rs).
+ * - Make `passStringToWasm0`, which copies every `string` argument into
+ *   WebAssembly memory, throw a `TypeError` for anything but a string. It
+ *   reads `arg.length` without checking the type, so a number allocated
+ *   `undefined` bytes and trapped with "RuntimeError: memory access out of
+ *   bounds" (undefined behaviour of the allocator), where the Node.js binding
+ *   throws an error. Every call the glue makes itself passes a string.
  */
 function rewriteGlue(source) {
   const from = `/* @ts-self-types="./${OUT_NAME}.d.ts" */`;
@@ -71,7 +77,16 @@ function rewriteGlue(source) {
       'build-wasm-bindgen: an export takes a Vec<String> / Vec<JsValue> parameter; take a JsValue and convert it with strings_from_js (crates/wasm/src/convert.rs)',
     );
   }
-  return `/* @ts-self-types="./${OUT_NAME}.d.mts" */${source.slice(from.length)}`;
+  const passString = 'function passStringToWasm0(arg, malloc, realloc) {\n';
+  if (source.split(passString).length !== 2) {
+    throw new Error(
+      `build-wasm-bindgen: expected exactly one \`${passString.trim()}\` in the glue`,
+    );
+  }
+  const typeCheck =
+    "    if (typeof arg !== 'string') throw new TypeError('Expected a string, got ' + (arg === null ? 'null' : typeof arg));\n";
+  const checked = source.replace(passString, passString + typeCheck);
+  return `/* @ts-self-types="./${OUT_NAME}.d.mts" */${checked.slice(from.length)}`;
 }
 
 /**

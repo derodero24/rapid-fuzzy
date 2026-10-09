@@ -990,6 +990,47 @@ describe.skipIf(!wasmAvailable)('wasm-bindgen runtime', () => {
     });
   });
 
+  // A string parameter given anything else used to make the glue allocate
+  // `undefined` bytes and trap with "RuntimeError: memory access out of
+  // bounds" (null: "Cannot read properties of null").
+  describe('string arguments', () => {
+    it('throw a TypeError, not a WebAssembly trap, for a value that is not a string', () => {
+      const index = new wasm.FuzzyIndex(['a']);
+      const keyed = new wasm.KeyedFuzzyIndex([['a']], [1]);
+      const calls: Array<[string, (arg: unknown) => unknown]> = [
+        ['levenshtein', (arg) => callUnchecked(wasm.levenshtein, arg, 'a')],
+        ['jaroWinkler (second argument)', (arg) => callUnchecked(wasm.jaroWinkler, 'a', arg)],
+        ['search', (arg) => callUnchecked(wasm.search, arg, ['a'])],
+        ['levenshteinMany (reference)', (arg) => callUnchecked(wasm.levenshteinMany, arg, ['a'])],
+        ['FuzzyIndex#add', (arg) => callUnchecked(index.add.bind(index), arg)],
+        ['FuzzyIndex#search', (arg) => callUnchecked(index.search.bind(index), arg)],
+        ['FuzzyIndex#closest', (arg) => callUnchecked(index.closest.bind(index), arg)],
+        ['KeyedFuzzyIndex#search', (arg) => callUnchecked(keyed.search.bind(keyed), arg)],
+      ];
+      const bad: Array<[unknown, string]> = [
+        [1, 'number'],
+        [true, 'boolean'],
+        [{}, 'object'],
+        [null, 'null'],
+        [undefined, 'undefined'],
+      ];
+      for (const [name, call] of calls) {
+        for (const [value, type] of bad) {
+          const err = thrown(() => call(value));
+          expect(err, `${name}(${String(value)})`).toBeInstanceOf(TypeError);
+          expect(err).toHaveProperty('message', `Expected a string, got ${type}`);
+        }
+      }
+      // Nothing was added, and the module keeps working.
+      expect(index.size).toBe(1);
+      expect(wasm.levenshtein('kitten', 'sitting')).toBe(3);
+      // The Node.js binding rejects the same arguments.
+      expect(() => callUnchecked(napi.levenshtein, 1, 'a')).toThrow();
+      index.free();
+      keyed.free();
+    });
+  });
+
   // A NaN minScore used to filter out every match silently.
   describe('minScore validation (like the Node.js binding)', () => {
     it('throws a TypeError for NaN in every API and accepts other numbers', () => {

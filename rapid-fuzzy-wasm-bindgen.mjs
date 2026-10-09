@@ -2111,6 +2111,7 @@ function passArrayF64ToWasm0(arg, malloc) {
 }
 
 function passStringToWasm0(arg, malloc, realloc) {
+    if (typeof arg !== 'string') throw new TypeError('Expected a string, got ' + (arg === null ? 'null' : typeof arg));
     if (realloc === undefined) {
         const buf = cachedTextEncoder.encode(arg);
         const ptr = malloc(buf.length, 1) >>> 0;
