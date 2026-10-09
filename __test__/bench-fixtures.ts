@@ -1,5 +1,4 @@
 // Shared benchmark test data — deterministic and reusable across bench files.
-// Changes to this file will trigger CodSpeed benchmarks.
 
 // --- String pairs (for distance / similarity / ratio benchmarks) ---
 
@@ -151,6 +150,20 @@ export const rotatingQueries = [
   'import',
   'repository',
 ];
+
+/**
+ * Returns a function that yields the next of `queries` on every call, wrapping
+ * around at the end. Give each benchmark its own cycle so they all see the same
+ * sequence of queries.
+ */
+export function cycle(queries: readonly string[]): () => string {
+  let next = 0;
+  return () => {
+    const query = queries[next++ % queries.length];
+    if (query === undefined) throw new RangeError('cycle() needs at least one query');
+    return query;
+  };
+}
 
 /** Keystrokes of a user typing `largeQuery`, one search per keystroke. */
 export const typeAheadQueries = Array.from({ length: largeQuery.length }, (_, i) =>
