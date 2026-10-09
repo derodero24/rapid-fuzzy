@@ -215,6 +215,32 @@ describe('package.json', () => {
   });
 });
 
+describe('browser.mjs in Node.js before 22.3', () => {
+  // Node.js 22.0-22.2 have no process.getBuiltinModule(), which browser.mjs uses
+  // to read its .wasm under --conditions=browser, and their fetch() cannot read
+  // file: URLs. Needs no binary: loading fails before the file is read.
+  it('fails with an error naming the Node.js version it needs', () => {
+    const code = [
+      'delete process.getBuiltinModule;',
+      "await import('rapid-fuzzy').then(",
+      "  () => process.stdout.write('loaded'),",
+      '  (error) => process.stdout.write(JSON.stringify([error.message, String(error.cause)])),',
+      ');',
+    ].join('\n');
+    const stdout = execFileSync(
+      process.execPath,
+      ['--conditions=browser', '--input-type=module', '-e', code],
+      { cwd: ROOT, encoding: 'utf8' },
+    );
+    expect(stdout).not.toBe('loaded');
+    const [message, cause] = JSON.parse(stdout) as [string, string];
+    expect(message).toMatch(/^rapid-fuzzy: the WebAssembly build needs Node\.js 22\.3 or later/);
+    expect(message).toContain('rapid-fuzzy-wasm-bindgen_bg.wasm');
+    expect(message).toContain('native addon');
+    expect(cause).toMatch(/fetch failed/);
+  });
+});
+
 describe('highlight.browser.mjs ("rapid-fuzzy/highlight" in browsers)', () => {
   it('matches highlight.js', async () => {
     // Typed through highlight.d.mts, which "rapid-fuzzy/highlight" uses in browsers.

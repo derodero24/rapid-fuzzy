@@ -188,7 +188,7 @@ Bun uses the native napi-rs bindings by default (fastest). To use the WASM build
 bun --conditions=browser run main.ts
 ```
 
-The same works in Node.js (`node --conditions=browser main.mjs`).
+The same works in Node.js 22.3 or later (`node --conditions=browser main.mjs`). Earlier Node.js 22 releases lack `process.getBuiltinModule()`, which the WebAssembly build uses to read its `.wasm` file, so there it fails to load.
 
 ## API
 
@@ -883,7 +883,7 @@ Server-side rendering frameworks need to externalize rapid-fuzzy so the native m
 
 ### Using the WASM build in Bun or Node.js
 
-Bun and Node.js load the native binding. To run the WASM build instead, add `--conditions=browser` — see the [Bun section](#bun).
+Bun and Node.js load the native binding. To run the WASM build instead, add `--conditions=browser` (in Node.js 22.3 or later) — see the [Bun section](#bun).
 
 ## Performance and Untrusted Input
 
