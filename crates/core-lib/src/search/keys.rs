@@ -89,7 +89,7 @@
 use std::cmp::Ordering;
 
 use nucleo_matcher::pattern::{CaseMatching, Pattern};
-use nucleo_matcher::{Matcher, Utf32Str, Utf32String, chars};
+use nucleo_matcher::{Matcher, Utf32Str, chars};
 
 use super::cross_key::CrossKeyPlan;
 use super::{
@@ -374,10 +374,28 @@ impl KeyedCorpus for KeyTexts<'_> {
 /// Pre-converted haystacks and character masks (`KeyedFuzzyIndexCore`).
 pub(crate) struct IndexedKeys<'a> {
     pub key_texts: &'a [Vec<String>],
-    /// `Utf32String::from` of every key text.
-    pub haystacks: &'a [Vec<Utf32String>],
+    /// [`index_haystack`](super::index_haystack) of every key text: `None`
+    /// for ASCII text, which is matched as its own bytes.
+    pub haystacks: &'a [Vec<Option<Box<[char]>>>],
     /// [`compute_char_mask`](super::compute_char_mask) of every key text.
     pub char_masks: &'a [Vec<u64>],
+}
+
+impl IndexedKeys<'_> {
+    /// The haystack of key `k` of item `i`: exactly what `Utf32String::from`
+    /// (and [`utf32_haystack`]) make of its text, like `FuzzyIndexCore`'s
+    /// stored haystacks.
+    #[inline]
+    fn indexed_haystack(&self, k: usize, i: usize) -> Utf32Str<'_> {
+        match &self.haystacks[k][i] {
+            Some(chars) => Utf32Str::Unicode(chars),
+            None => {
+                let text = &self.key_texts[k][i];
+                debug_assert!(text.is_ascii());
+                Utf32Str::Ascii(text.as_bytes())
+            }
+        }
+    }
 }
 
 impl KeyedCorpus for IndexedKeys<'_> {
@@ -404,7 +422,7 @@ impl KeyedCorpus for IndexedKeys<'_> {
         k: usize,
         i: usize,
     ) -> Option<u32> {
-        pattern_score(&plan.pattern, self.haystacks[k][i].slice(..), matcher)
+        pattern_score(&plan.pattern, self.indexed_haystack(k, i), matcher)
     }
 
     #[inline]
@@ -412,7 +430,7 @@ impl KeyedCorpus for IndexedKeys<'_> {
 
     #[inline]
     fn haystack<'b>(&'b self, k: usize, i: usize, _buf: &'b [char]) -> Utf32Str<'b> {
-        self.haystacks[k][i].slice(..)
+        self.indexed_haystack(k, i)
     }
 }
 
