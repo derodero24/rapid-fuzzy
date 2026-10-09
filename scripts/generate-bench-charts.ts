@@ -10,7 +10,8 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const ASSET_DIR = join(new URL('.', import.meta.url).pathname, '..', '.github', 'assets');
+// Paths are relative to the repository root, where `pnpm bench:charts` runs.
+const ASSET_DIR = join('.github', 'assets');
 mkdirSync(ASSET_DIR, { recursive: true });
 
 // ---------------------------------------------------------------------------
@@ -31,8 +32,8 @@ interface ChartData {
 }
 
 function parseOps(s: string): number | null {
-  const m = s.replace(/\*\*/g, '').match(/([\d,]+)\s*ops\/s/);
-  return m ? Number(m[1].replace(/,/g, '')) : null;
+  const digits = s.replace(/\*\*/g, '').match(/([\d,]+)\s*ops\/s/)?.[1];
+  return digits === undefined ? null : Number(digits.replace(/,/g, ''));
 }
 
 /** The lines between `<!-- bench:<name>:start -->` and `<!-- bench:<name>:end -->`. */
@@ -47,14 +48,15 @@ function blockLines(name: string): string[] {
 }
 
 const SEARCH_COLUMNS = ['rapid-fuzzy', 'rapid-fuzzy (indexed)', 'fuse.js', 'fuzzysort', 'uFuzzy'];
+const DISTANCE_COLUMNS = ['rapid-fuzzy', 'fastest-levenshtein', 'leven', 'string-similarity'];
 
-/** The bars of one search table row: one per column with a value. */
-function searchBars(cells: string[]): BarEntry[] {
+/** The bars of one table row: one per column with a value. */
+function rowBars(columns: readonly string[], cells: readonly string[]): BarEntry[] {
   const bars: BarEntry[] = [];
-  SEARCH_COLUMNS.forEach((label, i) => {
+  for (const [i, label] of columns.entries()) {
     const value = parseOps(cells[i] ?? '');
     if (value !== null) bars.push({ label, value });
-  });
+  }
   return bars;
 }
 
@@ -65,7 +67,7 @@ function parseSearchTable(): ChartData {
     // Rows: | Small (20 items) | rf | fi | fj | fs | uf |
     const cells = line.split('|').slice(1, -1);
     const groupLabel = cells[0]?.trim() ?? '';
-    const bars = searchBars(cells.slice(1));
+    const bars = rowBars(SEARCH_COLUMNS, cells.slice(1));
     if (bars.length > 1) groups.push({ groupLabel, bars });
   }
 
@@ -76,27 +78,24 @@ function parseSearchTable(): ChartData {
   };
 }
 
+/** Rows of the distance table drawn in the chart. */
+const DISTANCE_ROWS = new Set([
+  'Levenshtein',
+  'Normalized Levenshtein',
+  'Sorensen-Dice',
+  'Jaro-Winkler',
+  'Damerau-Levenshtein',
+]);
+
 function parseDistanceTable(): ChartData {
   const groups: ChartData['groups'] = [];
 
   for (const line of blockLines('distance')) {
-    const m = line.match(
-      /\|\s*(Levenshtein|Normalized Levenshtein|Sorensen-Dice|Jaro-Winkler|Damerau-Levenshtein)\s*\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|/,
-    );
-    if (!m) continue;
-
-    const groupLabel = m[1];
-    const rf = parseOps(m[2]);
-    const fl = parseOps(m[3]);
-    const lv = parseOps(m[4]);
-    const ss = parseOps(m[5]);
-
-    const bars: BarEntry[] = [];
-    if (rf !== null) bars.push({ label: 'rapid-fuzzy', value: rf });
-    if (fl !== null) bars.push({ label: 'fastest-levenshtein', value: fl });
-    if (lv !== null) bars.push({ label: 'leven', value: lv });
-    if (ss !== null) bars.push({ label: 'string-similarity', value: ss });
-
+    // Rows: | Levenshtein | rf | fl | lv | ss |
+    const cells = line.split('|').slice(1, -1);
+    const groupLabel = cells[0]?.trim() ?? '';
+    if (!DISTANCE_ROWS.has(groupLabel)) continue;
+    const bars = rowBars(DISTANCE_COLUMNS, cells.slice(1));
     if (bars.length > 1) groups.push({ groupLabel, bars });
   }
 
