@@ -491,6 +491,77 @@ describe.skipIf(!wasmAvailable)('wasm-bindgen runtime', () => {
         expect(literals).toEqual([...matchModes]);
       });
     });
+
+    describe('KeySearchOptions objects', () => {
+      const keyTexts = [items, items.map((s) => `${s.toLowerCase()} lang`), items.map(() => 'x')];
+      const weights = [2, 1, 0.5];
+
+      const queries = ['type', 'type lang', 'rust x', 'zzz', ''];
+
+      /** `searchKeys` and `KeyedFuzzyIndex.search` of both builds on the same options. */
+      function expectSameResults(options: unknown): void {
+        const w = new wasm.KeyedFuzzyIndex(keyTexts, weights);
+        const n = new napi.KeyedFuzzyIndex(keyTexts, weights);
+        for (const query of queries) {
+          const expected = callUnchecked(napi.searchKeys, query, keyTexts, weights, options);
+          expect(callUnchecked(n.search.bind(n), query, options)).toEqual(expected);
+          expect(callUnchecked(wasm.searchKeys, query, keyTexts, weights, options)).toEqual(
+            expected,
+          );
+          expect(callUnchecked(w.search.bind(w), query, options)).toEqual(expected);
+        }
+        w.free();
+      }
+
+      it('reads every field by name, like the Node.js binding', () => {
+        class Getters {
+          get maxResults(): number {
+            return 1;
+          }
+          get scoreMode(): string {
+            return 'max';
+          }
+          get matchMode(): string {
+            return 'crossKey';
+          }
+        }
+        const inherited: unknown[] = [
+          new Getters(),
+          Object.create({ maxResults: 1 }),
+          Object.create({ minScore: 0.9 }),
+          Object.create({ scoreMode: 'max', matchMode: 'crossKey' }),
+          Object.create({ isCaseSensitive: true, returnAllOnEmpty: true }),
+        ];
+        for (const options of inherited) {
+          // Fields read from a getter or the prototype chain take effect.
+          const changed = queries.filter(
+            (query) =>
+              JSON.stringify(callUnchecked(napi.searchKeys, query, keyTexts, weights, options)) !==
+              JSON.stringify(napi.searchKeys(query, keyTexts, weights)),
+          );
+          expect(changed).not.toEqual([]);
+          expectSameResults(options);
+        }
+        // Entries of a Map are not properties.
+        expectSameResults(new Map([['maxResults', 1]]));
+      });
+
+      it('rejects BigInt numbers like the Node.js binding', () => {
+        const w = new wasm.KeyedFuzzyIndex(keyTexts, weights);
+        for (const options of [{ maxResults: 2n }, { minScore: 2n }, { minScore: 0n }]) {
+          expect(() =>
+            callUnchecked(napi.searchKeys, 'type', keyTexts, weights, options),
+          ).toThrow();
+          expect(
+            thrown(() => callUnchecked(wasm.searchKeys, 'type', keyTexts, weights, options)),
+          ).toBeInstanceOf(TypeError);
+          expect(thrown(() => callUnchecked(w.search.bind(w), 'type', options))).toBeInstanceOf(
+            TypeError,
+          );
+        }
+        w.free();
+      });
+    });
   });
 
   describe('API parity additions', () => {

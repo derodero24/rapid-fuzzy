@@ -108,10 +108,38 @@ export type KeyMatchMode = "perKey" | "crossKey";
 /**
  * Options for multi-key search: `searchKeys()`, `KeyedFuzzyIndex.search()`
  * and the object search built on them (`searchObjects()`,
- * `FuzzyObjectIndex.search()`). `includePositions` has no effect there:
- * multi-key results have no match positions.
+ * `FuzzyObjectIndex.search()`). The `SearchOptions` fields, plus
+ * `scoreMode` and `matchMode`.
  */
-export interface KeySearchOptions extends SearchOptions {
+export interface KeySearchOptions {
+    /**
+     * Maximum number of results to return: a non-negative integer, or
+     * `Infinity` for no limit. NaN, negative and fractional values throw.
+     */
+    maxResults?: number;
+    /**
+     * Minimum combined score (0.0-1.0, see `scoreMode`) to include in
+     * results.
+     */
+    minScore?: number;
+    /**
+     * Accepted for compatibility with `SearchOptions`, but has no effect:
+     * multi-key results have no match positions.
+     */
+    includePositions?: boolean;
+    /**
+     * If true, matching is case-sensitive. When false or omitted, matching
+     * is smart case: case-insensitive while the query is all lower-case, and
+     * case-sensitive once it contains an upper-case letter. `false` does not
+     * force case-insensitive matching; lower-case the query for that.
+     */
+    isCaseSensitive?: boolean;
+    /**
+     * If true, return all items when the query has no search term: empty,
+     * whitespace-only, or only query syntax such as `^` or `!`. Every item
+     * then scores 1, in every `scoreMode`. Default is false.
+     */
+    returnAllOnEmpty?: boolean;
     /**
      * How the per-key scores (`keyScores`) of an item are combined into its
      * `score`. Only keys with a positive weight take part:

@@ -360,13 +360,45 @@ impl<'de, T> Visitor<'de> for ModeVisitor<T> {
 
 /// Options for multi-key search: `searchKeys()`, `KeyedFuzzyIndex.search()`
 /// and the object search built on them (`searchObjects()`,
-/// `FuzzyObjectIndex.search()`). `includePositions` has no effect there:
-/// multi-key results have no match positions.
+/// `FuzzyObjectIndex.search()`). The `SearchOptions` fields, plus
+/// `scoreMode` and `matchMode`.
 #[derive(Debug, Clone, Default, Deserialize, Tsify)]
 #[serde(rename_all = "camelCase")]
 pub struct KeySearchOptions {
-    #[serde(flatten)]
-    pub search: SearchOptions,
+    // The `SearchOptions` fields are declared here rather than flattened in:
+    // with `#[serde(flatten)]`, serde-wasm-bindgen reads the object as a map
+    // of its own enumerable entries, so options read from a getter or the
+    // prototype chain (which the Node.js binding reads) were ignored and the
+    // entries of a `Map` were taken. Declared fields are read by name, like
+    // `SearchOptions` reads them.
+    /// Maximum number of results to return: a non-negative integer, or
+    /// `Infinity` for no limit. NaN, negative and fractional values throw.
+    #[tsify(optional)]
+    #[serde(default, deserialize_with = "deserialize_max_results")]
+    pub max_results: Option<u32>,
+    /// Minimum combined score (0.0-1.0, see `scoreMode`) to include in
+    /// results.
+    #[tsify(optional)]
+    #[serde(default)]
+    pub min_score: Option<f64>,
+    /// Accepted for compatibility with `SearchOptions`, but has no effect:
+    /// multi-key results have no match positions.
+    #[tsify(optional)]
+    #[serde(default)]
+    pub include_positions: Option<bool>,
+    /// If true, matching is case-sensitive. When false or omitted, matching
+    /// is smart case: case-insensitive while the query is all lower-case, and
+    /// case-sensitive once it contains an upper-case letter. `false` does not
+    /// force case-insensitive matching; lower-case the query for that.
+    #[tsify(optional)]
+    #[serde(default)]
+    pub is_case_sensitive: Option<bool>,
+    /// If true, return all items when the query has no search term: empty,
+    /// whitespace-only, or only query syntax such as `^` or `!`. Every item
+    /// then scores 1, in every `scoreMode`. Default is false.
+    #[tsify(optional)]
+    #[serde(default)]
+    pub return_all_on_empty: Option<bool>,
     /// How the per-key scores (`keyScores`) of an item are combined into its
     /// `score`. Only keys with a positive weight take part:
     ///
@@ -430,22 +462,18 @@ impl KeySearchOptions {
     /// `{ maxResults }`) or a `KeySearchOptions` object.
     pub(crate) fn from_js_or_max_results(options: Option<JsValue>) -> Result<Self, JsValue> {
         options_from_js(options, "KeySearchOptions", |max_results| Self {
-            search: SearchOptions {
-                max_results,
-                ..SearchOptions::default()
-            },
-            score_mode: None,
-            match_mode: None,
+            max_results,
+            ..Self::default()
         })
     }
 
     /// The options of the shared core-lib search.
     pub(crate) fn to_core(&self) -> core::SearchKeysOptions {
         core::SearchKeysOptions {
-            max_results: self.search.max_results,
-            min_score: self.search.min_score,
-            is_case_sensitive: self.search.is_case_sensitive,
-            return_all_on_empty: self.search.return_all_on_empty,
+            max_results: self.max_results,
+            min_score: self.min_score,
+            is_case_sensitive: self.is_case_sensitive,
+            return_all_on_empty: self.return_all_on_empty,
             score_mode: self.score_mode.map(Into::into),
             match_mode: self.match_mode.map(Into::into),
         }

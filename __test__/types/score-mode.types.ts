@@ -143,3 +143,15 @@ wasmSearchKeys('a', matrix, [1], { scoreMode: 'avg' });
 wasmKeyed.closest('a', null, 'avg');
 // @ts-expect-error -- search() has no scoreMode
 wasmSearch('a', words, { scoreMode: 'max' });
+
+// KeySearchOptions declares every SearchOptions field: SearchOptions values
+// are still accepted by keyed search, and the other way round.
+export type WasmKeySearchOptionsChecks = [
+  Expect<Equal<Omit<Wasm.KeySearchOptions, 'scoreMode' | 'matchMode'>, Wasm.SearchOptions>>,
+];
+declare const wasmSearchOptions: Wasm.SearchOptions;
+wasmSearchKeys('a', matrix, [1], wasmSearchOptions);
+wasmKeyed.search('a', wasmSearchOptions);
+const wasmKeyOptions: Wasm.KeySearchOptions = { ...wasmSearchOptions, scoreMode: 'matched' };
+const wasmAsSearchOptions: Wasm.SearchOptions = wasmKeyOptions;
+void wasmAsSearchOptions;

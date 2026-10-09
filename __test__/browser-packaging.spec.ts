@@ -11,7 +11,11 @@ import { dirname, join, normalize } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import * as highlightCjs from '../highlight.js';
 import * as napi from '../index.js';
-import { FuzzyObjectIndex as NodeFuzzyObjectIndex, searchObjects } from '../objects.js';
+import {
+  FuzzyObjectIndex as NodeFuzzyObjectIndex,
+  type ObjectIndexSearchOptions,
+  searchObjects,
+} from '../objects.js';
 
 const ROOT = join(__dirname, '..');
 const WASM_PATH = join(ROOT, 'rapid-fuzzy-wasm-bindgen_bg.wasm');
@@ -373,6 +377,37 @@ describe.skipIf(!wasmAvailable)('browser.mjs (the WebAssembly build)', () => {
       expect(() => browser.searchObjects('john', users, { keys, scoreMode: bogus })).toThrow(
         TypeError,
       );
+      index.destroy();
+    });
+
+    it('reads search options like the Node.js implementation', async () => {
+      const browser = await load();
+      const index = new browser.FuzzyObjectIndex(users, { keys });
+      const native = new NodeFuzzyObjectIndex(users, { keys });
+      class Getters {
+        get maxResults(): number {
+          return 1;
+        }
+        get scoreMode(): 'max' {
+          return 'max';
+        }
+        get matchMode(): 'crossKey' {
+          return 'crossKey';
+        }
+      }
+      const options: ObjectIndexSearchOptions[] = [
+        new Getters(),
+        Object.create({ maxResults: 1 }) as ObjectIndexSearchOptions,
+        Object.create({ scoreMode: 'max', matchMode: 'crossKey' }) as ObjectIndexSearchOptions,
+      ];
+      for (const opts of options) {
+        for (const query of ['john', 'john boston', 'example']) {
+          expect(index.search(query, opts)).toEqual(native.search(query, opts));
+        }
+      }
+      // Options from a getter or the prototype chain take effect.
+      expect(native.search('john', new Getters())).toHaveLength(1);
+      expect(native.search('john boston', new Getters())).toHaveLength(1);
       index.destroy();
     });
 
