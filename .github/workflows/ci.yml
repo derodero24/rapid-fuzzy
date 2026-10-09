@@ -454,11 +454,16 @@ jobs:
       # Same check as release.yml, so stale glue fails the PR instead of the release.
       - name: Verify generated wasm-bindgen glue is up to date
         run: git diff --exit-code rapid-fuzzy-wasm-bindgen.mjs rapid-fuzzy-wasm-bindgen.d.mts browser.mjs browser.d.mts browser-api.mjs workerd.mjs highlight.browser.mjs objects.browser.mjs objects.browser.d.mts
-      # The wasm-bindgen spec compares results against the native binding.
+      # The wasm-bindgen specs compare results against the native binding.
       - name: Build native binding (debug)
         run: pnpm run build:debug && node scripts/patch-binding.js
+      # The whole suite, not a list of files: every spec that tests the
+      # wasm-bindgen build (wasm-bindgen, browser-packaging, review-fixes, and
+      # any added later) skips without the binary, which only this job builds,
+      # and RAPID_FUZZY_REQUIRE_WASM_BINDGEN turns that skip into a failure.
+      # Only wasm.spec.ts (the WASI binding, covered by the test job) skips here.
       - name: Test wasm-bindgen build
-        run: pnpm exec vitest run __test__/wasm-bindgen.spec.ts __test__/browser-packaging.spec.ts
+        run: pnpm exec vitest run
         env:
           RAPID_FUZZY_REQUIRE_WASM_BINDGEN: '1'
       - name: Upload wasm-bindgen artifact
