@@ -5,7 +5,17 @@
  * Usage:
  *   pnpm bench:readme          # build the native addon in release mode first
  *   npx tsx scripts/update-bench-readme.ts
- *   BENCH_OUTPUT=bench.txt npx tsx scripts/update-bench-readme.ts  # reuse saved output
+ *   BENCH_OUTPUT=.vitest/bench-readme.json npx tsx scripts/update-bench-readme.ts  # reuse a saved report
+ *
+ * The benchmarks run with Vitest's JSON reporter; the report is saved to
+ * `.vitest/bench-readme.json`, so `BENCH_OUTPUT` can rebuild the tables from it
+ * without running the benchmarks again.
+ *
+ * Each table cell is 1000 / mean latency in ms: the number of runs divided by
+ * the time they took. This is not the `hz` column of Vitest's own output,
+ * which averages the throughput of each sample and so overstates the rate when
+ * sample times vary (by almost 2x for uFuzzy on the rotating queries, whose
+ * costs differ).
  *
  * The tables live between `<!-- bench:<name>:start -->` and
  * `<!-- bench:<name>:end -->` markers in README.md; the `bench:env` block
@@ -16,6 +26,7 @@
 import { execSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { arch, cpus, platform } from 'node:os';
+import type { JsonTestResults } from 'vitest/node';
 
 const BENCH_FILES = [
   '__test__/search.compare.bench.ts',
@@ -24,45 +35,48 @@ const BENCH_FILES = [
   '__test__/similarity.bench.ts',
 ];
 
+const REPORT_PATH = '.vitest/bench-readme.json';
+
 // ---------------------------------------------------------------------------
-// 1. Run benchmarks and capture output
+// 1. Run benchmarks and read the JSON report
 // ---------------------------------------------------------------------------
 
-// BENCH_OUTPUT=<file> reuses the saved output of a previous run instead.
+// BENCH_OUTPUT=<file> reuses the JSON report of a previous run instead.
 const savedOutput = process.env.BENCH_OUTPUT;
-console.log(savedOutput ? `Reading benchmark output from ${savedOutput}…` : 'Running benchmarks…');
-const raw = savedOutput
-  ? readFileSync(savedOutput, 'utf-8')
-  : execSync(`pnpm exec vitest bench --run ${BENCH_FILES.join(' ')}`, {
-      encoding: 'utf-8',
-      timeout: 1_800_000,
-      env: { ...process.env, FORCE_COLOR: '0' },
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-
-// Strip ANSI escape codes
-// biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI escape stripping requires matching ESC (0x1B)
-const clean = raw.replace(/\x1b\[[0-9;]*m/g, '');
+if (savedOutput) {
+  console.log(`Reading the benchmark report from ${savedOutput}…`);
+} else {
+  console.log('Running benchmarks…');
+  execSync(
+    `pnpm exec vitest bench --run ${BENCH_FILES.join(' ')} --reporter=default --reporter=json --outputFile.json=${REPORT_PATH}`,
+    { stdio: 'inherit', timeout: 1_800_000 },
+  );
+  console.log(`Saved the benchmark report to ${REPORT_PATH}.`);
+}
 
 // ---------------------------------------------------------------------------
-// 2. Parse results — suites ("✓ file > suite") and their "· name  hz …" lines
+// 2. Collect results — group (test name) → benchmark name → ops/s
 // ---------------------------------------------------------------------------
+
+function readReport(path: string): JsonTestResults {
+  const report: unknown = JSON.parse(readFileSync(path, 'utf-8'));
+  if (typeof report !== 'object' || report === null || !('testResults' in report)) {
+    throw new Error(`${path} is not a Vitest JSON report (run \`vitest bench --reporter=json\`)`);
+  }
+  return report as JsonTestResults;
+}
 
 const suites = new Map<string, Map<string, number>>();
-let current: Map<string, number> | undefined;
-
-for (const line of clean.split('\n')) {
-  // "  ✓ __test__/search.compare.bench.ts > Fuzzy Search — Small 20 (vs competitors) 7450ms"
-  const sm = line.match(/✓\s+\S+\s+>\s+(.+?)(?:\s+\d+ms)?$/);
-  if (sm) {
-    current = new Map();
-    suites.set(sm[1].trim(), current);
-    continue;
-  }
-  // "   · rapid-fuzzy  179,371.64  …"
-  const em = line.match(/^\s+·\s+(.+?)\s{2,}([\d,]+(?:\.\d+)?)\s/);
-  if (em && current) {
-    current.set(em[1].trim(), Number(em[2].replace(/,/g, '')));
+for (const file of readReport(savedOutput ?? REPORT_PATH).testResults) {
+  for (const test of file.assertionResults) {
+    if (test.status !== 'passed') console.warn(`  ⚠ ${test.fullName}: ${test.status}`);
+    for (const benchmark of test.benchmarks) {
+      if (suites.has(benchmark.name)) console.warn(`  ⚠ Duplicate suite: "${benchmark.name}"`);
+      suites.set(
+        benchmark.name,
+        new Map(benchmark.tasks.map((task) => [task.name, 1000 / task.latency.mean])),
+      );
+    }
   }
 }
 
@@ -142,7 +156,7 @@ const closestLines = [
 for (const [label, suite] of [
   ['Medium (1K items)', 'Closest Match — Medium 1K (vs competitors)'],
   ['Large (10K items)', 'Closest Match — Large 10K (vs competitors)'],
-]) {
+] as const) {
   closestLines.push(
     row(label, [
       result(suite, 'rapid-fuzzy'),
@@ -216,7 +230,7 @@ const cpuList = cpus();
 const date = new Date().toISOString().slice(0, 10);
 // BENCH_MACHINE adds a note about the machine, e.g. "a shared cloud VM".
 const machineNote = process.env.BENCH_MACHINE ? `, ${process.env.BENCH_MACHINE}` : '';
-const envText = `Measured on ${date} with Node.js ${process.version} on ${platform()} ${arch()} (${cpuList[0]?.model.trim() ?? 'unknown CPU'}, ${cpuList.length} logical CPUs${machineNote}), using the release build of the native addon and [Vitest bench](https://vitest.dev/guide/features.html#benchmarking). Numbers vary by up to about ±10% between runs; treat them as relative, not absolute.`;
+const envText = `Measured on ${date} with Node.js ${process.version} on ${platform()} ${arch()} (${cpuList[0]?.model.trim() ?? 'unknown CPU'}, ${cpuList.length} logical CPUs${machineNote}), using the release build of the native addon and [Vitest bench](https://vitest.dev/guide/benchmarking). Numbers vary by up to about ±10% between runs; treat them as relative, not absolute.`;
 
 // ---------------------------------------------------------------------------
 // 4. Replace the marked blocks in README

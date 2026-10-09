@@ -11,15 +11,8 @@ allowBuilds:
 # never proposes a major bump of these (see renovate.json). CI runs
 # `pnpm audit --audit-level=high` over all dependencies.
 overrides:
-  axios: ^1.20.0
   fast-uri: ^3.1.2
-  form-data: ^4.0.6
   js-yaml@4: ^4.2.0
   js-yaml@5: ^5.4.1
   shell-quote: ^1.11.0
   source-map-js: ^1.2.2
-
-# @codspeed/vitest-plugin has not declared vite 8 support yet.
-peerDependencyRules:
-  allowedVersions:
-    '@codspeed/vitest-plugin>vite': '8'

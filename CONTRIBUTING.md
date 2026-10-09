@@ -5,7 +5,7 @@ Thank you for your interest in contributing! This guide covers everything you ne
 ## Prerequisites
 
 - [Rust](https://rustup.rs/) — `rust-toolchain.toml` selects the stable toolchain (with `rustfmt`, `clippy` and the `wasm32-wasip1-threads` target). The minimum supported Rust version is **1.88** (`rust-version` in `Cargo.toml`); CI checks the workspace with exactly that version.
-- [Node.js](https://nodejs.org/) ≥ 22
+- [Node.js](https://nodejs.org/) ≥ 22.12 (the minimum of the test runner, Vitest 5; the published package supports Node.js ≥ 22)
 - [pnpm](https://pnpm.io/) ≥ 12 (the exact version is pinned in `package.json` `packageManager`; `corepack enable` picks it up automatically)
 - [cargo-deny](https://github.com/EmbarkStudios/cargo-deny) for the pre-push hook: `cargo install --locked cargo-deny`
 - [Git](https://git-scm.com/)
@@ -176,8 +176,13 @@ If your change affects performance, run the benchmarks and include results in th
 
 ```bash
 pnpm run bench                          # JS benchmarks (vs fuse.js, leven, etc.)
+pnpm run bench:ci                       # JS benchmarks of rapid-fuzzy alone (no competitors)
+pnpm run bench:readme                   # rerun the comparisons and rewrite the README tables
+pnpm run bench:charts                   # redraw the README charts from those tables
 cargo bench -p rapid-fuzzy-bench        # Rust benchmarks
 ```
+
+The JS benchmarks (`__test__/*.bench.ts`) measure the native addon, so build it first (`pnpm run build` for release numbers). They use [Vitest's benchmark API](https://vitest.dev/guide/benchmarking): each `test()` takes the `bench` fixture from its context and runs its benchmarks with `bench.compare()` (or `bench().run()` for a single one), and Vitest prints one table per test. Vitest's `hz` column averages the throughput of each sample, which overstates the rate when sample times vary; the README tables use runs ÷ total time instead (see `scripts/update-bench-readme.ts`). The JS benchmarks do not run in CI.
 
 The Rust benchmarks use [codspeed-criterion-compat](https://crates.io/crates/codspeed-criterion-compat), a drop-in replacement for Criterion that CodSpeed also runs on every pull request touching `crates/`. The `core` bench measures rapid-fuzzy-core itself (index build and search, keyed search, the `*_many` distance functions); `distance` and `search` measure the underlying third-party crates as a baseline.
 
