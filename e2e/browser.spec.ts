@@ -79,6 +79,7 @@ test.describe('package entry points', () => {
     expect(results.objectIndexSearch[0]).toBe('John Smith');
     expect(results.objectIndexSearch).toContain('Johnny Cash');
     expect(results.objectIndexClosest).toBe('Jane Doe');
+    expect(results.objectIndexClosestOptions).toEqual([null, 'John Smith', null, 'Jane Doe']);
     expect(results.objectIndexSize).toBe(3);
     expect(results.objectsFromMainEntry).toBe(true);
   });

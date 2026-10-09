@@ -11,6 +11,7 @@
 'use strict';
 
 const fs = require('node:fs');
+const { inputFieldsAcceptUndefined } = require('./declarations.js');
 
 const MARKER = '// --- JS utilities (appended by scripts/patch-binding.js) ---';
 
@@ -89,31 +90,71 @@ function readonlyArrayParams(dts) {
 }
 
 /**
- * Let the optional fields of an input interface accept an explicit `undefined`
- * (`field?: T | undefined`), as required under `exactOptionalPropertyTypes`.
- * The native conversion treats `undefined` as "not set". Idempotent.
+ * The string-literal types of the `scoreMode` and `matchMode` fields of
+ * `KeySearchOptions` and `KeyClosestOptions`, which the Rust side types as
+ * `KeyScoreMode` / `KeyMatchMode` (`#[napi(ts_type)]`): napi-rs declares
+ * string enums as TS enums, which do not accept string literals. Keep in sync
+ * with `KeyScoreMode::from_name` and `KeyMatchMode::from_name` in
+ * crates/core-lib/src/search/keys.rs.
  */
-function optionalFieldsAcceptUndefined(dts, name) {
-  const start = dts.indexOf(`export interface ${name} {`);
-  const end = start === -1 ? -1 : dts.indexOf('\n}', start);
-  if (end === -1) {
-    throw new Error(`patch-binding: interface ${name} not found in index.d.ts`);
+const KEY_MODE_TYPES = [
+  [
+    'KeyScoreMode',
+    [
+      '/**',
+      ' * How multi-key search (`searchKeys()`, `KeyedFuzzyIndex`, `searchObjects()`,',
+      ' * `FuzzyObjectIndex`) combines the per-key scores of an item into its score:',
+      " * `'weighted'` (the default), `'matched'` or `'max'`. See",
+      ' * `KeySearchOptions.scoreMode`.',
+      ' */',
+      "export type KeyScoreMode = 'weighted' | 'matched' | 'max'",
+    ],
+  ],
+  [
+    'KeyMatchMode',
+    [
+      '/**',
+      ' * How multi-key search (`searchKeys()`, `KeyedFuzzyIndex`, `searchObjects()`,',
+      ' * `FuzzyObjectIndex`) matches the query against the keys of an item:',
+      " * `'perKey'` (the default: every key against the whole query) or",
+      " * `'crossKey'` (every term against the keys on its own). See",
+      ' * `KeySearchOptions.matchMode`.',
+      ' */',
+      "export type KeyMatchMode = 'perKey' | 'crossKey'",
+    ],
+  ],
+];
+
+/** Declare the key mode types after the `KeySearchOptions` interface. Idempotent. */
+function declareKeyModeTypes(dts) {
+  let declared = dts;
+  for (const [name, lines] of KEY_MODE_TYPES) {
+    if (declared.includes(`export type ${name} =`)) continue;
+    const start = declared.indexOf('export interface KeySearchOptions {');
+    const end = start === -1 ? -1 : declared.indexOf('\n}\n', start);
+    if (end === -1) {
+      throw new Error('patch-binding: interface KeySearchOptions not found in index.d.ts');
+    }
+    const at = end + '\n}\n'.length;
+    declared = `${declared.slice(0, at)}\n${lines.join('\n')}\n${declared.slice(at)}`;
   }
-  const body = dts
-    .slice(start, end)
-    .replace(/^(\s+\w+\?: )(.+)$/gm, (field, head, type) =>
-      /\bundefined\b/.test(type) ? field : `${head}${type} | undefined`,
-    );
-  return dts.slice(0, start) + body + dts.slice(end);
+  return declared;
 }
 
 function refineDeclarations(dts) {
-  const refined = optionalFieldsAcceptUndefined(readonlyArrayParams(dts), 'SearchOptions');
+  let refined = readonlyArrayParams(dts);
+  refined = inputFieldsAcceptUndefined(refined, 'index.d.ts');
+  refined = declareKeyModeTypes(refined);
   // Fail loudly if napi-rs changes its output format and the refinements stop applying.
   for (const expected of [
     'export declare function search(query: string, items: ReadonlyArray<string>,',
     '  constructor(items: ReadonlyArray<string>)',
     '  maxResults?: number | undefined',
+    '  scoreMode?: KeyScoreMode | undefined',
+    '  matchMode?: KeyMatchMode | undefined',
+    'closest(query: string, options?: number | KeyClosestOptions | undefined | null): number | null',
+    "export type KeyScoreMode = 'weighted' | 'matched' | 'max'",
+    "export type KeyMatchMode = 'perKey' | 'crossKey'",
   ]) {
     if (!refined.includes(expected)) {
       throw new Error(`patch-binding: expected \`${expected}\` in index.d.ts`);

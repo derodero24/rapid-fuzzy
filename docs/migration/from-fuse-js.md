@@ -131,7 +131,36 @@ searchObjects('john', users, {
 // ['John Smith', 'Bob Johnson'] — scores 1 and 0.67
 ```
 
-In rapid-fuzzy the combined score is the weighted average of the per-key scores (returned as `keyScores`), and an item must match at least one key with a positive weight.
+By default rapid-fuzzy's combined score is the weighted average of the per-key scores (returned as `keyScores`) over all keys, so a key that does not match lowers the score (Bob Johnson's email). fuse.js only combines the keys that match; the closest rapid-fuzzy equivalent is `scoreMode: 'matched'`, the weighted average over the matching keys only (`'max'` takes the best key score instead):
+
+```typescript
+searchObjects('john', users, {
+  keys: ['name', { name: 'email', weight: 0.5 }],
+  scoreMode: 'matched',
+}).map((r) => [r.item.name, r.score]);
+// [['John Smith', 1], ['Bob Johnson', 1]]
+```
+
+In every mode an item must match at least one key with a positive weight. See [Combining key scores](../../README.md#combining-key-scores-scoremode).
+
+By default every term of a multi-term query must match the same key: like fuse.js's extended search (`useExtendedSearch`), `john tokyo` finds nothing in `{ name: 'John Smith', city: 'Tokyo' }`. Where fuse.js needs a logical `$and` query that names the key of each term, rapid-fuzzy has `matchMode: 'crossKey'`, which matches every term against every key on its own (a `!term` then excludes items in which it matches any key):
+
+```typescript
+const people = [{ name: 'John Smith', city: 'Tokyo' }];
+searchObjects('john tokyo', people, { keys: ['name', 'city'], matchMode: 'crossKey' });
+// [{ item: { name: 'John Smith', city: 'Tokyo' }, score: 0.5, ... }]
+```
+
+See [Matching terms across keys](../../README.md#matching-terms-across-keys-matchmode).
+
+For the best match only (fuse.js's `fuse.search(query)[0]?.item`), `FuzzyObjectIndex.closest()` returns the object or `null`. It takes `minScore`, `scoreMode` and `matchMode` in an options object, or a number as the `minScore`:
+
+```typescript
+import { FuzzyObjectIndex } from 'rapid-fuzzy';
+const index = new FuzzyObjectIndex(users, { keys: ['name', { name: 'email', weight: 0.5 }] });
+index.closest('john', { minScore: 0.9, scoreMode: 'matched' })?.name; // 'John Smith'
+index.closest('johnson', 0.9); // null: Bob Johnson scores 0.67 by default
+```
 
 ### Match highlighting
 

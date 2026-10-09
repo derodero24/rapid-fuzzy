@@ -2,10 +2,10 @@
 //! the state left behind by `destroy()`.
 
 use nucleo_matcher::pattern::CaseMatching;
-use rapid_fuzzy_core::search::KeyedFuzzyIndexCore;
 use rapid_fuzzy_core::search::serialization::{
     KEYED_INDEX_MAGIC, deserialize_keyed, serialize_keyed,
 };
+use rapid_fuzzy_core::search::{KeyScoreMode, KeyedFuzzyIndexCore};
 
 fn strings(values: &[&str]) -> Vec<String> {
     values.iter().map(|s| (*s).to_string()).collect()
@@ -25,7 +25,14 @@ fn make_index() -> KeyedFuzzyIndexCore {
 
 fn search_indices(index: &KeyedFuzzyIndexCore, query: &str) -> Vec<u32> {
     index
-        .search(query, None, None, CaseMatching::Smart, false)
+        .search(
+            query,
+            None,
+            None,
+            CaseMatching::Smart,
+            false,
+            KeyScoreMode::Weighted,
+        )
         .into_iter()
         .map(|r| r.index)
         .collect()
@@ -101,7 +108,14 @@ fn destroy_empties_the_index() {
     assert!(search_indices(&index, "john").is_empty());
     assert!(
         index
-            .search("", None, None, CaseMatching::Smart, true)
+            .search(
+                "",
+                None,
+                None,
+                CaseMatching::Smart,
+                true,
+                KeyScoreMode::Weighted
+            )
             .is_empty()
     );
     assert!(!index.remove(0));
@@ -121,7 +135,14 @@ fn destroy_keeps_the_key_configuration_so_items_can_be_added_again() {
         .unwrap();
     assert_eq!(index.size(), 2);
 
-    let results = index.search("alice", None, None, CaseMatching::Smart, false);
+    let results = index.search(
+        "alice",
+        None,
+        None,
+        CaseMatching::Smart,
+        false,
+        KeyScoreMode::Weighted,
+    );
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].index, 0);
     assert_eq!(results[0].key_scores.len(), 2);

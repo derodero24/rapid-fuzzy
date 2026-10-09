@@ -181,6 +181,10 @@ describe('WASM on Bun (wasm-bindgen)', () => {
       });
       expect(index.search('jane')[0]?.item).toEqual({ name: 'Jane' });
       expect(index.closest('jon')).toEqual({ name: 'John' });
+      // closest() options: a minScore number, or { minScore, scoreMode, matchMode }.
+      expect(index.closest('jon', 1)).toBeNull();
+      expect(index.closest('john', { minScore: 1, scoreMode: 'max' })).toEqual({ name: 'John' });
+      expect(() => index.closest('jon', { scoreMode: 'avg' as 'max' })).toThrow(TypeError);
     });
   });
 });

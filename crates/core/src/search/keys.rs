@@ -1,10 +1,9 @@
 use napi::Status;
 use napi_derive::napi;
-use rapid_fuzzy_core::search::SearchKeysOptions;
 
+use super::KeySearchOptionsArg;
 #[cfg(test)]
-use super::SearchOptions;
-use super::SearchOptionsArg;
+use super::{KeySearchOptions, OptionsArg, SearchOptions};
 
 // Re-export CaseMatching so tests can access it via `use super::*`.
 #[cfg(test)]
@@ -15,10 +14,13 @@ pub(crate) use nucleo_matcher::pattern::CaseMatching;
 pub struct KeySearchResult {
     /// The index of the item in the original input array.
     pub index: u32,
-    /// The combined weighted score normalized to 0.0-1.0 range.
+    /// The combined score (0.0-1.0) of the key scores, as set by
+    /// `scoreMode` (by default the weighted mean over all keys).
     pub score: f64,
-    /// Per-key scores in the same order as the input keys.
-    /// A score of 0.0 means the item did not match on that key.
+    /// Per-key scores in the same order as the input keys: how well each
+    /// key matches the query (with `matchMode: 'crossKey'`, the share of the
+    /// query it matches). A score of 0.0 means the item did not match on
+    /// that key.
     pub key_scores: Vec<f64>,
 }
 
@@ -38,29 +40,34 @@ impl From<rapid_fuzzy_core::search::KeySearchResult> for KeySearchResult {
 /// All inner arrays must have the same length (the number of items).
 /// `weights` specifies the relative importance of each key.
 ///
-/// Every key is scored like `search()` scores an item; `keyScores` holds
-/// these scores for every key, including keys whose weight is 0. The
-/// combined score is `sum(keyScore * weight) / sum(weights)`, and items
-/// whose combined score is 0 (no match on a key with a positive weight) are
-/// not returned.
+/// By default every key is scored like `search()` scores an item, against
+/// the whole query; with `matchMode: 'crossKey'` every term of the query is
+/// matched against the keys on its own, so the terms may match different
+/// keys (see `KeySearchOptions.matchMode`). `keyScores` holds the key
+/// scores for every key, including keys whose weight is 0. By default the
+/// combined score is `sum(keyScore * weight) / sum(weights)`; the
+/// `scoreMode` option selects another way to combine them (see
+/// `KeySearchOptions.scoreMode`). Items whose combined score is 0 (no match
+/// on a key with a positive weight) are not returned.
 ///
-/// Returns results sorted by combined weighted score (best match first),
-/// then by the length of the best-matching key's text (shorter first, like
-/// `search()`), then by index. `new KeyedFuzzyIndex(keyTexts, weights)`
-/// returns exactly the same results.
+/// Returns results sorted by combined score (best match first), then by the
+/// length of the best-matching key's text (shorter first, like `search()`),
+/// then by index. `new KeyedFuzzyIndex(keyTexts, weights)` returns exactly
+/// the same results.
 ///
 /// The fourth argument accepts either a number (maxResults) or a
-/// SearchOptions object. Throws when the key texts have different lengths,
+/// KeySearchOptions object. Throws when the key texts have different lengths,
 /// when there is not exactly one weight per key, or when a weight is
 /// negative, NaN or infinite, or the weights sum to 0 or to Infinity (the
-/// same errors as the `KeyedFuzzyIndex` constructor).
+/// same errors as the `KeyedFuzzyIndex` constructor), and for an unknown
+/// `scoreMode` or `matchMode`.
 #[napi]
 pub fn search_keys(
     query: String,
     key_texts: Vec<Vec<String>>,
     weights: Vec<f64>,
-    #[napi(ts_arg_type = "number | SearchOptions | undefined | null")] options: Option<
-        SearchOptionsArg,
+    #[napi(ts_arg_type = "number | KeySearchOptions | undefined | null")] options: Option<
+        KeySearchOptionsArg,
     >,
 ) -> napi::Result<Vec<KeySearchResult>> {
     search_keys_inner(&query, &key_texts, &weights, options)
@@ -73,29 +80,9 @@ fn search_keys_inner(
     query: &str,
     key_texts: &[Vec<String>],
     weights: &[f64],
-    options: Option<SearchOptionsArg>,
+    options: Option<KeySearchOptionsArg>,
 ) -> Result<Vec<KeySearchResult>, String> {
-    let core_opts = match options {
-        Some(SearchOptionsArg::Options(opts)) => SearchKeysOptions {
-            max_results: opts.max_results,
-            min_score: opts.min_score,
-            is_case_sensitive: opts.is_case_sensitive,
-            return_all_on_empty: opts.return_all_on_empty,
-        },
-        Some(SearchOptionsArg::MaxResults(max_results)) => SearchKeysOptions {
-            max_results,
-            min_score: None,
-            is_case_sensitive: None,
-            return_all_on_empty: None,
-        },
-        None => SearchKeysOptions {
-            max_results: None,
-            min_score: None,
-            is_case_sensitive: None,
-            return_all_on_empty: None,
-        },
-    };
-
+    let core_opts = KeySearchOptionsArg::resolve(options);
     Ok(
         rapid_fuzzy_core::search::search_keys_impl(query, key_texts, weights, Some(core_opts))?
             .into_iter()
@@ -118,7 +105,7 @@ mod tests {
             &query,
             &key_texts,
             &weights,
-            options.map(SearchOptionsArg::Options),
+            options.map(|opts| OptionsArg::Options(KeySearchOptions::from(opts))),
         )
     }
 

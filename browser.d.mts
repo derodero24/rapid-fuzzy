@@ -57,6 +57,10 @@ export type {
   IndexSearchResult,
   SearchResult,
   KeySearchResult,
+  KeyScoreMode,
+  KeyMatchMode,
+  KeyClosestOptions,
+  KeySearchOptions,
   SearchOptions,
 } from './rapid-fuzzy-wasm-bindgen.mjs';
 export { highlight, highlightRanges } from './highlight.js';

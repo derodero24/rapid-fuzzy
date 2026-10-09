@@ -11,7 +11,11 @@ import { dirname, join, normalize } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import * as highlightCjs from '../highlight.js';
 import * as napi from '../index.js';
-import { FuzzyObjectIndex as NodeFuzzyObjectIndex, searchObjects } from '../objects.js';
+import {
+  FuzzyObjectIndex as NodeFuzzyObjectIndex,
+  type ObjectIndexSearchOptions,
+  searchObjects,
+} from '../objects.js';
 
 const ROOT = join(__dirname, '..');
 const WASM_PATH = join(ROOT, 'rapid-fuzzy-wasm-bindgen_bg.wasm');
@@ -319,6 +323,165 @@ describe.skipIf(!wasmAvailable)('browser.mjs (the WebAssembly build)', () => {
       expect(index.search('john')).toEqual(native.search('john'));
       index.destroy();
       expect(index.size).toBe(0);
+    });
+
+    it('passes matchMode through like the Node.js implementation (#782)', async () => {
+      const browser = await load();
+      const index = new browser.FuzzyObjectIndex(users, { keys });
+      const native = new NodeFuzzyObjectIndex(users, { keys });
+      for (const matchMode of ['perKey', 'crossKey'] as const) {
+        for (const scoreMode of ['weighted', 'matched', 'max'] as const) {
+          for (const query of ['john boston', 'smith example', 'john !boston', 'denver']) {
+            const options = { matchMode, scoreMode };
+            const expected = searchObjects(query, users, { keys, ...options });
+            expect(browser.searchObjects(query, users, { keys, ...options })).toEqual(expected);
+            expect(index.search(query, options)).toEqual(native.search(query, options));
+            const closestOptions = { minScore: 0.6, ...options };
+            expect(index.closest(query, closestOptions)).toEqual(
+              native.closest(query, closestOptions),
+            );
+          }
+        }
+      }
+      // The terms of 'john boston' are in different keys of John Smith.
+      expect(index.search('john boston')).toEqual([]);
+      expect(index.closest('john boston', { scoreMode: 'max', matchMode: 'crossKey' })).toEqual(
+        users[0],
+      );
+      const bogus = 'cross' as 'crossKey';
+      expect(() => index.search('john', { matchMode: bogus })).toThrow(TypeError);
+      expect(() => index.closest('john', { matchMode: bogus })).toThrow(TypeError);
+      expect(() => browser.searchObjects('john', users, { keys, matchMode: bogus })).toThrow(
+        TypeError,
+      );
+      index.destroy();
+    });
+
+    it('passes scoreMode through like the Node.js implementation (#781)', async () => {
+      const browser = await load();
+      const index = new browser.FuzzyObjectIndex(users, { keys });
+      const native = new NodeFuzzyObjectIndex(users, { keys });
+      for (const scoreMode of ['weighted', 'matched', 'max'] as const) {
+        for (const query of ['john', 'boston', 'example']) {
+          const expected = searchObjects(query, users, { keys, scoreMode });
+          expect(browser.searchObjects(query, users, { keys, scoreMode })).toEqual(expected);
+          expect(index.search(query, { scoreMode })).toEqual(native.search(query, { scoreMode }));
+          expect(index.closest(query, { minScore: 0.6, scoreMode })).toEqual(
+            native.closest(query, { minScore: 0.6, scoreMode }),
+          );
+        }
+      }
+      // A single exact match on one key out of three scores 1 in 'matched' mode.
+      expect(index.closest('boston', 0.9)).toBeNull();
+      expect(index.closest('boston', { minScore: 0.9, scoreMode: 'matched' })).toEqual(users[0]);
+      const bogus = 'mean' as 'max';
+      expect(() => index.search('john', { scoreMode: bogus })).toThrow(TypeError);
+      expect(() => index.closest('john', { scoreMode: bogus })).toThrow(TypeError);
+      expect(() => browser.searchObjects('john', users, { keys, scoreMode: bogus })).toThrow(
+        TypeError,
+      );
+      index.destroy();
+    });
+
+    it('reads search options like the Node.js implementation', async () => {
+      const browser = await load();
+      const index = new browser.FuzzyObjectIndex(users, { keys });
+      const native = new NodeFuzzyObjectIndex(users, { keys });
+      class Getters {
+        get maxResults(): number {
+          return 1;
+        }
+        get scoreMode(): 'max' {
+          return 'max';
+        }
+        get matchMode(): 'crossKey' {
+          return 'crossKey';
+        }
+      }
+      const options: ObjectIndexSearchOptions[] = [
+        new Getters(),
+        Object.create({ maxResults: 1 }) as ObjectIndexSearchOptions,
+        Object.create({ scoreMode: 'max', matchMode: 'crossKey' }) as ObjectIndexSearchOptions,
+      ];
+      for (const opts of options) {
+        for (const query of ['john', 'john boston', 'example']) {
+          expect(index.search(query, opts)).toEqual(native.search(query, opts));
+        }
+      }
+      // Options from a getter or the prototype chain take effect.
+      expect(native.search('john', new Getters())).toHaveLength(1);
+      expect(native.search('john boston', new Getters())).toHaveLength(1);
+      index.destroy();
+    });
+
+    it('rejects a null scoreMode or matchMode option like the Node.js implementation', async () => {
+      const browser = await load();
+      const index = new browser.FuzzyObjectIndex(users, { keys });
+      const native = new NodeFuzzyObjectIndex(users, { keys });
+      for (const options of [{ scoreMode: null }, { matchMode: null }]) {
+        const opts = options as unknown as ObjectIndexSearchOptions;
+        const field = Object.keys(options)[0];
+        const message = new RegExp(`^${field} must be .*, got null$`);
+        expect(() => native.search('john', opts)).toThrow(message);
+        expect(() => searchObjects('john', users, { keys, ...opts })).toThrow(message);
+        expect(() => index.search('john', opts)).toThrow(TypeError);
+        expect(() => index.search('john', opts)).toThrow(
+          new RegExp(`${field} must be .*, got null$`),
+        );
+        expect(() => browser.searchObjects('john', users, { keys, ...opts })).toThrow(TypeError);
+        expect(() => native.closest('john', opts)).toThrow(message);
+        expect(() => index.closest('john', opts)).toThrow(TypeError);
+        expect(() => index.closest('john', opts)).toThrow(
+          new RegExp(`${field} must be .*, got null$`),
+        );
+      }
+      // A null options argument means the defaults.
+      expect(index.closest('john', null)).toEqual(native.closest('john', null));
+      expect(index.closest('john', null)).toEqual(users[0]);
+      index.destroy();
+    });
+
+    it('reads closest() options like the Node.js implementation', async () => {
+      const browser = await load();
+      const index = new browser.FuzzyObjectIndex(users, { keys });
+      const native = new NodeFuzzyObjectIndex(users, { keys });
+      const options: Array<number | napi.KeyClosestOptions | undefined | null> = [
+        undefined,
+        null,
+        {},
+        0,
+        0.6,
+        0.9,
+        1,
+        { minScore: 0.9 },
+        { scoreMode: 'matched' },
+        { minScore: 0.9, scoreMode: 'matched' },
+        { scoreMode: 'max', matchMode: 'crossKey' },
+        { minScore: 1, scoreMode: 'max', matchMode: 'crossKey' },
+        { minScore: undefined, scoreMode: undefined, matchMode: undefined },
+      ];
+      let found = 0;
+      for (const opts of options) {
+        for (const query of ['john', 'boston', 'john boston', 'smith example', 'zzz', '']) {
+          const expected = native.closest(query, opts);
+          if (expected !== null) found++;
+          expect(index.closest(query, opts)).toEqual(expected);
+        }
+      }
+      expect(found).toBeGreaterThan(20);
+      // A number is a shorthand for minScore.
+      expect(index.closest('boston', 0.9)).toEqual(index.closest('boston', { minScore: 0.9 }));
+      // Options that are neither a number nor an object are rejected alike.
+      for (const bad of ['0.9', true]) {
+        const message = `options must be a number (minScore) or a KeyClosestOptions object, got ${typeof bad}`;
+        const opts = bad as unknown as number;
+        expect(() => native.closest('john', opts)).toThrow(new TypeError(message));
+        expect(() => index.closest('john', opts)).toThrow(new TypeError(message));
+        const searchMessage = `options must be a number (maxResults) or a KeySearchOptions object, got ${typeof bad}`;
+        expect(() => native.search('john', opts)).toThrow(new TypeError(searchMessage));
+        expect(() => index.search('john', opts)).toThrow(new TypeError(searchMessage));
+      }
+      index.destroy();
     });
 
     it('leaves out the Buffer-based serialize() / deserialize()', async () => {

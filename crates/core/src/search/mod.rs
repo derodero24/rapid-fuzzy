@@ -16,7 +16,10 @@ use napi::bindgen_prelude::{FromNapiValue, Object, TypeName, Unknown, ValidateNa
 use napi::{Status, ValueType};
 use napi_derive::napi;
 use nucleo_matcher::pattern::CaseMatching;
-use rapid_fuzzy_core::search::{check_max_results, is_empty_query};
+use rapid_fuzzy_core::search::{
+    KeyMatchMode, KeyScoreMode, SearchKeysOptions, check_max_results, invalid_match_mode,
+    invalid_score_mode, is_empty_query,
+};
 
 // -------------------------
 // Napi-specific types
@@ -153,46 +156,257 @@ pub(crate) fn resolve_max_results(value: f64) -> napi::Result<Option<u32>> {
     check_max_results(value).map_err(|message| napi::Error::new(Status::InvalidArg, message))
 }
 
-/// Read an optional property, treating `undefined` (or a missing property)
-/// as `None`, like the conversion `#[napi(object)]` generates.
-fn optional_field<T: FromNapiValue>(obj: &Object<'_>, field: &str) -> napi::Result<Option<T>> {
+/// Read an optional property of the options object `type_name`, treating
+/// `undefined` (or a missing property) as `None`, like the conversion
+/// `#[napi(object)]` generates.
+fn optional_field<T: FromNapiValue>(
+    obj: &Object<'_>,
+    type_name: &str,
+    field: &str,
+) -> napi::Result<Option<T>> {
     obj.get::<T>(field).map_err(|err| {
-        napi::Error::new(
-            err.status,
-            format!("{} on SearchOptions.{field}", err.reason),
-        )
+        napi::Error::new(err.status, format!("{} on {type_name}.{field}", err.reason))
     })
+}
+
+/// An options object read from JavaScript by hand (`object_from_js = false`),
+/// so that its fields are validated.
+pub(crate) trait OptionsObject: Sized {
+    /// The TypeScript name of the options type.
+    const NAME: &'static str;
+    /// The TypeScript type of a `number | options` argument.
+    const ARG_TYPE: &'static str;
+
+    fn read(obj: &Object<'_>) -> napi::Result<Self>;
+}
+
+/// Convert a `number | options` argument: a number with `from_number`, an
+/// options object `T` with `from_options`. Any other value is rejected with
+/// an `InvalidArg` error naming `shorthand`, the option a number sets.
+///
+/// # Safety
+///
+/// `env` and `napi_val` must be valid, as for [`FromNapiValue::from_napi_value`].
+unsafe fn number_or_options<T: OptionsObject, R>(
+    env: sys::napi_env,
+    napi_val: sys::napi_value,
+    shorthand: &str,
+    from_number: impl FnOnce(f64) -> napi::Result<R>,
+    from_options: impl FnOnce(T) -> R,
+) -> napi::Result<R> {
+    let value_type = unsafe { Unknown::from_napi_value(env, napi_val)? }.get_type()?;
+    match value_type {
+        ValueType::Number => from_number(unsafe { f64::from_napi_value(env, napi_val)? }),
+        ValueType::Object => Ok(from_options(T::read(&unsafe {
+            Object::from_napi_value(env, napi_val)?
+        })?)),
+        _ => Err(napi::Error::new(
+            Status::InvalidArg,
+            format!(
+                "Expected a number ({shorthand}) or a {} object, got {value_type}",
+                T::NAME
+            ),
+        )),
+    }
+}
+
+/// Read the `SearchOptions` fields of `obj`, an options object `type_name`.
+fn read_search_options(obj: &Object<'_>, type_name: &str) -> napi::Result<SearchOptions> {
+    let max_results = match optional_field::<f64>(obj, type_name, "maxResults")? {
+        Some(value) => resolve_max_results(value)?,
+        None => None,
+    };
+    Ok(SearchOptions {
+        max_results,
+        min_score: optional_field(obj, type_name, "minScore")?,
+        include_positions: optional_field(obj, type_name, "includePositions")?,
+        is_case_sensitive: optional_field(obj, type_name, "isCaseSensitive")?,
+        return_all_on_empty: optional_field(obj, type_name, "returnAllOnEmpty")?,
+    })
+}
+
+impl OptionsObject for SearchOptions {
+    const NAME: &'static str = "SearchOptions";
+    const ARG_TYPE: &'static str = "number | SearchOptions";
+
+    fn read(obj: &Object<'_>) -> napi::Result<Self> {
+        read_search_options(obj, Self::NAME)
+    }
 }
 
 impl FromNapiValue for SearchOptions {
     unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> napi::Result<Self> {
-        let obj = unsafe { Object::from_napi_value(env, napi_val)? };
-        let max_results = match optional_field::<f64>(&obj, "maxResults")? {
-            Some(value) => resolve_max_results(value)?,
-            None => None,
-        };
-        Ok(Self {
-            max_results,
-            min_score: optional_field(&obj, "minScore")?,
-            include_positions: optional_field(&obj, "includePositions")?,
-            is_case_sensitive: optional_field(&obj, "isCaseSensitive")?,
-            return_all_on_empty: optional_field(&obj, "returnAllOnEmpty")?,
-        })
+        Self::read(&unsafe { Object::from_napi_value(env, napi_val)? })
     }
 }
 
 impl ValidateNapiValue for SearchOptions {}
 
-/// The `options` argument of `search`, `FuzzyIndex.search` and
-/// `FuzzyIndex.searchIndices`: a `maxResults` number or a `SearchOptions`.
-pub enum SearchOptionsArg {
-    MaxResults(Option<u32>),
-    Options(SearchOptions),
+/// Options for multi-key search: `searchKeys()`, `KeyedFuzzyIndex.search()`
+/// and the object search built on them (`searchObjects()`,
+/// `FuzzyObjectIndex.search()`). The `SearchOptions` fields, plus
+/// `scoreMode` and `matchMode`.
+#[napi(object, object_from_js = false, object_to_js = false)]
+pub struct KeySearchOptions {
+    /// Maximum number of results to return: a non-negative integer, or
+    /// `Infinity` for no limit. NaN, negative and fractional values throw.
+    pub max_results: Option<u32>,
+    /// Minimum combined score (0.0-1.0, see `scoreMode`) to include in
+    /// results.
+    pub min_score: Option<f64>,
+    /// Accepted for compatibility with `SearchOptions`, but has no effect:
+    /// multi-key results have no match positions.
+    pub include_positions: Option<bool>,
+    /// If true, matching is case-sensitive. When false or omitted, matching
+    /// is smart case: case-insensitive while the query is all lower-case, and
+    /// case-sensitive once it contains an upper-case letter. `false` does not
+    /// force case-insensitive matching; lower-case the query for that.
+    pub is_case_sensitive: Option<bool>,
+    /// If true, return all items when the query has no search term: empty,
+    /// whitespace-only, or only query syntax such as `^` or `!`. Every item
+    /// then scores 1, in every `scoreMode`. Default is false.
+    pub return_all_on_empty: Option<bool>,
+    /// How the per-key scores (`keyScores`) of an item are combined into its
+    /// `score`. Only keys with a positive weight take part:
+    ///
+    /// - `'weighted'` (default): the weighted mean over all keys,
+    ///   `sum(weight * keyScore) / sum(weight)`. A key that does not match
+    ///   counts as 0, so an exact match on one key out of several scores only
+    ///   that key's share of the total weight.
+    /// - `'matched'`: the weighted mean over the keys that match
+    ///   (`keyScore > 0`) only. An item whose only matching key matches
+    ///   exactly scores 1.
+    /// - `'max'`: the highest score of any key. Weights then only select the
+    ///   keys that take part (weight > 0).
+    ///
+    /// `keyScores` are the same in every mode; `minScore` and `maxResults`
+    /// apply to the combined score. Equal scores are ordered by the length of
+    /// the best-matching key's text (the key contributing most to the score:
+    /// highest `weight * keyScore`, or highest `keyScore` in `'max'` mode;
+    /// the first one on a tie), then by index. Any other value throws an
+    /// `InvalidArg` error.
+    ///
+    /// With `matchMode: 'crossKey'`, `'matched'` counts the weight of each
+    /// key in proportion to the share of the query it matches, and `'max'`
+    /// scores each term by the key it matches best (see `matchMode`).
+    #[napi(ts_type = "KeyScoreMode")]
+    pub score_mode: Option<KeyScoreMode>,
+    /// How the query is matched against the keys of an item:
+    ///
+    /// - `'perKey'` (default): every key is matched against the whole query,
+    ///   like `search()` matches an item. A key scores 0 unless it matches
+    ///   every term of the query and none of its `!term` exclusions.
+    /// - `'crossKey'`: every term is matched against the keys on its own, so
+    ///   the terms may match different keys: `'john tokyo'` finds an item
+    ///   whose name is "John Smith" and whose city is "Tokyo". Every term
+    ///   must match at least one key, and a `!term` matching any key
+    ///   excludes the item. A key's score (`keyScores`) is the share of the
+    ///   query it matches: the scores of the terms it matches, each counting
+    ///   in proportion to the score of a perfect match of the term (which
+    ///   grows with its length), so a key matching every term perfectly
+    ///   scores 1. `scoreMode` combines these key scores: `'weighted'` as
+    ///   `sum(weight * keyScore) / sum(weight)`, as in `'perKey'` mode;
+    ///   `'matched'` as `sum(weight * keyScore) / sum(weight * coverage)`,
+    ///   where a key's coverage is the share of the query made up by the
+    ///   terms it matches (in `'perKey'` mode, 1 for a key that matches and
+    ///   0 otherwise); `'max'` by taking each term's score on the key it
+    ///   matches best. In `'max'` mode, an item whose every term matches some
+    ///   key perfectly scores 1. In `'matched'` mode, only an item whose
+    ///   every term matches perfectly each key it matches scores 1: a term
+    ///   that also matches another key partially lowers the score, so
+    ///   `'john tokyo'` scores 0.89 on an item whose name is "John Smith",
+    ///   whose city is "Tokyo" and whose email "jtokyo@example.com" matches
+    ///   `tokyo` partially.
+    ///
+    /// Only keys with a positive weight take part in either mode; keys whose
+    /// weight is 0 still get `keyScores`. For a query of a single term
+    /// without exclusions, both modes return the same results. Any other
+    /// value throws an `InvalidArg` error.
+    #[napi(ts_type = "KeyMatchMode")]
+    pub match_mode: Option<KeyMatchMode>,
 }
 
-impl TypeName for SearchOptionsArg {
+impl OptionsObject for KeySearchOptions {
+    const NAME: &'static str = "KeySearchOptions";
+    const ARG_TYPE: &'static str = "number | KeySearchOptions";
+
+    fn read(obj: &Object<'_>) -> napi::Result<Self> {
+        let base = read_search_options(obj, Self::NAME)?;
+        Ok(Self {
+            score_mode: read_score_mode(obj)?,
+            match_mode: read_match_mode(obj)?,
+            ..base.into()
+        })
+    }
+}
+
+/// Read the `scoreMode` field of a multi-key options object.
+fn read_score_mode(obj: &Object<'_>) -> napi::Result<Option<KeyScoreMode>> {
+    Ok(obj.get::<ScoreModeArg>("scoreMode")?.map(|arg| arg.0))
+}
+
+/// Read the `matchMode` field of a multi-key options object.
+fn read_match_mode(obj: &Object<'_>) -> napi::Result<Option<KeyMatchMode>> {
+    Ok(obj.get::<MatchModeArg>("matchMode")?.map(|arg| arg.0))
+}
+
+/// Options for `KeyedFuzzyIndex.closest()` and `FuzzyObjectIndex.closest()`:
+/// the `KeySearchOptions` fields that apply to finding the best match. The
+/// result is the first result of `search()` with these options and
+/// `maxResults: 1`. Other `KeySearchOptions` fields are not read.
+#[napi(object, object_from_js = false, object_to_js = false)]
+#[derive(Default)]
+pub struct KeyClosestOptions {
+    /// Minimum combined score (0.0-1.0, see `scoreMode`): `closest()`
+    /// returns null when the best match scores below it.
+    pub min_score: Option<f64>,
+    /// How the per-key scores of an item are combined into its score:
+    /// `'weighted'` (default), `'matched'` or `'max'`, as in
+    /// `KeySearchOptions.scoreMode`. Any other value throws an `InvalidArg`
+    /// error.
+    #[napi(ts_type = "KeyScoreMode")]
+    pub score_mode: Option<KeyScoreMode>,
+    /// How the query is matched against the keys of an item: `'perKey'`
+    /// (default) or `'crossKey'`, as in `KeySearchOptions.matchMode`. Any
+    /// other value throws an `InvalidArg` error.
+    #[napi(ts_type = "KeyMatchMode")]
+    pub match_mode: Option<KeyMatchMode>,
+}
+
+impl OptionsObject for KeyClosestOptions {
+    const NAME: &'static str = "KeyClosestOptions";
+    const ARG_TYPE: &'static str = "number | KeyClosestOptions";
+
+    /// Read the fields like [`KeySearchOptions`] reads them, in the same order.
+    fn read(obj: &Object<'_>) -> napi::Result<Self> {
+        Ok(Self {
+            min_score: optional_field(obj, Self::NAME, "minScore")?,
+            score_mode: read_score_mode(obj)?,
+            match_mode: read_match_mode(obj)?,
+        })
+    }
+}
+
+impl KeyClosestOptions {
+    /// The options of the search whose first result `closest()` returns.
+    pub(crate) fn to_core(&self) -> SearchKeysOptions {
+        SearchKeysOptions {
+            max_results: Some(1),
+            min_score: self.min_score,
+            score_mode: self.score_mode,
+            match_mode: self.match_mode,
+            ..SearchKeysOptions::default()
+        }
+    }
+}
+
+/// The `options` argument of `KeyedFuzzyIndex.closest`: a `KeyClosestOptions`
+/// object, or a number as a shorthand for `{ minScore }`.
+pub struct KeyClosestOptionsArg(pub KeyClosestOptions);
+
+impl TypeName for KeyClosestOptionsArg {
     fn type_name() -> &'static str {
-        "number | SearchOptions"
+        KeyClosestOptions::ARG_TYPE
     }
 
     fn value_type() -> ValueType {
@@ -200,23 +414,152 @@ impl TypeName for SearchOptionsArg {
     }
 }
 
-impl FromNapiValue for SearchOptionsArg {
+impl FromNapiValue for KeyClosestOptionsArg {
     unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> napi::Result<Self> {
-        let value_type = unsafe { Unknown::from_napi_value(env, napi_val)? }.get_type()?;
-        match value_type {
-            ValueType::Number => {
-                let value = unsafe { f64::from_napi_value(env, napi_val)? };
-                Ok(Self::MaxResults(resolve_max_results(value)?))
+        let options = unsafe {
+            number_or_options(
+                env,
+                napi_val,
+                "minScore",
+                |min_score| {
+                    Ok(KeyClosestOptions {
+                        min_score: Some(min_score),
+                        ..KeyClosestOptions::default()
+                    })
+                },
+                |options| options,
+            )
+        }?;
+        Ok(Self(options))
+    }
+}
+
+impl From<SearchOptions> for KeySearchOptions {
+    fn from(opts: SearchOptions) -> Self {
+        Self {
+            max_results: opts.max_results,
+            min_score: opts.min_score,
+            include_positions: opts.include_positions,
+            is_case_sensitive: opts.is_case_sensitive,
+            return_all_on_empty: opts.return_all_on_empty,
+            score_mode: None,
+            match_mode: None,
+        }
+    }
+}
+
+/// A `scoreMode` value: `'weighted'`, `'matched'` or `'max'`. Anything else
+/// (including other types) is rejected with an `InvalidArg` error.
+pub struct ScoreModeArg(pub KeyScoreMode);
+
+impl TypeName for ScoreModeArg {
+    fn type_name() -> &'static str {
+        "KeyScoreMode"
+    }
+
+    fn value_type() -> ValueType {
+        ValueType::String
+    }
+}
+
+impl FromNapiValue for ScoreModeArg {
+    unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> napi::Result<Self> {
+        let mode = match unsafe { Unknown::from_napi_value(env, napi_val)? }.get_type()? {
+            ValueType::String => {
+                KeyScoreMode::from_name(&unsafe { String::from_napi_value(env, napi_val)? })
             }
-            ValueType::Object => Ok(Self::Options(unsafe {
-                SearchOptions::from_napi_value(env, napi_val)?
-            })),
-            _ => Err(napi::Error::new(
-                Status::InvalidArg,
-                format!(
-                    "Expected a number (maxResults) or a SearchOptions object, got {value_type}"
-                ),
-            )),
+            // `typeof`-style names: number, null, object, ...
+            other => Err(invalid_score_mode(&other.to_string().to_lowercase())),
+        };
+        mode.map(Self)
+            .map_err(|message| napi::Error::new(Status::InvalidArg, message))
+    }
+}
+
+/// A `matchMode` value: `'perKey'` or `'crossKey'`. Anything else (including
+/// other types) is rejected with an `InvalidArg` error.
+pub struct MatchModeArg(pub KeyMatchMode);
+
+impl TypeName for MatchModeArg {
+    fn type_name() -> &'static str {
+        "KeyMatchMode"
+    }
+
+    fn value_type() -> ValueType {
+        ValueType::String
+    }
+}
+
+impl FromNapiValue for MatchModeArg {
+    unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> napi::Result<Self> {
+        let mode = match unsafe { Unknown::from_napi_value(env, napi_val)? }.get_type()? {
+            ValueType::String => {
+                KeyMatchMode::from_name(&unsafe { String::from_napi_value(env, napi_val)? })
+            }
+            // `typeof`-style names: number, null, object, ...
+            other => Err(invalid_match_mode(&other.to_string().to_lowercase())),
+        };
+        mode.map(Self)
+            .map_err(|message| napi::Error::new(Status::InvalidArg, message))
+    }
+}
+
+/// The `options` argument of the search functions: a `maxResults` number or
+/// an options object `T`.
+pub enum OptionsArg<T> {
+    MaxResults(Option<u32>),
+    Options(T),
+}
+
+/// The `options` argument of `search`, `FuzzyIndex.search` and
+/// `FuzzyIndex.searchIndices`: a `maxResults` number or a `SearchOptions`.
+pub type SearchOptionsArg = OptionsArg<SearchOptions>;
+
+/// The `options` argument of `searchKeys` and `KeyedFuzzyIndex.search`: a
+/// `maxResults` number or a `KeySearchOptions`.
+pub type KeySearchOptionsArg = OptionsArg<KeySearchOptions>;
+
+impl<T: OptionsObject> TypeName for OptionsArg<T> {
+    fn type_name() -> &'static str {
+        T::ARG_TYPE
+    }
+
+    fn value_type() -> ValueType {
+        ValueType::Unknown
+    }
+}
+
+impl<T: OptionsObject> FromNapiValue for OptionsArg<T> {
+    unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> napi::Result<Self> {
+        unsafe {
+            number_or_options(
+                env,
+                napi_val,
+                "maxResults",
+                |value| resolve_max_results(value).map(Self::MaxResults),
+                Self::Options,
+            )
+        }
+    }
+}
+
+impl KeySearchOptionsArg {
+    /// The core-lib options of a `number | KeySearchOptions` argument.
+    pub(crate) fn resolve(options: Option<Self>) -> SearchKeysOptions {
+        match options {
+            Some(OptionsArg::Options(opts)) => SearchKeysOptions {
+                max_results: opts.max_results,
+                min_score: opts.min_score,
+                is_case_sensitive: opts.is_case_sensitive,
+                return_all_on_empty: opts.return_all_on_empty,
+                score_mode: opts.score_mode,
+                match_mode: opts.match_mode,
+            },
+            Some(OptionsArg::MaxResults(max_results)) => SearchKeysOptions {
+                max_results,
+                ..SearchKeysOptions::default()
+            },
+            None => SearchKeysOptions::default(),
         }
     }
 }

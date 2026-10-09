@@ -50,6 +50,7 @@ interface Window {
     searchObjects: string[];
     objectIndexSearch: string[];
     objectIndexClosest: string | null;
+    objectIndexClosestOptions: Array<string | null>;
     objectIndexSize: number;
     objectsFromMainEntry: boolean;
     exports: string[];

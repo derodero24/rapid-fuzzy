@@ -192,6 +192,32 @@ The Rust benchmarks use [codspeed-criterion-compat](https://crates.io/crates/cod
 
 **TypeScript/JavaScript:** Formatted and linted with [Biome](https://biomejs.dev/).
 
+## Releasing (maintainers)
+
+Releases are automated by `.github/workflows/release.yml`:
+
+1. On every push to `develop` that brings changesets, the workflow opens or updates the "chore(release): version packages" PR, which bumps the version in `package.json`, the Cargo manifests and the `npm/*` platform manifests and writes the changelog.
+2. Once that PR is merged and the version is not on npm yet, the workflow opens or updates the "chore(release): release vX.Y.Z" PR from `develop` to `main`.
+3. Merging the release PR builds the binaries for every target and the wasm-bindgen browser build, loads each binary on its own platform, publishes the nine platform packages and then `rapid-fuzzy` to npm with provenance, and finally tags the released commit and creates the GitHub release.
+
+### npm trusted publishing
+
+The publish job is ready for [npm trusted publishing](https://docs.npmjs.com/trusted-publishers) (OIDC instead of the long-lived `NPM_TOKEN` secret): it has `id-token: write` and pins an npm CLI recent enough for it (trusted publishing needs npm 11.5.1 or later and Node 22.14.0 or later). For each package, `npm publish` tries OIDC first and falls back to the token, so registering trusted publishers cannot break a release. Cut-over:
+
+1. On npmjs.com, add a trusted publisher to each of the ten packages (package **Settings** → **Trusted publishing** → GitHub Actions): organization or user `derodero24`, repository `rapid-fuzzy`, workflow filename `release.yml`, no environment, and allow `npm publish`. The packages are `rapid-fuzzy` and the platform packages in `npm/`: `rapid-fuzzy-darwin-arm64`, `rapid-fuzzy-darwin-x64`, `rapid-fuzzy-linux-arm64-gnu`, `rapid-fuzzy-linux-arm64-musl`, `rapid-fuzzy-linux-x64-gnu`, `rapid-fuzzy-linux-x64-musl`, `rapid-fuzzy-wasm32-wasi`, `rapid-fuzzy-win32-arm64-msvc` and `rapid-fuzzy-win32-x64-msvc`. A new trusted publisher expires unless it completes a successful publish within 2 days, so add them shortly before merging a release PR (an expired one has to be deleted and added again).
+2. Release as usual, then check that every package of the new version went through OIDC rather than the token fallback (npm only logs a failed OIDC exchange at verbose level, so a successful release alone does not prove it):
+
+   ```bash
+   VERSION=x.y.z # the version just released
+   for pkg in rapid-fuzzy $(node -p "require('fs').readdirSync('npm').map((d) => require('./npm/' + d + '/package.json').name).join(' ')"); do
+     echo "${pkg}: $(npm view "${pkg}@${VERSION}" _npmUser.name)"
+   done
+   ```
+
+   Every line must read `GitHub Actions`; a token publish shows the npm account name instead. If a package shows the account name, fix its trusted publisher (every field is case-sensitive) and wait for the next release before going on.
+3. For each package, set **Settings** → **Publishing access** to "Require two-factor authentication and disallow tokens". Trusted publishing keeps working; tokens can no longer publish.
+4. Remove the two `NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}` lines from the publish job in `release.yml`, revoke the token on npmjs.com and delete the `NPM_TOKEN` repository secret.
+
 ## Questions?
 
 Open a [GitHub Discussion](https://github.com/derodero24/rapid-fuzzy/discussions) or file an issue.

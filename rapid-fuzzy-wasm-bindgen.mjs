@@ -270,17 +270,35 @@ export class KeyedFuzzyIndex {
     /**
      * Find the index of the closest matching item.
      *
-     * Returns the index of the best match, or null if no match is found.
-     * If `minScore` is provided, returns null when the best match scores below the threshold.
+     * Returns the index of the best match, or null if no match is found:
+     * the index of the first result of
+     * `search(query, { maxResults: 1, minScore, scoreMode, matchMode })`.
+     *
+     * The second argument accepts either a number (minScore shorthand) or a
+     * KeyClosestOptions object: `minScore` makes it return null when the
+     * best match scores below the threshold, and `scoreMode` and
+     * `matchMode` work like the `search()` options of the same names
+     * (defaults `"weighted"` and `"perKey"`).
      * @param {string} query
-     * @param {number | null} [minScore]
+     * @param {number | KeyClosestOptions | null} [options]
      * @returns {number | null}
      */
-    closest(query, minScore) {
-        const ptr0 = passStringToWasm0(query, wasm.__wbindgen_export, wasm.__wbindgen_export2);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.keyedfuzzyindex_closest(this.__wbg_ptr, ptr0, len0, !isLikeNone(minScore), isLikeNone(minScore) ? 0 : minScore);
-        return takeObject(ret);
+    closest(query, options) {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            const ptr0 = passStringToWasm0(query, wasm.__wbindgen_export, wasm.__wbindgen_export2);
+            const len0 = WASM_VECTOR_LEN;
+            wasm.keyedfuzzyindex_closest(retptr, this.__wbg_ptr, ptr0, len0, isLikeNone(options) ? 0 : addHeapObject(options));
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+            if (r2) {
+                throw takeObject(r1);
+            }
+            return takeObject(r0);
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
     }
     /**
      * Reconstruct a KeyedFuzzyIndex from a previously serialized Uint8Array.
@@ -355,11 +373,13 @@ export class KeyedFuzzyIndex {
     /**
      * Search the index for items matching the query.
      *
-     * Returns results sorted by combined weighted score (best match first).
-     * The second argument accepts either a number (maxResults) or a
-     * SearchOptions object, like `FuzzyIndex.search()`.
+     * Returns results sorted by combined score (best match first), exactly
+     * like `searchKeys()` on the same key texts and weights. The second
+     * argument accepts either a number (maxResults) or a KeySearchOptions
+     * object, whose `matchMode` selects how the query is matched against
+     * the keys and `scoreMode` how the per-key scores are combined.
      * @param {string} query
-     * @param {number | SearchOptions | null} [options]
+     * @param {number | KeySearchOptions | null} [options]
      * @returns {KeySearchResult[]}
      */
     search(query, options) {
@@ -1260,18 +1280,21 @@ export function search(query, items, options) {
  *
  * `keyTexts[k]` is an array of strings for key `k`, one per item.
  * `weights` specifies the relative importance of each key.
- * `options` is a `SearchOptions` object or a number (maxResults).
+ * `options` is a `KeySearchOptions` object or a number (maxResults); its
+ * `matchMode` selects how the query is matched against the keys and its
+ * `scoreMode` how the per-key scores are combined.
  *
- * Returns results sorted by combined weighted score (best match first),
- * exactly like `KeyedFuzzyIndex.search` on the same key texts and weights.
+ * Returns results sorted by combined score (best match first), exactly like
+ * `KeyedFuzzyIndex.search` on the same key texts and weights.
  * Throws an `Error` for invalid input (key texts of different lengths, a
  * weight count that differs from the key count, negative, NaN or infinite
  * weights, or weights summing to 0 or Infinity), like the `KeyedFuzzyIndex`
- * constructor.
+ * constructor, and a `TypeError` for invalid options (such as an unknown
+ * `scoreMode` or `matchMode`).
  * @param {string} query
  * @param {string[][]} keyTexts
  * @param {ArrayLike<number>} weights
- * @param {number | SearchOptions | null} [options]
+ * @param {number | KeySearchOptions | null} [options]
  * @returns {KeySearchResult[]}
  */
 export function searchKeys(query, keyTexts, weights, options) {
@@ -1624,6 +1647,10 @@ function __wbg_get_imports() {
             const ret = Error(getStringFromWasm0(arg0, arg1));
             return addHeapObject(ret);
         },
+        __wbg_Number_c54e7112a3fa7e3e: function(arg0) {
+            const ret = Number(getObject(arg0));
+            return ret;
+        },
         __wbg_String_8564e559799eccda: function(arg0, arg1) {
             const ret = String(getObject(arg1));
             const ptr1 = passStringToWasm0(ret, wasm.__wbindgen_export, wasm.__wbindgen_export2);
@@ -1649,6 +1676,10 @@ function __wbg_get_imports() {
         },
         __wbg___wbindgen_is_function_fcda5e3902d732fe: function(arg0) {
             const ret = typeof(getObject(arg0)) === 'function';
+            return ret;
+        },
+        __wbg___wbindgen_is_null_5160b3e381865372: function(arg0) {
+            const ret = getObject(arg0) === null;
             return ret;
         },
         __wbg___wbindgen_is_object_edb6b15aa3afe12e: function(arg0) {
@@ -1680,6 +1711,10 @@ function __wbg_get_imports() {
         },
         __wbg___wbindgen_throw_5d9e815e6fdf150f: function(arg0, arg1) {
             throw new Error(getStringFromWasm0(arg0, arg1));
+        },
+        __wbg___wbindgen_typeof_8e630e4d777e2338: function(arg0) {
+            const ret = typeof getObject(arg0);
+            return addHeapObject(ret);
         },
         __wbg_call_269c5566fbede3eb: function() { return handleError(function (arg0, arg1) {
             const ret = getObject(arg0).call(getObject(arg1));
@@ -1727,6 +1762,10 @@ function __wbg_get_imports() {
         },
         __wbg_isArray_5674713bb7b79043: function(arg0) {
             const ret = Array.isArray(getObject(arg0));
+            return ret;
+        },
+        __wbg_isSafeInteger_8f51c743827d1ec5: function(arg0) {
+            const ret = Number.isSafeInteger(getObject(arg0));
             return ret;
         },
         __wbg_iterator_22ddeb808cf55a6f: function() {
