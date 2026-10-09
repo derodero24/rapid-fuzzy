@@ -107,13 +107,47 @@ function optionalFieldsAcceptUndefined(dts, name) {
   return dts.slice(0, start) + body + dts.slice(end);
 }
 
+/**
+ * The values of `KeySearchOptions.scoreMode`, which the Rust side types as
+ * `KeyScoreMode` (`#[napi(ts_type)]`): napi-rs declares string enums as TS
+ * enums, which do not accept string literals. Keep in sync with
+ * `KeyScoreMode::from_name` in crates/core-lib/src/search/keys.rs.
+ */
+const KEY_SCORE_MODE = [
+  '/**',
+  ' * How multi-key search (`searchKeys()`, `KeyedFuzzyIndex`, `searchObjects()`,',
+  ' * `FuzzyObjectIndex`) combines the per-key scores of an item into its score:',
+  " * `'weighted'` (the default), `'matched'` or `'max'`. See",
+  ' * `KeySearchOptions.scoreMode`.',
+  ' */',
+  "export type KeyScoreMode = 'weighted' | 'matched' | 'max'",
+].join('\n');
+
+/** Declare `KeyScoreMode` after the `KeySearchOptions` interface. Idempotent. */
+function declareKeyScoreMode(dts) {
+  if (dts.includes('export type KeyScoreMode =')) return dts;
+  const start = dts.indexOf('export interface KeySearchOptions {');
+  const end = start === -1 ? -1 : dts.indexOf('\n}\n', start);
+  if (end === -1) {
+    throw new Error('patch-binding: interface KeySearchOptions not found in index.d.ts');
+  }
+  const at = end + '\n}\n'.length;
+  return `${dts.slice(0, at)}\n${KEY_SCORE_MODE}\n${dts.slice(at)}`;
+}
+
 function refineDeclarations(dts) {
-  const refined = optionalFieldsAcceptUndefined(readonlyArrayParams(dts), 'SearchOptions');
+  let refined = readonlyArrayParams(dts);
+  for (const name of ['SearchOptions', 'KeySearchOptions']) {
+    refined = optionalFieldsAcceptUndefined(refined, name);
+  }
+  refined = declareKeyScoreMode(refined);
   // Fail loudly if napi-rs changes its output format and the refinements stop applying.
   for (const expected of [
     'export declare function search(query: string, items: ReadonlyArray<string>,',
     '  constructor(items: ReadonlyArray<string>)',
     '  maxResults?: number | undefined',
+    '  scoreMode?: KeyScoreMode | undefined',
+    "export type KeyScoreMode = 'weighted' | 'matched' | 'max'",
   ]) {
     if (!refined.includes(expected)) {
       throw new Error(`patch-binding: expected \`${expected}\` in index.d.ts`);

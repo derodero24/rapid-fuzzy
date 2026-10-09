@@ -1,7 +1,9 @@
 use nucleo_matcher::Utf32String;
 use nucleo_matcher::pattern::CaseMatching;
 
-use super::keys::{IndexedKeys, KeyedSearchParams, keyed_search_core, validate_keyed_input};
+use super::keys::{
+    IndexedKeys, KeyScoreMode, KeyedSearchParams, keyed_search_core, validate_keyed_input,
+};
 use super::{KeySearchResult, compute_char_mask, with_matcher};
 
 /// Heap bytes of a `Utf32String`: one per character for ASCII text (stored
@@ -125,9 +127,10 @@ impl KeyedFuzzyIndexCore {
 
     /// Search the index for items matching the query.
     ///
-    /// Returns results sorted by combined weighted score (best match first),
-    /// exactly like [`search_keys_impl`](super::search_keys_impl) on the same
-    /// key texts and weights (see the `keys` module for the semantics).
+    /// Returns results sorted by combined score (best match first), exactly
+    /// like [`search_keys_impl`](super::search_keys_impl) on the same key
+    /// texts and weights (see the `keys` module for the semantics, and
+    /// [`KeyScoreMode`] for how `score_mode` combines the key scores).
     pub fn search(
         &self,
         query: &str,
@@ -135,6 +138,7 @@ impl KeyedFuzzyIndexCore {
         min_score: Option<f64>,
         case_matching: CaseMatching,
         return_all_on_empty: bool,
+        score_mode: KeyScoreMode,
     ) -> Vec<KeySearchResult> {
         with_matcher(|matcher| {
             keyed_search_core(
@@ -151,6 +155,7 @@ impl KeyedFuzzyIndexCore {
                     min_score,
                     case_matching,
                     return_all_on_empty,
+                    score_mode,
                 },
                 matcher,
             )

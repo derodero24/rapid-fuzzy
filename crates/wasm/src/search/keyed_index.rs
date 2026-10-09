@@ -3,7 +3,7 @@ use rapid_fuzzy_core::search::serialization::{deserialize_keyed_index, serialize
 use wasm_bindgen::prelude::*;
 
 use super::keys::KeySearchResult;
-use super::{SearchOptions, resolve_case_matching};
+use super::{KeyScoreMode, KeySearchOptions, resolve_case_matching};
 use crate::convert::{error, from_js, or_null, string_matrix_from_js, to_js};
 
 /// A persistent multi-key fuzzy search index backed by Rust-side data.
@@ -41,32 +41,27 @@ impl KeyedFuzzyIndex {
 
     /// Search the index for items matching the query.
     ///
-    /// Returns results sorted by combined weighted score (best match first).
-    /// The second argument accepts either a number (maxResults) or a
-    /// SearchOptions object, like `FuzzyIndex.search()`.
+    /// Returns results sorted by combined score (best match first), exactly
+    /// like `searchKeys()` on the same key texts and weights. The second
+    /// argument accepts either a number (maxResults) or a KeySearchOptions
+    /// object, whose `scoreMode` selects how the per-key scores are combined.
     #[wasm_bindgen(unchecked_return_type = "KeySearchResult[]")]
     pub fn search(
         &self,
         query: String,
-        #[wasm_bindgen(unchecked_optional_param_type = "number | SearchOptions | null")]
+        #[wasm_bindgen(unchecked_optional_param_type = "number | KeySearchOptions | null")]
         options: Option<JsValue>,
     ) -> Result<JsValue, JsValue> {
-        let opts = SearchOptions::from_js_or_max_results(options)?;
-        let (max_results, min_score, case_matching, return_all_on_empty) = (
-            opts.max_results,
-            opts.min_score,
-            resolve_case_matching(opts.is_case_sensitive),
-            opts.return_all_on_empty.unwrap_or(false),
-        );
-
+        let opts = KeySearchOptions::from_js_or_max_results(options)?.to_core();
         let results: Vec<KeySearchResult> = self
             .core
             .search(
                 &query,
-                max_results,
-                min_score,
-                case_matching,
-                return_all_on_empty,
+                opts.max_results,
+                opts.min_score,
+                resolve_case_matching(opts.is_case_sensitive),
+                opts.return_all_on_empty.unwrap_or(false),
+                opts.score_mode.unwrap_or_default(),
             )
             .into_iter()
             .map(KeySearchResult::from)
@@ -78,20 +73,34 @@ impl KeyedFuzzyIndex {
     ///
     /// Returns the index of the best match, or null if no match is found.
     /// If `minScore` is provided, returns null when the best match scores below the threshold.
+    /// `scoreMode` combines the per-key scores like the `search()` option of
+    /// the same name (default `"weighted"`): the result is the first result of
+    /// `search(query, { maxResults: 1, minScore, scoreMode })`.
     #[wasm_bindgen(unchecked_return_type = "number | null")]
     pub fn closest(
         &self,
         query: String,
-        #[wasm_bindgen(js_name = "minScore")] min_score: Option<f64>,
-    ) -> JsValue {
+        #[wasm_bindgen(js_name = "minScore", unchecked_optional_param_type = "number | null")]
+        min_score: Option<f64>,
+        #[wasm_bindgen(
+            js_name = "scoreMode",
+            unchecked_optional_param_type = "KeyScoreMode | null"
+        )]
+        score_mode: Option<JsValue>,
+    ) -> Result<JsValue, JsValue> {
+        let score_mode = match score_mode {
+            Some(value) => KeyScoreMode::from_js(&value)?.into(),
+            None => rapid_fuzzy_core::search::KeyScoreMode::Weighted,
+        };
         let results = self.core.search(
             &query,
             Some(1),
             min_score,
             nucleo_matcher::pattern::CaseMatching::Smart,
             false,
+            score_mode,
         );
-        or_null(results.into_iter().next().map(|r| r.index))
+        Ok(or_null(results.into_iter().next().map(|r| r.index)))
     }
 
     /// Add a single item to the index.

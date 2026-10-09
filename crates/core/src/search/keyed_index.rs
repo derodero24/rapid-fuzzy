@@ -2,11 +2,11 @@ use napi::Env;
 use napi::bindgen_prelude::{Buffer, ObjectFinalize};
 use napi_derive::napi;
 use nucleo_matcher::pattern::CaseMatching;
-use rapid_fuzzy_core::search::KeyedFuzzyIndexCore;
 use rapid_fuzzy_core::search::serialization::{deserialize_keyed_index, serialize_keyed_index};
+use rapid_fuzzy_core::search::{KeyScoreMode, KeyedFuzzyIndexCore};
 
 use super::keys::KeySearchResult;
-use super::{ResolvedSearchOptions, SearchOptionsArg};
+use super::{KeySearchOptionsArg, ScoreModeArg, resolve_case_matching};
 
 /// A persistent multi-key fuzzy search index backed by Rust-side data.
 ///
@@ -90,34 +90,30 @@ impl KeyedFuzzyIndex {
 
     /// Search the index for items matching the query.
     ///
-    /// Returns results sorted by combined weighted score (best match first).
+    /// Returns results sorted by combined score (best match first), exactly
+    /// like `searchKeys()` on the same key texts and weights.
     ///
     /// The second argument accepts either a number (maxResults shorthand) or a
-    /// SearchOptions object, like `FuzzyIndex.search()`. `maxResults` must be a
-    /// non-negative integer or `Infinity`.
+    /// KeySearchOptions object, whose `scoreMode` selects how the per-key
+    /// scores are combined. `maxResults` must be a non-negative integer or
+    /// `Infinity`.
     #[napi]
     pub fn search(
         &self,
         query: String,
-        #[napi(ts_arg_type = "number | SearchOptions | undefined | null")] options: Option<
-            SearchOptionsArg,
+        #[napi(ts_arg_type = "number | KeySearchOptions | undefined | null")] options: Option<
+            KeySearchOptionsArg,
         >,
     ) -> Vec<KeySearchResult> {
-        let ResolvedSearchOptions {
-            max_results,
-            min_score,
-            case_matching,
-            return_all_on_empty,
-            ..
-        } = ResolvedSearchOptions::new(options);
-
+        let options = KeySearchOptionsArg::resolve(options);
         self.core
             .search(
                 &query,
-                max_results,
-                min_score,
-                case_matching,
-                return_all_on_empty,
+                options.max_results,
+                options.min_score,
+                resolve_case_matching(options.is_case_sensitive),
+                options.return_all_on_empty.unwrap_or(false),
+                options.score_mode.unwrap_or_default(),
             )
             .into_iter()
             .map(KeySearchResult::from)
@@ -128,14 +124,20 @@ impl KeyedFuzzyIndex {
     ///
     /// Returns the index of the best match, or null if no match is found.
     /// If `minScore` is provided, returns null when the best match scores below the threshold.
+    /// `scoreMode` combines the per-key scores like the `search()` option of
+    /// the same name (default `'weighted'`): the result is the first result of
+    /// `search(query, { maxResults: 1, minScore, scoreMode })`.
     ///
     /// Use the returned index to look up the item in your own data array.
     #[napi]
-    pub fn closest(&self, query: String, min_score: Option<f64>) -> Option<u32> {
-        let results = self
-            .core
-            .search(&query, Some(1), min_score, CaseMatching::Smart, false);
-        results.into_iter().next().map(|r| r.index)
+    pub fn closest(
+        &self,
+        query: String,
+        min_score: Option<f64>,
+        #[napi(ts_arg_type = "KeyScoreMode | undefined | null")] score_mode: Option<ScoreModeArg>,
+    ) -> Option<u32> {
+        let score_mode = score_mode.map_or(KeyScoreMode::Weighted, |arg| arg.0);
+        self.closest_impl(&query, min_score, score_mode)
     }
 
     /// Add a single item to the index.
@@ -204,6 +206,23 @@ impl KeyedFuzzyIndex {
 
 /// Non-napi helper methods.
 impl KeyedFuzzyIndex {
+    fn closest_impl(
+        &self,
+        query: &str,
+        min_score: Option<f64>,
+        score_mode: KeyScoreMode,
+    ) -> Option<u32> {
+        let results = self.core.search(
+            query,
+            Some(1),
+            min_score,
+            CaseMatching::Smart,
+            false,
+            score_mode,
+        );
+        results.into_iter().next().map(|r| r.index)
+    }
+
     fn serialize_impl(&self) -> Vec<u8> {
         serialize_keyed_index(&self.core)
     }
@@ -223,7 +242,7 @@ impl KeyedFuzzyIndex {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::search::SearchOptions;
+    use crate::search::KeySearchOptions;
 
     fn make_index() -> KeyedFuzzyIndex {
         KeyedFuzzyIndex::new_impl(
@@ -331,12 +350,13 @@ mod tests {
         let index = make_index();
         let results = index.search(
             "john".to_string(),
-            Some(SearchOptionsArg::Options(SearchOptions {
+            Some(KeySearchOptionsArg::Options(KeySearchOptions {
                 max_results: None,
                 min_score: Some(0.9),
                 include_positions: None,
                 is_case_sensitive: None,
                 return_all_on_empty: None,
+                score_mode: None,
             })),
         );
         for r in &results {
@@ -349,12 +369,13 @@ mod tests {
         let index = make_index();
         let results = index.search(
             "o".to_string(),
-            Some(SearchOptionsArg::Options(SearchOptions {
+            Some(KeySearchOptionsArg::Options(KeySearchOptions {
                 max_results: Some(1),
                 min_score: None,
                 include_positions: None,
                 is_case_sensitive: None,
                 return_all_on_empty: None,
+                score_mode: None,
             })),
         );
         assert!(results.len() <= 1);
@@ -478,12 +499,13 @@ mod tests {
         .unwrap();
         let results = index.search(
             "apple".to_string(),
-            Some(SearchOptionsArg::Options(SearchOptions {
+            Some(KeySearchOptionsArg::Options(KeySearchOptions {
                 max_results: None,
                 min_score: Some(0.9),
                 include_positions: None,
                 is_case_sensitive: None,
                 return_all_on_empty: None,
+                score_mode: None,
             })),
         );
         // "xyz" should not appear since it can't reach 0.9 on any key
@@ -525,14 +547,14 @@ mod tests {
     #[test]
     fn test_closest_returns_correct_index() {
         let index = make_index();
-        let result = index.closest("john".to_string(), None);
+        let result = index.closest_impl("john", None, KeyScoreMode::Weighted);
         assert_eq!(result, Some(0)); // John Smith is at index 0
     }
 
     #[test]
     fn test_closest_returns_none_when_min_score_too_high() {
         let index = make_index();
-        let result = index.closest("john".to_string(), Some(1.1));
+        let result = index.closest_impl("john", Some(1.1), KeyScoreMode::Weighted);
         assert_eq!(result, None);
     }
 
@@ -563,5 +585,68 @@ mod tests {
         let result = KeyedFuzzyIndex::deserialize_impl(&buf);
         assert!(result.is_err());
         assert!(result.err().unwrap().contains("bad magic bytes"));
+    }
+
+    fn with_score_mode(score_mode: KeyScoreMode, min_score: Option<f64>) -> KeySearchOptionsArg {
+        KeySearchOptionsArg::Options(KeySearchOptions {
+            max_results: None,
+            min_score,
+            include_positions: None,
+            is_case_sensitive: None,
+            return_all_on_empty: None,
+            score_mode: Some(score_mode),
+        })
+    }
+
+    #[test]
+    fn test_score_modes() {
+        // "Smith" matches only the name of item 0, exactly; the email does
+        // not contain it.
+        let index = KeyedFuzzyIndex::new_impl(
+            vec![
+                vec!["John Smith".to_string(), "Jane Doe".to_string()],
+                vec![
+                    "john@example.com".to_string(),
+                    "jane@example.com".to_string(),
+                ],
+            ],
+            vec![2.0, 1.0],
+        )
+        .unwrap();
+        let score = |options: Option<KeySearchOptionsArg>| {
+            let results = index.search("smith".to_string(), options);
+            assert_eq!(results.len(), 1);
+            assert_eq!(results[0].index, 0);
+            assert_eq!(results[0].key_scores, [1.0, 0.0]);
+            results[0].score
+        };
+        assert_eq!(score(None), 2.0 / 3.0);
+        assert_eq!(
+            score(Some(with_score_mode(KeyScoreMode::Weighted, None))),
+            2.0 / 3.0
+        );
+        assert_eq!(
+            score(Some(with_score_mode(KeyScoreMode::Matched, None))),
+            1.0
+        );
+        assert_eq!(score(Some(with_score_mode(KeyScoreMode::Max, None))), 1.0);
+
+        // minScore applies to the combined score of the mode.
+        for (score_mode, expected) in [
+            (KeyScoreMode::Weighted, 0),
+            (KeyScoreMode::Matched, 1),
+            (KeyScoreMode::Max, 1),
+        ] {
+            let results = index.search(
+                "smith".to_string(),
+                Some(with_score_mode(score_mode, Some(0.9))),
+            );
+            assert_eq!(results.len(), expected, "{score_mode:?}");
+            assert_eq!(
+                index.closest_impl("smith", Some(0.9), score_mode),
+                (expected == 1).then_some(0),
+                "{score_mode:?}"
+            );
+        }
     }
 }

@@ -1,26 +1,37 @@
 //! Multi-key search: `KeyedFuzzyIndexCore::search` must return exactly what
 //! the standalone `search_keys_impl` returns (indices, scores, key scores and
-//! order) for any key texts, weights, query and options, and both must agree
-//! with a naive reference implementation of the documented semantics:
+//! order) for any key texts, weights, query, options and score mode, and both
+//! must agree with a naive reference implementation of the documented
+//! semantics:
 //!
 //! * every key is scored like `search()` scores an item (`keyScores`, also
 //!   for keys whose weight is zero);
-//! * the combined score is `sum(keyScore * weight) / sum(weights)`;
+//! * the combined score depends on the score mode, over the keys with a
+//!   positive weight (`w`) and their scores (`s`):
+//!   - `Weighted` (the default): `sum(w * s) / sum(w)`;
+//!   - `Matched`: `sum(w * s) / sum(w of the keys with s > 0)`;
+//!   - `Max`: `max(s)`;
 //! * items whose combined score is 0 (no match on a key with a positive
 //!   weight) are excluded, and so are items scoring below `minScore`;
 //! * results are ordered by score (descending), then by the byte length of
 //!   the best-matching key's text (shorter first, like `search()`), then by
 //!   index. The best-matching key is the one contributing the most to the
-//!   combined score (the first one on a tie).
+//!   combined score (`w * s`, or `s` in `Max` mode; the first one on a tie).
 //!
 //! Random inputs come from a seeded generator so failures are reproducible.
 
 use nucleo_matcher::pattern::CaseMatching;
 use nucleo_matcher::{Config, Matcher};
 use rapid_fuzzy_core::search::{
-    KeySearchResult, KeyedFuzzyIndexCore, QueryPlan, SearchKeysOptions, is_empty_query,
-    search_impl, search_keys_impl, utf32_haystack,
+    KeyScoreMode, KeySearchResult, KeyedFuzzyIndexCore, QueryPlan, SearchKeysOptions,
+    is_empty_query, search_impl, search_keys_impl, utf32_haystack,
 };
+
+const MODES: [KeyScoreMode; 3] = [
+    KeyScoreMode::Weighted,
+    KeyScoreMode::Matched,
+    KeyScoreMode::Max,
+];
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -38,6 +49,7 @@ struct Opts {
     min_score: Option<f64>,
     case_sensitive: bool,
     return_all_on_empty: bool,
+    score_mode: KeyScoreMode,
 }
 
 impl Opts {
@@ -55,6 +67,7 @@ impl Opts {
             min_score: self.min_score,
             is_case_sensitive: Some(self.case_sensitive),
             return_all_on_empty: Some(self.return_all_on_empty),
+            score_mode: Some(self.score_mode),
         }
     }
 }
@@ -73,6 +86,7 @@ fn via_index(
         o.min_score,
         o.case_matching(),
         o.return_all_on_empty,
+        o.score_mode,
     )
 }
 
@@ -133,11 +147,38 @@ fn reference(
             .zip(weights)
             .map(|(s, w)| s * w)
             .fold(0.0, |acc, x| acc + x);
-        let combined = weighted / total;
+        let combined = match o.score_mode {
+            KeyScoreMode::Weighted => weighted / total,
+            KeyScoreMode::Matched => {
+                let matched: f64 = key_scores
+                    .iter()
+                    .zip(weights)
+                    .filter(|&(&s, &w)| s > 0.0 && w > 0.0)
+                    .map(|(_, w)| w)
+                    .fold(0.0, |acc, x| acc + x);
+                if matched > 0.0 {
+                    weighted / matched
+                } else {
+                    0.0
+                }
+            }
+            KeyScoreMode::Max => key_scores
+                .iter()
+                .zip(weights)
+                .filter(|&(_, &w)| w > 0.0)
+                .map(|(&s, _)| s)
+                .fold(0.0, f64::max),
+        };
         if combined > 0.0 && combined >= threshold {
+            // What a key contributes to the combined score.
+            let contribution = |k: usize| match o.score_mode {
+                KeyScoreMode::Max if weights[k] > 0.0 => key_scores[k],
+                KeyScoreMode::Max => 0.0,
+                _ => key_scores[k] * weights[k],
+            };
             let mut best = 0;
             for k in 1..num_keys {
-                if key_scores[k] * weights[k] > key_scores[best] * weights[best] {
+                if contribution(k) > contribution(best) {
                     best = k;
                 }
             }
@@ -225,15 +266,273 @@ fn early_exit_never_rejects_a_qualifying_item() {
                     .collect()
             })
             .collect();
-        // Use every achievable combined score as the threshold.
-        let all = reference("foo", &key_texts, &weights, Opts::default());
-        for r in &all {
-            let o = Opts {
-                min_score: Some(r.score),
-                ..Opts::default()
-            };
-            assert_all_agree("foo", &key_texts, &weights, o);
+        for score_mode in MODES {
+            assert_boundary_thresholds_agree("foo", &key_texts, &weights, score_mode);
         }
+    }
+}
+
+/// Use every achievable combined score as `minScore`, and the doubles just
+/// below and above it, so that the early exit is exercised at its boundary.
+#[track_caller]
+fn assert_boundary_thresholds_agree(
+    query: &str,
+    key_texts: &[Vec<String>],
+    weights: &[f64],
+    score_mode: KeyScoreMode,
+) {
+    let base = with_mode(score_mode);
+    for r in &reference(query, key_texts, weights, base) {
+        for min_score in [r.score, r.score.next_down(), r.score.next_up()] {
+            let o = Opts {
+                min_score: Some(min_score),
+                ..base
+            };
+            assert_all_agree(query, key_texts, weights, o);
+        }
+    }
+}
+
+#[test]
+fn extreme_weights_keep_both_paths_in_agreement() {
+    // Tiny, subnormal and huge weights stress the early exit's slack, which
+    // is relative to the weights.
+    const EXTREME: [f64; 8] = [0.0, 5e-324, 1e-310, 1e-300, 1e-9, 1.0, 1e300, 3.0];
+    let mut rng = Rng(31);
+    for _ in 0..400 {
+        let num_keys = 1 + rng.below(4);
+        let weights: Vec<f64> = (0..num_keys).map(|_| *rng.pick(&EXTREME)).collect();
+        let total: f64 = weights.iter().sum();
+        if total <= 0.0 || !total.is_finite() {
+            continue;
+        }
+        let key_texts: Vec<Vec<String>> = (0..num_keys)
+            .map(|_| {
+                (0..4)
+                    .map(|_| {
+                        rng.pick(&["foo", "fo", "bar", "f_o_o", "xfoo", "foo bar"])
+                            .to_string()
+                    })
+                    .collect()
+            })
+            .collect();
+        for score_mode in MODES {
+            assert_all_agree("foo", &key_texts, &weights, with_mode(score_mode));
+            assert_boundary_thresholds_agree("foo", &key_texts, &weights, score_mode);
+        }
+    }
+}
+
+// ─── Score modes ────────────────────────────────────────────────────────────
+
+fn with_mode(score_mode: KeyScoreMode) -> Opts {
+    Opts {
+        score_mode,
+        ..Opts::default()
+    }
+}
+
+fn scores(results: &[KeySearchResult]) -> Vec<(u32, f64)> {
+    results.iter().map(|r| (r.index, r.score)).collect()
+}
+
+fn find(results: &[KeySearchResult], index: u32) -> &KeySearchResult {
+    results
+        .iter()
+        .find(|r| r.index == index)
+        .unwrap_or_else(|| panic!("item {index} is returned"))
+}
+
+#[test]
+fn score_modes_combine_key_scores_as_documented() {
+    // name, email, bio: item 0 matches only its name, exactly; item 1
+    // matches its name and its email partially.
+    let key_texts = columns(&[
+        &["John Smith", "S. Mitchell"],
+        &["john@example.com", "smitchell@example.com"],
+        &["Engineer", "Designer"],
+    ]);
+    let weights = [2.0, 1.0, 1.0];
+    let weighted = via_search_keys("smith", &key_texts, &weights, Opts::default());
+    let exact = find(&weighted, 0);
+    let partial = find(&weighted, 1);
+    let [name, email, bio] = partial.key_scores[..] else {
+        panic!("three key scores");
+    };
+    assert_eq!(exact.key_scores, [1.0, 0.0, 0.0]);
+    assert!(name > 0.0 && name < 1.0, "{name}");
+    assert!(email > 0.0 && email < 1.0, "{email}");
+    assert_eq!(bio, 0.0);
+    // Weighted: the exact name match only gets its share of the total weight.
+    assert_eq!(exact.score, 2.0 / 4.0);
+    assert_eq!(partial.score, (name * 2.0 + email) / 4.0);
+
+    let matched = via_search_keys(
+        "smith",
+        &key_texts,
+        &weights,
+        with_mode(KeyScoreMode::Matched),
+    );
+    assert_eq!(find(&matched, 0).score, 1.0);
+    assert_eq!(find(&matched, 1).score, (name * 2.0 + email) / 3.0);
+    assert_eq!(matched[0].index, 0, "the exact match ranks first");
+
+    let max = via_search_keys("smith", &key_texts, &weights, with_mode(KeyScoreMode::Max));
+    assert_eq!(find(&max, 0).score, 1.0);
+    assert_eq!(find(&max, 1).score, name.max(email));
+    assert_eq!(max[0].index, 0, "the exact match ranks first");
+
+    // keyScores do not depend on the mode.
+    for results in [&matched, &max] {
+        for r in results.iter() {
+            assert_eq!(r.key_scores, find(&weighted, r.index).key_scores);
+        }
+    }
+    for score_mode in MODES {
+        assert_all_agree("smith", &key_texts, &weights, with_mode(score_mode));
+    }
+}
+
+#[test]
+fn the_default_score_mode_is_weighted() {
+    assert_eq!(KeyScoreMode::default(), KeyScoreMode::Weighted);
+    let key_texts = columns(&[
+        &["apple pie", "apple", "pear"],
+        &["fruit", "apple tart", "x"],
+    ]);
+    let weights = [0.494, 0.953];
+    let explicit = summary(&via_search_keys(
+        "apple",
+        &key_texts,
+        &weights,
+        Opts::default(),
+    ));
+    assert_eq!(explicit.len(), 2);
+    for options in [
+        None,
+        Some(SearchKeysOptions {
+            max_results: None,
+            min_score: None,
+            is_case_sensitive: None,
+            return_all_on_empty: None,
+            score_mode: None,
+        }),
+    ] {
+        let unset = search_keys_impl("apple", &key_texts, &weights, options).unwrap();
+        assert_eq!(summary(&unset), explicit);
+    }
+}
+
+#[test]
+fn matched_mode_scores_an_item_whose_only_match_is_exact_one() {
+    let key_texts = columns(&[&["zzz", "ada"], &["ada", "zzz"], &["zzz", "zzz"]]);
+    let o = with_mode(KeyScoreMode::Matched);
+    for weights in [[0.3, 0.7, 5.0], [1e-9, 3.0, 0.1], [0.494, 0.953, 0.137]] {
+        for results in [
+            via_index("ada", &key_texts, &weights, o),
+            via_search_keys("ada", &key_texts, &weights, o),
+        ] {
+            assert_eq!(scores(&results), [(0, 1.0), (1, 1.0)], "{weights:?}");
+        }
+        let exact_only = Opts {
+            min_score: Some(1.0),
+            ..o
+        };
+        assert_eq!(via_index("ada", &key_texts, &weights, exact_only).len(), 2);
+        assert_all_agree("ada", &key_texts, &weights, exact_only);
+    }
+}
+
+#[test]
+fn max_mode_uses_weights_only_to_select_keys() {
+    let key_texts = columns(&[
+        &["foobar", "x", "foo", "f_o_o"],
+        &["x", "foo bar", "xfoo", "foo"],
+    ]);
+    let o = with_mode(KeyScoreMode::Max);
+    let baseline = summary(&via_search_keys("foo", &key_texts, &[1.0, 1.0], o));
+    assert_eq!(baseline.len(), 4);
+    for weights in [[3.0, 0.1], [1e-9, 1e9], [0.494, 0.953]] {
+        assert_eq!(
+            summary(&via_search_keys("foo", &key_texts, &weights, o)),
+            baseline,
+            "{weights:?}"
+        );
+        assert_all_agree("foo", &key_texts, &weights, o);
+    }
+}
+
+#[test]
+fn zero_weight_keys_never_count_in_any_mode() {
+    // Key 1 has weight 0: it is scored, but it never selects an item, never
+    // counts as matched and never provides the maximum.
+    let key_texts = columns(&[&["apple", "zzz", "pineapple"], &["zzz", "apple", "apple"]]);
+    let weights = [1.0, 0.0];
+    let partial = find(
+        &via_search_keys("apple", &key_texts[..1], &[1.0], Opts::default()),
+        2,
+    )
+    .score;
+    assert!(partial > 0.0 && partial < 1.0, "{partial}");
+    for score_mode in MODES {
+        for results in [
+            via_index("apple", &key_texts, &weights, with_mode(score_mode)),
+            via_search_keys("apple", &key_texts, &weights, with_mode(score_mode)),
+        ] {
+            assert_eq!(scores(&results), [(0, 1.0), (2, partial)], "{score_mode:?}");
+            assert_eq!(results[1].key_scores, [partial, 1.0], "{score_mode:?}");
+        }
+        assert_all_agree("apple", &key_texts, &weights, with_mode(score_mode));
+    }
+}
+
+#[test]
+fn max_mode_breaks_ties_by_the_first_key_reaching_the_maximum() {
+    // Both items score 1. The tie is broken by the length of the text of the
+    // first key that scores 1, then by index.
+    let o = with_mode(KeyScoreMode::Max);
+    let key_texts = columns(&[&["foo", "foo bar baz"], &["foo bar baz", "foo"]]);
+    let results = via_search_keys("foo", &key_texts, &[1.0, 1.0], o);
+    assert_eq!(scores(&results), [(0, 1.0), (1, 1.0)]);
+    let swapped = columns(&[&["foo bar baz", "foo"], &["foo", "foo bar baz"]]);
+    let results = via_search_keys("foo", &swapped, &[1.0, 1.0], o);
+    assert_eq!(scores(&results), [(1, 1.0), (0, 1.0)]);
+    assert_all_agree("foo", &key_texts, &[1.0, 1.0], o);
+    assert_all_agree("foo", &swapped, &[1.0, 1.0], o);
+}
+
+#[test]
+fn return_all_on_empty_scores_one_in_every_mode() {
+    let key_texts = columns(&[&["a", "b"], &["c", "d"]]);
+    for score_mode in MODES {
+        let o = Opts {
+            return_all_on_empty: true,
+            ..with_mode(score_mode)
+        };
+        let results = via_search_keys("", &key_texts, &[1.0, 0.0], o);
+        assert_eq!(scores(&results), [(0, 1.0), (1, 1.0)]);
+        assert!(results.iter().all(|r| r.key_scores == [1.0, 1.0]));
+        assert_all_agree("", &key_texts, &[1.0, 0.0], o);
+    }
+}
+
+#[test]
+fn score_mode_names() {
+    for (name, mode) in [
+        ("weighted", KeyScoreMode::Weighted),
+        ("matched", KeyScoreMode::Matched),
+        ("max", KeyScoreMode::Max),
+    ] {
+        assert_eq!(KeyScoreMode::from_name(name), Ok(mode));
+        assert_eq!(mode.name(), name);
+    }
+    for name in ["", "Weighted", "MAX", "mean", " max", "matched ", "sum"] {
+        assert_eq!(
+            KeyScoreMode::from_name(name),
+            Err(format!(
+                "scoreMode must be \"weighted\", \"matched\" or \"max\", got {name:?}"
+            )),
+        );
     }
 }
 
@@ -532,6 +831,7 @@ fn index_mutations_keep_parity() {
                 o.min_score,
                 o.case_matching(),
                 o.return_all_on_empty,
+                o.score_mode,
             ));
             assert_eq!(
                 got,
@@ -560,16 +860,27 @@ fn index_search_keys_and_reference_agree_on_random_input() {
         let flat: Vec<String> = key_texts.iter().flatten().cloned().collect();
         for _ in 0..4 {
             let query = rng.query(&flat);
-            let mut o = rng.opts(num_items);
-            if rng.chance(30) {
-                // Thresholds equal to an achievable score exercise the
-                // early exit at its boundary.
-                let all = reference(&query, &key_texts, &weights, Opts::default());
-                if !all.is_empty() {
-                    o.min_score = Some(all[rng.below(all.len())].score);
+            let base = rng.opts(num_items);
+            let boundary = rng.chance(30);
+            let nudge = rng.below(3);
+            for score_mode in MODES {
+                let mut o = Opts { score_mode, ..base };
+                if boundary {
+                    // Thresholds equal to (or one ULP away from) an
+                    // achievable score exercise the early exit at its
+                    // boundary.
+                    let all = reference(&query, &key_texts, &weights, with_mode(score_mode));
+                    if !all.is_empty() {
+                        let score = all[rng.below(all.len())].score;
+                        o.min_score = Some(match nudge {
+                            0 => score,
+                            1 => score.next_down(),
+                            _ => score.next_up(),
+                        });
+                    }
                 }
+                assert_all_agree(&query, &key_texts, &weights, o);
             }
-            assert_all_agree(&query, &key_texts, &weights, o);
         }
     }
 }
@@ -723,6 +1034,7 @@ impl Rng {
                 .then(|| *self.pick(&[0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0])),
             case_sensitive: self.chance(20),
             return_all_on_empty: self.chance(20),
+            score_mode: *self.pick(&MODES),
         }
     }
 }

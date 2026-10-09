@@ -321,6 +321,32 @@ describe.skipIf(!wasmAvailable)('browser.mjs (the WebAssembly build)', () => {
       expect(index.size).toBe(0);
     });
 
+    it('passes scoreMode through like the Node.js implementation (#781)', async () => {
+      const browser = await load();
+      const index = new browser.FuzzyObjectIndex(users, { keys });
+      const native = new NodeFuzzyObjectIndex(users, { keys });
+      for (const scoreMode of ['weighted', 'matched', 'max'] as const) {
+        for (const query of ['john', 'boston', 'example']) {
+          const expected = searchObjects(query, users, { keys, scoreMode });
+          expect(browser.searchObjects(query, users, { keys, scoreMode })).toEqual(expected);
+          expect(index.search(query, { scoreMode })).toEqual(native.search(query, { scoreMode }));
+          expect(index.closest(query, 0.6, scoreMode)).toEqual(
+            native.closest(query, 0.6, scoreMode),
+          );
+        }
+      }
+      // A single exact match on one key out of three scores 1 in 'matched' mode.
+      expect(index.closest('boston', 0.9)).toBeNull();
+      expect(index.closest('boston', 0.9, 'matched')).toEqual(users[0]);
+      const bogus = 'mean' as 'max';
+      expect(() => index.search('john', { scoreMode: bogus })).toThrow(TypeError);
+      expect(() => index.closest('john', null, bogus)).toThrow(TypeError);
+      expect(() => browser.searchObjects('john', users, { keys, scoreMode: bogus })).toThrow(
+        TypeError,
+      );
+      index.destroy();
+    });
+
     it('leaves out the Buffer-based serialize() / deserialize()', async () => {
       const browser = await load();
       expect('serialize' in browser.FuzzyObjectIndex.prototype).toBe(false);

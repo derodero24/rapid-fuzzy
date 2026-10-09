@@ -272,15 +272,30 @@ export class KeyedFuzzyIndex {
      *
      * Returns the index of the best match, or null if no match is found.
      * If `minScore` is provided, returns null when the best match scores below the threshold.
+     * `scoreMode` combines the per-key scores like the `search()` option of
+     * the same name (default `"weighted"`): the result is the first result of
+     * `search(query, { maxResults: 1, minScore, scoreMode })`.
      * @param {string} query
      * @param {number | null} [minScore]
+     * @param {KeyScoreMode | null} [scoreMode]
      * @returns {number | null}
      */
-    closest(query, minScore) {
-        const ptr0 = passStringToWasm0(query, wasm.__wbindgen_export, wasm.__wbindgen_export2);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.keyedfuzzyindex_closest(this.__wbg_ptr, ptr0, len0, !isLikeNone(minScore), isLikeNone(minScore) ? 0 : minScore);
-        return takeObject(ret);
+    closest(query, minScore, scoreMode) {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            const ptr0 = passStringToWasm0(query, wasm.__wbindgen_export, wasm.__wbindgen_export2);
+            const len0 = WASM_VECTOR_LEN;
+            wasm.keyedfuzzyindex_closest(retptr, this.__wbg_ptr, ptr0, len0, !isLikeNone(minScore), isLikeNone(minScore) ? 0 : minScore, isLikeNone(scoreMode) ? 0 : addHeapObject(scoreMode));
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+            if (r2) {
+                throw takeObject(r1);
+            }
+            return takeObject(r0);
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
     }
     /**
      * Reconstruct a KeyedFuzzyIndex from a previously serialized Uint8Array.
@@ -355,11 +370,12 @@ export class KeyedFuzzyIndex {
     /**
      * Search the index for items matching the query.
      *
-     * Returns results sorted by combined weighted score (best match first).
-     * The second argument accepts either a number (maxResults) or a
-     * SearchOptions object, like `FuzzyIndex.search()`.
+     * Returns results sorted by combined score (best match first), exactly
+     * like `searchKeys()` on the same key texts and weights. The second
+     * argument accepts either a number (maxResults) or a KeySearchOptions
+     * object, whose `scoreMode` selects how the per-key scores are combined.
      * @param {string} query
-     * @param {number | SearchOptions | null} [options]
+     * @param {number | KeySearchOptions | null} [options]
      * @returns {KeySearchResult[]}
      */
     search(query, options) {
@@ -1260,18 +1276,20 @@ export function search(query, items, options) {
  *
  * `keyTexts[k]` is an array of strings for key `k`, one per item.
  * `weights` specifies the relative importance of each key.
- * `options` is a `SearchOptions` object or a number (maxResults).
+ * `options` is a `KeySearchOptions` object or a number (maxResults); its
+ * `scoreMode` selects how the per-key scores are combined.
  *
- * Returns results sorted by combined weighted score (best match first),
- * exactly like `KeyedFuzzyIndex.search` on the same key texts and weights.
+ * Returns results sorted by combined score (best match first), exactly like
+ * `KeyedFuzzyIndex.search` on the same key texts and weights.
  * Throws an `Error` for invalid input (key texts of different lengths, a
  * weight count that differs from the key count, negative, NaN or infinite
  * weights, or weights summing to 0 or Infinity), like the `KeyedFuzzyIndex`
- * constructor.
+ * constructor, and a `TypeError` for invalid options (such as an unknown
+ * `scoreMode`).
  * @param {string} query
  * @param {string[][]} keyTexts
  * @param {ArrayLike<number>} weights
- * @param {number | SearchOptions | null} [options]
+ * @param {number | KeySearchOptions | null} [options]
  * @returns {KeySearchResult[]}
  */
 export function searchKeys(query, keyTexts, weights, options) {
@@ -1631,6 +1649,12 @@ function __wbg_get_imports() {
             getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
             getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
         },
+        __wbg___wbindgen_bigint_get_as_i64_b482365c149396c8: function(arg0, arg1) {
+            const v = getObject(arg1);
+            const ret = typeof(v) === 'bigint' ? v : undefined;
+            getDataViewMemory0().setBigInt64(arg0 + 8 * 1, isLikeNone(ret) ? BigInt(0) : ret, true);
+            getDataViewMemory0().setInt32(arg0 + 4 * 0, !isLikeNone(ret), true);
+        },
         __wbg___wbindgen_boolean_get_7a12af2b3f899c5a: function(arg0) {
             const v = getObject(arg0);
             const ret = typeof(v) === 'boolean' ? v : undefined;
@@ -1647,6 +1671,10 @@ function __wbg_get_imports() {
             const ret = getObject(arg0) in getObject(arg1);
             return ret;
         },
+        __wbg___wbindgen_is_bigint_60fc0336cb14f5d7: function(arg0) {
+            const ret = typeof(getObject(arg0)) === 'bigint';
+            return ret;
+        },
         __wbg___wbindgen_is_function_fcda5e3902d732fe: function(arg0) {
             const ret = typeof(getObject(arg0)) === 'function';
             return ret;
@@ -1658,6 +1686,10 @@ function __wbg_get_imports() {
         },
         __wbg___wbindgen_is_undefined_8c687d0b90d5b524: function(arg0) {
             const ret = getObject(arg0) === undefined;
+            return ret;
+        },
+        __wbg___wbindgen_jsval_eq_9fdcd3c0a860dd3b: function(arg0, arg1) {
+            const ret = getObject(arg0) === getObject(arg1);
             return ret;
         },
         __wbg___wbindgen_jsval_loose_eq_3c30021c243b64cd: function(arg0, arg1) {
@@ -1681,6 +1713,10 @@ function __wbg_get_imports() {
         __wbg___wbindgen_throw_5d9e815e6fdf150f: function(arg0, arg1) {
             throw new Error(getStringFromWasm0(arg0, arg1));
         },
+        __wbg___wbindgen_typeof_8e630e4d777e2338: function(arg0) {
+            const ret = typeof getObject(arg0);
+            return addHeapObject(ret);
+        },
         __wbg_call_269c5566fbede3eb: function() { return handleError(function (arg0, arg1) {
             const ret = getObject(arg0).call(getObject(arg1));
             return addHeapObject(ret);
@@ -1688,6 +1724,10 @@ function __wbg_get_imports() {
         __wbg_done_cffed884d87aa22e: function(arg0) {
             const ret = getObject(arg0).done;
             return ret;
+        },
+        __wbg_entries_972a87586902cf87: function(arg0) {
+            const ret = Object.entries(getObject(arg0));
+            return addHeapObject(ret);
         },
         __wbg_fuzzyindex_new: function(arg0) {
             const ret = FuzzyIndex.__wrap(arg0);
@@ -1697,6 +1737,10 @@ function __wbg_get_imports() {
             const ret = Reflect.get(getObject(arg0), getObject(arg1));
             return addHeapObject(ret);
         }, arguments); },
+        __wbg_get_b1f0ab13c737f856: function(arg0, arg1) {
+            const ret = getObject(arg0)[arg1 >>> 0];
+            return addHeapObject(ret);
+        },
         __wbg_get_unchecked_363572bdd397d473: function(arg0, arg1) {
             const ret = getObject(arg0)[arg1 >>> 0];
             return addHeapObject(ret);
@@ -1715,6 +1759,16 @@ function __wbg_get_imports() {
             const ret = result;
             return ret;
         },
+        __wbg_instanceof_Map_1ff6a2b54c899f0d: function(arg0) {
+            let result;
+            try {
+                result = getObject(arg0) instanceof Map;
+            } catch (_) {
+                result = false;
+            }
+            const ret = result;
+            return ret;
+        },
         __wbg_instanceof_Uint8Array_598adc0fef426aa8: function(arg0) {
             let result;
             try {
@@ -1727,6 +1781,10 @@ function __wbg_get_imports() {
         },
         __wbg_isArray_5674713bb7b79043: function(arg0) {
             const ret = Array.isArray(getObject(arg0));
+            return ret;
+        },
+        __wbg_isSafeInteger_8f51c743827d1ec5: function(arg0) {
+            const ret = Number.isSafeInteger(getObject(arg0));
             return ret;
         },
         __wbg_iterator_22ddeb808cf55a6f: function() {
@@ -1799,9 +1857,19 @@ function __wbg_get_imports() {
             const ret = arg0;
             return addHeapObject(ret);
         },
-        __wbindgen_generic_0000000000000002: function(arg0, arg1) {
+        __wbindgen_generic_0000000000000002: function(arg0) {
+            // Cast intrinsic for `I64 -> Externref`.
+            const ret = arg0;
+            return addHeapObject(ret);
+        },
+        __wbindgen_generic_0000000000000003: function(arg0, arg1) {
             // Cast intrinsic for `Ref(String) -> Externref`.
             const ret = getStringFromWasm0(arg0, arg1);
+            return addHeapObject(ret);
+        },
+        __wbindgen_generic_0000000000000004: function(arg0) {
+            // Cast intrinsic for `U64 -> Externref`.
+            const ret = BigInt.asUintN(64, arg0);
             return addHeapObject(ret);
         },
         __wbindgen_object_clone_ref: function(arg0) {

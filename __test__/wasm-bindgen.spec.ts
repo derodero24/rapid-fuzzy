@@ -299,6 +299,120 @@ describe.skipIf(!wasmAvailable)('wasm-bindgen runtime', () => {
       expect(w.closest('pyhton')).toBe(n.closest('pyhton'));
       w.free();
     });
+
+    describe('scoreMode', () => {
+      const keyTexts = [items, items.map((s) => `${s.toLowerCase()} lang`), items.map(() => 'x')];
+      const weights = [2, 1, 0.5];
+      const modes = ['weighted', 'matched', 'max'] as const;
+
+      /** Options with only the given fields set (the wasm declarations reject explicit undefined). */
+      function keyOptions(
+        scoreMode: WasmBindgen.KeyScoreMode | undefined,
+        minScore: number | undefined,
+      ): WasmBindgen.KeySearchOptions {
+        const options: WasmBindgen.KeySearchOptions = { maxResults: 4 };
+        if (scoreMode !== undefined) options.scoreMode = scoreMode;
+        if (minScore !== undefined) options.minScore = minScore;
+        return options;
+      }
+
+      it('gives the same results in every mode', () => {
+        const w = new wasm.KeyedFuzzyIndex(keyTexts, weights);
+        const n = new napi.KeyedFuzzyIndex(keyTexts, weights);
+        const cases = [...modes, undefined].flatMap((scoreMode) =>
+          [undefined, 0.5, 0.9].flatMap((minScore) =>
+            ['type', 'lang', 'script', 'rust', 'zzz'].map((query) => ({
+              query,
+              minScore,
+              scoreMode,
+            })),
+          ),
+        );
+        for (const { query, minScore, scoreMode } of cases) {
+          const options = keyOptions(scoreMode, minScore);
+          const expected = napi.searchKeys(query, keyTexts, weights, options);
+          expect(wasm.searchKeys(query, keyTexts, weights, options)).toEqual(expected);
+          expect(w.search(query, options)).toEqual(expected);
+          expect(n.search(query, options)).toEqual(expected);
+          expect(w.closest(query, minScore, scoreMode)).toBe(n.closest(query, minScore, scoreMode));
+        }
+        w.free();
+      });
+
+      it('rejects unknown modes with a TypeError carrying the Node.js message', () => {
+        const w = new wasm.KeyedFuzzyIndex(keyTexts, weights);
+        for (const bad of ['mean', 'Max', '', 1, true, {}]) {
+          const options = { scoreMode: bad };
+          const nodeError = thrown(() =>
+            callUnchecked(napi.searchKeys, 'type', keyTexts, weights, options),
+          );
+          const nodeMessage = nodeError instanceof Error ? nodeError.message : '';
+          expect(nodeMessage).toMatch(/^scoreMode must be "weighted", "matched" or "max", got /);
+          const errors = [
+            thrown(() => callUnchecked(wasm.searchKeys, 'type', keyTexts, weights, options)),
+            thrown(() => callUnchecked(w.search.bind(w), 'type', options)),
+            thrown(() => callUnchecked(w.closest.bind(w), 'type', null, bad)),
+          ];
+          for (const err of errors) {
+            expect(err).toBeInstanceOf(TypeError);
+            expect(err).toHaveProperty('message', expect.stringContaining(nodeMessage));
+          }
+        }
+        w.free();
+      });
+
+      it('rejects invalid KeySearchOptions with a TypeError', () => {
+        const w = new wasm.KeyedFuzzyIndex(keyTexts, weights);
+        const invalid: unknown[] = [
+          '3',
+          true,
+          { maxResults: 'x' },
+          { maxResults: -1 },
+          { minScore: 'x' },
+          { maxResults: 0.5, scoreMode: 'max' },
+          { isCaseSensitive: 'yes', scoreMode: 'matched' },
+        ];
+        for (const options of invalid) {
+          expect(
+            thrown(() => callUnchecked(wasm.searchKeys, 'a', keyTexts, weights, options)),
+          ).toBeInstanceOf(TypeError);
+          expect(thrown(() => callUnchecked(w.search.bind(w), 'a', options))).toBeInstanceOf(
+            TypeError,
+          );
+        }
+        w.free();
+      });
+
+      it('reads valid KeySearchOptions like the Node.js binding', () => {
+        const w = new wasm.KeyedFuzzyIndex(keyTexts, weights);
+        const valid: unknown[] = [
+          {},
+          { maxResults: 2 },
+          { maxResults: Number.POSITIVE_INFINITY, scoreMode: 'max' },
+          { maxResults: undefined, minScore: undefined, scoreMode: undefined },
+          { isCaseSensitive: true, scoreMode: 'matched' },
+          { returnAllOnEmpty: true, maxResults: 3, scoreMode: 'matched' },
+          { includePositions: true },
+        ];
+        const cases = valid.flatMap((options) =>
+          ['type', 'T', ''].map((query) => ({ query, options })),
+        );
+        for (const { query, options } of cases) {
+          const expected = callUnchecked(napi.searchKeys, query, keyTexts, weights, options);
+          expect(callUnchecked(wasm.searchKeys, query, keyTexts, weights, options)).toEqual(
+            expected,
+          );
+          expect(callUnchecked(w.search.bind(w), query, options)).toEqual(expected);
+        }
+        w.free();
+      });
+
+      it('declares exactly the accepted modes', () => {
+        const declared = /export type KeyScoreMode = (.+);/.exec(readFileSync(DTS_PATH, 'utf8'));
+        const literals = [...(declared?.[1] ?? '').matchAll(/"(\w+)"/g)].map((m) => m[1]);
+        expect(literals).toEqual([...modes]);
+      });
+    });
   });
 
   describe('API parity additions', () => {

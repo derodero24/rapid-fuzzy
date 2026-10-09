@@ -10,7 +10,7 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
 use nucleo_matcher::pattern::CaseMatching;
-use rapid_fuzzy_core::search::{KeyedFuzzyIndexCore, search_keys_impl};
+use rapid_fuzzy_core::search::{KeyScoreMode, KeyedFuzzyIndexCore, search_keys_impl};
 
 struct CountingAlloc;
 
@@ -68,7 +68,14 @@ fn columns() -> Vec<Vec<String>> {
 
 fn search(index: &KeyedFuzzyIndexCore, query: &str) -> usize {
     index
-        .search(query, None, None, CaseMatching::Smart, false)
+        .search(
+            query,
+            None,
+            None,
+            CaseMatching::Smart,
+            false,
+            KeyScoreMode::Weighted,
+        )
         .len()
 }
 
@@ -129,7 +136,15 @@ fn searched_indexes_share_one_matcher() {
         .collect();
     for index in &indexes {
         assert_eq!(
-            index.search("ap", None, None, CaseMatching::Smart, false)[0].index,
+            index.search(
+                "ap",
+                None,
+                None,
+                CaseMatching::Smart,
+                false,
+                KeyScoreMode::Weighted
+            )[0]
+            .index,
             0
         );
     }

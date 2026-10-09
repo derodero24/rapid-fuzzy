@@ -69,7 +69,8 @@ export interface KeySearchResult {
      */
     index: number;
     /**
-     * The combined weighted score normalized to 0.0-1.0 range.
+     * The combined score (0.0-1.0) of the key scores, as set by
+     * `scoreMode` (by default the weighted mean over all keys).
      */
     score: number;
     /**
@@ -89,6 +90,43 @@ export interface KeySearchResult {
  * - **Fuzzy**: positions have gaps (character-level fuzzy match).
  */
 export type MatchType = "Exact" | "Prefix" | "Contains" | "Fuzzy";
+
+/**
+ * How multi-key search combines the per-key scores (`keyScores`) of an item
+ * into its `score` (see `KeySearchOptions.scoreMode`).
+ */
+export type KeyScoreMode = "weighted" | "matched" | "max";
+
+/**
+ * Options for multi-key search: `searchKeys()`, `KeyedFuzzyIndex.search()`
+ * and the object search built on them (`searchObjects()`,
+ * `FuzzyObjectIndex.search()`). `includePositions` has no effect there:
+ * multi-key results have no match positions.
+ */
+export interface KeySearchOptions extends SearchOptions {
+    /**
+     * How the per-key scores (`keyScores`) of an item are combined into its
+     * `score`. Only keys with a positive weight take part:
+     *
+     * - `"weighted"` (default): the weighted mean over all keys,
+     *   `sum(weight * keyScore) / sum(weight)`. A key that does not match
+     *   counts as 0, so an exact match on one key out of several scores only
+     *   that key's share of the total weight.
+     * - `"matched"`: the weighted mean over the keys that match
+     *   (`keyScore > 0`) only. An item whose only matching key matches
+     *   exactly scores 1.
+     * - `"max"`: the highest score of any key. Weights then only select the
+     *   keys that take part (weight > 0).
+     *
+     * `keyScores` are the same in every mode; `minScore` and `maxResults`
+     * apply to the combined score. Equal scores are ordered by the length of
+     * the best-matching key's text (the key contributing most to the score:
+     * highest `weight * keyScore`, or highest `keyScore` in `"max"` mode;
+     * the first one on a tie), then by index. Any other value throws a
+     * `TypeError`.
+     */
+    scoreMode?: KeyScoreMode;
+}
 
 /**
  * Options for search functions.
@@ -229,8 +267,11 @@ export class KeyedFuzzyIndex {
      *
      * Returns the index of the best match, or null if no match is found.
      * If `minScore` is provided, returns null when the best match scores below the threshold.
+     * `scoreMode` combines the per-key scores like the `search()` option of
+     * the same name (default `"weighted"`): the result is the first result of
+     * `search(query, { maxResults: 1, minScore, scoreMode })`.
      */
-    closest(query: string, minScore?: number | null): number | null;
+    closest(query: string, minScore?: number | null, scoreMode?: KeyScoreMode | null): number | null;
     /**
      * Reconstruct a KeyedFuzzyIndex from a previously serialized Uint8Array.
      */
@@ -259,11 +300,12 @@ export class KeyedFuzzyIndex {
     /**
      * Search the index for items matching the query.
      *
-     * Returns results sorted by combined weighted score (best match first).
-     * The second argument accepts either a number (maxResults) or a
-     * SearchOptions object, like `FuzzyIndex.search()`.
+     * Returns results sorted by combined score (best match first), exactly
+     * like `searchKeys()` on the same key texts and weights. The second
+     * argument accepts either a number (maxResults) or a KeySearchOptions
+     * object, whose `scoreMode` selects how the per-key scores are combined.
      */
-    search(query: string, options?: number | SearchOptions | null): KeySearchResult[];
+    search(query: string, options?: number | KeySearchOptions | null): KeySearchResult[];
     /**
      * Serialize the index to a compact binary format (Uint8Array).
      */
@@ -592,16 +634,18 @@ export function search(query: string, items: ReadonlyArray<string>, options?: nu
  *
  * `keyTexts[k]` is an array of strings for key `k`, one per item.
  * `weights` specifies the relative importance of each key.
- * `options` is a `SearchOptions` object or a number (maxResults).
+ * `options` is a `KeySearchOptions` object or a number (maxResults); its
+ * `scoreMode` selects how the per-key scores are combined.
  *
- * Returns results sorted by combined weighted score (best match first),
- * exactly like `KeyedFuzzyIndex.search` on the same key texts and weights.
+ * Returns results sorted by combined score (best match first), exactly like
+ * `KeyedFuzzyIndex.search` on the same key texts and weights.
  * Throws an `Error` for invalid input (key texts of different lengths, a
  * weight count that differs from the key count, negative, NaN or infinite
  * weights, or weights summing to 0 or Infinity), like the `KeyedFuzzyIndex`
- * constructor.
+ * constructor, and a `TypeError` for invalid options (such as an unknown
+ * `scoreMode`).
  */
-export function searchKeys(query: string, keyTexts: ReadonlyArray<ReadonlyArray<string>>, weights: ArrayLike<number>, options?: number | SearchOptions | null): KeySearchResult[];
+export function searchKeys(query: string, keyTexts: ReadonlyArray<ReadonlyArray<string>>, weights: ArrayLike<number>, options?: number | KeySearchOptions | null): KeySearchResult[];
 
 /**
  * Compute the Sorensen-Dice coefficient between two strings.
@@ -747,7 +791,7 @@ export interface InitOutput {
     readonly jaroWinklerMany: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
     readonly keyedfuzzyindex_add: (a: number, b: number, c: number) => void;
     readonly keyedfuzzyindex_addMany: (a: number, b: number, c: number) => void;
-    readonly keyedfuzzyindex_closest: (a: number, b: number, c: number, d: number, e: number) => number;
+    readonly keyedfuzzyindex_closest: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
     readonly keyedfuzzyindex_deserialize: (a: number, b: number, c: number) => void;
     readonly keyedfuzzyindex_destroy: (a: number) => void;
     readonly keyedfuzzyindex_new: (a: number, b: number, c: number, d: number) => void;
