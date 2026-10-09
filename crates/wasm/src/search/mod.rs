@@ -417,8 +417,13 @@ pub struct KeySearchOptions {
     ///   where a key's coverage is the share of the query made up by the
     ///   terms it matches (in `"perKey"` mode, 1 for a key that matches and
     ///   0 otherwise); `"max"` by taking each term's score on the key it
-    ///   matches best. In `"matched"` and `"max"` mode, an item whose every
-    ///   term matches some key perfectly scores 1.
+    ///   matches best. In `"max"` mode, an item whose every term matches some
+    ///   key perfectly scores 1. In `"matched"` mode, only an item whose
+    ///   every term matches perfectly each key it matches scores 1: a term
+    ///   that also matches another key partially lowers the score, so
+    ///   `"john tokyo"` scores 0.89 on an item whose name is "John Smith",
+    ///   whose city is "Tokyo" and whose email "jtokyo@example.com" matches
+    ///   `tokyo` partially.
     ///
     /// Only keys with a positive weight take part in either mode; keys whose
     /// weight is 0 still get `keyScores`. For a query of a single term

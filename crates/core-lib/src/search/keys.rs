@@ -61,8 +61,13 @@
 //!   - [`Max`](KeyScoreMode::Max): every term counts with its best key,
 //!     `sum_t max_k r(t, k) / M`; weights only decide which keys take part.
 //!
-//!   With `Matched` and `Max`, an item whose every term matches some key
-//!   perfectly scores 1.
+//!   With `Max`, an item scores 1 when every term matches some key
+//!   perfectly. With `Matched`, an item scores 1 only when each term
+//!   matches perfectly every key it matches: a term that also matches
+//!   another key partially adds its whole coverage there but only part of
+//!   its score, so `john tokyo` scores 0.89 on an item whose name
+//!   `John Smith` and city `Tokyo` match perfectly but whose email
+//!   `jtokyo@example.com` matches `tokyo` partially (all weights 1).
 //! * For a query of one term without `!term`s, both match modes return the
 //!   same results (scores and key scores included).
 //!

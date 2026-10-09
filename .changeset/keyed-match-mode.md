@@ -5,7 +5,7 @@
 Add a `matchMode` option to multi-key search (`searchObjects()`, `FuzzyObjectIndex`, `searchKeys()`, `KeyedFuzzyIndex`; Node.js and WebAssembly builds) so that the terms of a query can match different keys (#782):
 
 - `'perKey'` (the default, unchanged): every key is matched against the whole query, so `john tokyo` only finds items with a key containing both terms, and a `!term` only zeroes the key that contains it.
-- `'crossKey'`: every term is matched against the keys on its own. Each term must match at least one key, and a `!term` matching any key excludes the item. A key's score (`keyScores`) is the share of the query it matches, and `scoreMode` combines these scores; with `'matched'` and `'max'`, an item whose every term matches some key perfectly scores 1.
+- `'crossKey'`: every term is matched against the keys on its own. Each term must match at least one key, and a `!term` matching any key excludes the item. A key's score (`keyScores`) is the share of the query it matches, and `scoreMode` combines these scores. With `'max'`, an item whose every term matches some key perfectly scores 1; with `'matched'`, only an item whose every term matches perfectly each key it matches does (a term that also matches another key partially lowers the score).
 
 ```typescript
 searchObjects('john tokyo', [{ name: 'John Smith', city: 'Tokyo' }], {

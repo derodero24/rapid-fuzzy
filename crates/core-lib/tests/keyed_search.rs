@@ -1575,6 +1575,40 @@ fn cross_key_matched_mode_weighs_keys_by_their_coverage() {
 }
 
 #[test]
+fn cross_key_matched_mode_scores_one_only_without_partial_matches() {
+    // name, city, email: "john" matches the name perfectly and "tokyo" the
+    // city, but "tokyo" also matches the email partially.
+    let key_texts = columns(&[&["John Smith"], &["Tokyo"], &["jtokyo@example.com"]]);
+    let query = "john tokyo";
+    let score = |weights: &[f64], score_mode| {
+        let results = via_search_keys(query, &key_texts, weights, cross_key(score_mode));
+        assert_all_agree(query, &key_texts, weights, cross_key(score_mode));
+        let [result] = &results[..] else {
+            panic!("one result for {weights:?} {score_mode:?}");
+        };
+        result.score
+    };
+    // `Max` takes each term's best key: 1.
+    assert_eq!(score(&[1.0, 1.0, 1.0], KeyScoreMode::Max), 1.0);
+    // In `Matched` mode the partial match counts with its whole coverage
+    // but only part of its score.
+    let matched = score(&[1.0, 1.0, 1.0], KeyScoreMode::Matched);
+    assert!((0.885..0.895).contains(&matched), "{matched}");
+    let exact = Opts {
+        min_score: Some(1.0),
+        ..cross_key(KeyScoreMode::Matched)
+    };
+    assert!(via_search_keys(query, &key_texts, &[1.0, 1.0, 1.0], exact).is_empty());
+    // Without the partial match (the email takes no part), every term
+    // matches each key it matches perfectly: 1.
+    assert_eq!(score(&[1.0, 1.0, 0.0], KeyScoreMode::Matched), 1.0);
+    assert_eq!(
+        via_search_keys(query, &key_texts, &[1.0, 1.0, 0.0], exact).len(),
+        1
+    );
+}
+
+#[test]
 fn cross_key_max_mode_uses_weights_only_to_select_keys() {
     let key_texts = columns(&[
         &["foobar", "x", "foo", "f_o_o"],

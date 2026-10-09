@@ -655,6 +655,24 @@ describe('matchMode', () => {
     }
   });
 
+  it("scores 1 in 'matched' mode only when no term matches a key partially", () => {
+    // 'tokyo' matches the city perfectly, but the email only partially.
+    const items = [{ name: 'John Smith', city: 'Tokyo', email: 'jtokyo@example.com' }];
+    const keys = ['name', 'city', 'email'] as const;
+    const crossKey = { keys, matchMode: 'crossKey' } as const;
+    const [max] = searchObjects('john tokyo', items, { ...crossKey, scoreMode: 'max' });
+    expect(max?.score).toBe(1);
+    const [matched] = searchObjects('john tokyo', items, { ...crossKey, scoreMode: 'matched' });
+    expect(matched?.score).toBeCloseTo(0.89, 2);
+    const exact = { ...crossKey, scoreMode: 'matched', minScore: 1 } as const;
+    expect(searchObjects('john tokyo', items, exact)).toEqual([]);
+    // When the email takes no part, every term matches its keys perfectly.
+    const withoutEmail = { ...exact, keys: ['name', 'city', { name: 'email', weight: 0 }] };
+    expect(searchObjects('john tokyo', items, withoutEmail)).toEqual([
+      { item: items[0], index: 0, score: 1, keyScores: matched?.keyScores },
+    ]);
+  });
+
   it('keeps KeyedFuzzyIndex and searchKeys identical in every mode on random input', () => {
     let nonEmpty = 0;
     for (let seed = 0; seed < 300; seed++) {
