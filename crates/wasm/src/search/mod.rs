@@ -13,7 +13,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use tsify::Tsify;
 use wasm_bindgen::prelude::*;
 
-use crate::convert::{from_js, or_null, to_js, type_error};
+use crate::convert::{from_js, or_null, strings_from_js, to_js, type_error};
 
 // ─── Shared wasm types ──────────────────────────────────────────────────────
 
@@ -554,10 +554,11 @@ pub(crate) fn search_impl(
 #[wasm_bindgen(unchecked_return_type = "SearchResult[]")]
 pub fn search(
     query: String,
-    items: Vec<String>,
+    #[wasm_bindgen(unchecked_param_type = "string[]")] items: JsValue,
     #[wasm_bindgen(unchecked_optional_param_type = "number | SearchOptions | null")]
     options: Option<JsValue>,
 ) -> Result<JsValue, JsValue> {
+    let items = strings_from_js(&items)?;
     let opts = SearchOptions::from_js_or_max_results(options)?;
     let (max_results, min_score, include_positions, case_matching, return_all_on_empty) = (
         opts.max_results,
@@ -603,9 +604,10 @@ pub fn search(
 #[wasm_bindgen(unchecked_return_type = "string | null")]
 pub fn closest(
     query: String,
-    items: Vec<String>,
+    #[wasm_bindgen(unchecked_param_type = "string[]")] items: JsValue,
     #[wasm_bindgen(js_name = "minScore")] min_score: Option<f64>,
 ) -> Result<JsValue, JsValue> {
+    let items = strings_from_js(&items)?;
     let min_score = min_score_arg(min_score)?;
     let results = search_impl(query, items, Some(1), min_score, false, CaseMatching::Smart);
     Ok(or_null(results.into_iter().next().map(|r| r.item)))

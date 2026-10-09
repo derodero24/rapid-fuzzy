@@ -913,6 +913,83 @@ describe.skipIf(!wasmAvailable)('wasm-bindgen runtime', () => {
     });
   });
 
+  // A string[] argument holding something other than a string used to fail
+  // inside wasm-bindgen's Vec<String> conversion, which throws from inside
+  // the wasm call: the index stayed borrowed for good ("recursive use of an
+  // object"), and the converted strings and the call's shadow-stack space
+  // leaked, until about 16,000 rejected calls broke the whole module.
+  describe('string[] arguments are validated before any work', () => {
+    it('leaves an index usable after a rejected addMany()', () => {
+      const index = new wasm.FuzzyIndex(['apple', 'banana']);
+      for (const bad of [
+        ['cherry', 42],
+        ['cherry', null],
+        ['cherry', undefined],
+      ]) {
+        const err = thrown(() => callUnchecked(index.addMany.bind(index), bad));
+        expect(err).toBeInstanceOf(TypeError);
+        expect(err).toHaveProperty('message', 'Expected a string at index 1');
+      }
+      expect(index.size).toBe(2);
+      expect(index.search('app').map((r) => r.item)).toEqual(['apple']);
+      index.addMany(['cherry']);
+      index.add('date');
+      expect(index.size).toBe(4);
+      index.free();
+    });
+
+    it('rejects anything but an array of strings with a TypeError', () => {
+      const calls: Array<[string, (arg: unknown) => unknown]> = [
+        ['new FuzzyIndex', (arg) => Reflect.construct(wasm.FuzzyIndex, [arg])],
+        ['search', (arg) => callUnchecked(wasm.search, 'a', arg)],
+        ['closest', (arg) => callUnchecked(wasm.closest, 'a', arg)],
+        ['levenshteinMany', (arg) => callUnchecked(wasm.levenshteinMany, 'a', arg)],
+        ['jaroWinklerMany', (arg) => callUnchecked(wasm.jaroWinklerMany, 'a', arg)],
+        ['hammingMany', (arg) => callUnchecked(wasm.hammingMany, 'a', arg)],
+        ['weightedRatioMany', (arg) => callUnchecked(wasm.weightedRatioMany, 'a', arg)],
+      ];
+      for (const [name, call] of calls) {
+        // A string or a number used to be read as an array (of characters,
+        // or empty).
+        for (const bad of ['abc', 5, null, {}, ['a', 1]]) {
+          expect(
+            thrown(() => call(bad)),
+            `${name}(${String(bad)})`,
+          ).toBeInstanceOf(TypeError);
+        }
+      }
+    });
+
+    it('does not leak wasm memory when an array is rejected', () => {
+      const items: unknown[] = Array.from({ length: 2000 }, (_, i) => `item number ${i} padding`);
+      items.push(42);
+      const calls: Array<() => unknown> = [
+        () => callUnchecked(wasm.search, 'item', items),
+        () => callUnchecked(wasm.closest, 'item', items),
+        () => callUnchecked(wasm.levenshteinMany, 'item', items),
+        () => Reflect.construct(wasm.FuzzyIndex, [items]),
+      ];
+      for (const call of calls) {
+        const run = (n: number): void => {
+          for (let i = 0; i < n; i++) thrown(call);
+        };
+        run(20);
+        const before = memory.buffer.byteLength;
+        run(300);
+        // Before the fix every rejected call leaked the ~2,000 converted strings.
+        expect(memory.buffer.byteLength - before).toBeLessThan(1024 * 1024);
+      }
+    });
+
+    it('keeps the module working after many rejected calls (no shadow-stack leak)', () => {
+      for (let i = 0; i < 20_000; i++) {
+        thrown(() => callUnchecked(wasm.levenshteinMany, 'a', ['a', 1]));
+      }
+      expect(wasm.levenshtein('kitten', 'sitting')).toBe(3);
+      expect(wasm.search('app', ['apple'])).toHaveLength(1);
+    });
+  });
+
   // A NaN minScore used to filter out every match silently.
   describe('minScore validation (like the Node.js binding)', () => {
     it('throws a TypeError for NaN in every API and accepts other numbers', () => {

@@ -3,9 +3,15 @@
 //! Every conversion that can fail runs inside an exported function and reports
 //! failure as an `Err`, which wasm-bindgen throws as a JS exception only after
 //! the function has returned and Rust has dropped everything it allocated.
-//! Failing inside `FromWasmAbi` instead (what `#[tsify(from_wasm_abi)]` does)
-//! unwinds straight past the wasm frames and leaks every argument converted so
-//! far, so arguments that need validation are taken as plain JS handles.
+//! Failing inside `FromWasmAbi` instead (what `#[tsify(from_wasm_abi)]` and a
+//! `Vec<String>` parameter do, through `throw_str`) unwinds straight past the
+//! wasm frames: it leaks every argument converted so far and the shadow-stack
+//! space of the call, and leaves the `RefCell` borrow of `self` taken, so a
+//! method of an index then fails for good ("recursive use of an object"). So
+//! arguments that need validation, including every `string[]`, are taken as
+//! plain JS handles (`JsValue`) and converted with the functions below, and
+//! scripts/build-wasm-bindgen.js fails the build if a `Vec<String>` (or other
+//! `Vec<JsValue>`-based) parameter comes back.
 
 use rapid_fuzzy_core::search::{check_remove_index, invalid_index_type};
 use serde::Serialize;

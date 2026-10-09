@@ -272,6 +272,9 @@ export class FuzzyIndex {
     [Symbol.dispose](): void;
     /**
      * Add multiple items to the index at once.
+     *
+     * Throws a `TypeError`, adding nothing, for anything but an array of
+     * strings.
      */
     addMany(items: ReadonlyArray<string>): void;
     /**
@@ -310,6 +313,8 @@ export class FuzzyIndex {
     static fromAsync(items: ReadonlyArray<string>): Promise<FuzzyIndex>;
     /**
      * Create a new FuzzyIndex from an array of strings.
+     *
+     * Throws a `TypeError` for anything but an array of strings.
      */
     constructor(items: ReadonlyArray<string>);
     /**
@@ -885,17 +890,17 @@ export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_fuzzyindex_free: (a: number, b: number) => void;
     readonly __wbg_keyedfuzzyindex_free: (a: number, b: number) => void;
-    readonly closest: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
+    readonly closest: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
     readonly damerauLevenshtein: (a: number, b: number, c: number, d: number) => number;
     readonly damerauLevenshteinBatch: (a: number, b: number) => void;
-    readonly damerauLevenshteinMany: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
+    readonly damerauLevenshteinMany: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
     readonly fuzzyindex_add: (a: number, b: number, c: number) => void;
     readonly fuzzyindex_addMany: (a: number, b: number, c: number) => void;
     readonly fuzzyindex_closest: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
     readonly fuzzyindex_deserialize: (a: number, b: number, c: number) => void;
     readonly fuzzyindex_destroy: (a: number) => void;
     readonly fuzzyindex_fromAsync: (a: number) => number;
-    readonly fuzzyindex_new: (a: number, b: number) => number;
+    readonly fuzzyindex_new: (a: number, b: number) => void;
     readonly fuzzyindex_remove: (a: number, b: number, c: number) => void;
     readonly fuzzyindex_search: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly fuzzyindex_searchIndices: (a: number, b: number, c: number, d: number, e: number) => void;
@@ -903,16 +908,16 @@ export interface InitOutput {
     readonly fuzzyindex_size: (a: number) => number;
     readonly hamming: (a: number, b: number, c: number, d: number) => number;
     readonly hammingBatch: (a: number, b: number) => void;
-    readonly hammingMany: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
+    readonly hammingMany: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
     readonly indel: (a: number, b: number, c: number, d: number) => number;
     readonly indelBatch: (a: number, b: number) => void;
-    readonly indelMany: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
+    readonly indelMany: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
     readonly jaro: (a: number, b: number, c: number, d: number) => number;
     readonly jaroBatch: (a: number, b: number) => void;
-    readonly jaroMany: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
+    readonly jaroMany: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
     readonly jaroWinkler: (a: number, b: number, c: number, d: number) => number;
     readonly jaroWinklerBatch: (a: number, b: number) => void;
-    readonly jaroWinklerMany: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
+    readonly jaroWinklerMany: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
     readonly keyedfuzzyindex_add: (a: number, b: number, c: number) => void;
     readonly keyedfuzzyindex_addMany: (a: number, b: number, c: number) => void;
     readonly keyedfuzzyindex_closest: (a: number, b: number, c: number, d: number, e: number) => void;
@@ -925,33 +930,33 @@ export interface InitOutput {
     readonly keyedfuzzyindex_size: (a: number) => number;
     readonly levenshtein: (a: number, b: number, c: number, d: number) => number;
     readonly levenshteinBatch: (a: number, b: number) => void;
-    readonly levenshteinMany: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
+    readonly levenshteinMany: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
     readonly normalizedHamming: (a: number, b: number, c: number, d: number) => number;
     readonly normalizedHammingBatch: (a: number, b: number) => void;
-    readonly normalizedHammingMany: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
+    readonly normalizedHammingMany: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
     readonly normalizedIndel: (a: number, b: number, c: number, d: number) => number;
     readonly normalizedIndelBatch: (a: number, b: number) => void;
-    readonly normalizedIndelMany: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
+    readonly normalizedIndelMany: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
     readonly normalizedLevenshtein: (a: number, b: number, c: number, d: number) => number;
     readonly normalizedLevenshteinBatch: (a: number, b: number) => void;
-    readonly normalizedLevenshteinMany: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
+    readonly normalizedLevenshteinMany: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
     readonly partialRatio: (a: number, b: number, c: number, d: number) => number;
     readonly partialRatioBatch: (a: number, b: number) => void;
-    readonly partialRatioMany: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
-    readonly search: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+    readonly partialRatioMany: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+    readonly search: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly searchKeys: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
     readonly sorensenDice: (a: number, b: number, c: number, d: number) => number;
     readonly sorensenDiceBatch: (a: number, b: number) => void;
-    readonly sorensenDiceMany: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
+    readonly sorensenDiceMany: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
     readonly tokenSetRatio: (a: number, b: number, c: number, d: number) => number;
     readonly tokenSetRatioBatch: (a: number, b: number) => void;
-    readonly tokenSetRatioMany: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
+    readonly tokenSetRatioMany: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
     readonly tokenSortRatio: (a: number, b: number, c: number, d: number) => number;
     readonly tokenSortRatioBatch: (a: number, b: number) => void;
-    readonly tokenSortRatioMany: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
+    readonly tokenSortRatioMany: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
     readonly weightedRatio: (a: number, b: number, c: number, d: number) => number;
     readonly weightedRatioBatch: (a: number, b: number) => void;
-    readonly weightedRatioMany: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
+    readonly weightedRatioMany: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
     readonly __wbindgen_export: (a: number, b: number) => number;
     readonly __wbindgen_export2: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_export3: (a: number) => void;

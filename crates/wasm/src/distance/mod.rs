@@ -8,7 +8,7 @@ use rapid_fuzzy_core::distance as core_dist;
 use rapid_fuzzy_core::distance::{DistanceError, check_max_distance};
 use wasm_bindgen::prelude::*;
 
-use crate::convert::{error, nullable_array, or_null, string_matrix_from_js};
+use crate::convert::{error, nullable_array, or_null, string_matrix_from_js, strings_from_js};
 
 /// Malformed pairs, `NaN` similarity thresholds and invalid `maxDistance`
 /// values throw an `Error`.
@@ -52,9 +52,10 @@ pub fn levenshtein_batch(
 #[wasm_bindgen(js_name = "levenshteinMany")]
 pub fn levenshtein_many(
     reference: String,
-    candidates: Vec<String>,
+    #[wasm_bindgen(unchecked_param_type = "string[]")] candidates: JsValue,
     #[wasm_bindgen(js_name = "maxDistance")] max_distance: Option<f64>,
 ) -> Result<Vec<u32>, JsValue> {
+    let candidates = strings_from_js(&candidates)?;
     let max_distance = check_max_distance(max_distance).map_err(dist_error)?;
     Ok(core_dist::levenshtein_many(
         &reference,
@@ -98,9 +99,10 @@ pub fn damerau_levenshtein_batch(
 #[wasm_bindgen(js_name = "damerauLevenshteinMany")]
 pub fn damerau_levenshtein_many(
     reference: String,
-    candidates: Vec<String>,
+    #[wasm_bindgen(unchecked_param_type = "string[]")] candidates: JsValue,
     #[wasm_bindgen(js_name = "maxDistance")] max_distance: Option<f64>,
 ) -> Result<Vec<u32>, JsValue> {
+    let candidates = strings_from_js(&candidates)?;
     let max_distance = check_max_distance(max_distance).map_err(dist_error)?;
     Ok(core_dist::damerau_levenshtein_many(
         &reference,
@@ -148,9 +150,10 @@ pub fn hamming_batch(
 #[wasm_bindgen(js_name = "hammingMany", unchecked_return_type = "(number | null)[]")]
 pub fn hamming_many(
     reference: String,
-    candidates: Vec<String>,
+    #[wasm_bindgen(unchecked_param_type = "string[]")] candidates: JsValue,
     #[wasm_bindgen(js_name = "maxDistance")] max_distance: Option<f64>,
 ) -> Result<js_sys::Array, JsValue> {
+    let candidates = strings_from_js(&candidates)?;
     let max_distance = check_max_distance(max_distance).map_err(dist_error)?;
     Ok(nullable_array(&core_dist::hamming_many(
         &reference,
@@ -200,9 +203,10 @@ pub fn normalized_hamming_batch(
 )]
 pub fn normalized_hamming_many(
     reference: String,
-    candidates: Vec<String>,
+    #[wasm_bindgen(unchecked_param_type = "string[]")] candidates: JsValue,
     #[wasm_bindgen(js_name = "minSimilarity")] min_similarity: Option<f64>,
 ) -> Result<js_sys::Array, JsValue> {
+    let candidates = strings_from_js(&candidates)?;
     Ok(nullable_array(
         &core_dist::normalized_hamming_many(&reference, &candidates, min_similarity)
             .map_err(dist_error)?,
@@ -239,9 +243,10 @@ pub fn jaro_batch(
 #[wasm_bindgen(js_name = "jaroMany")]
 pub fn jaro_many(
     reference: String,
-    candidates: Vec<String>,
+    #[wasm_bindgen(unchecked_param_type = "string[]")] candidates: JsValue,
     #[wasm_bindgen(js_name = "minSimilarity")] min_similarity: Option<f64>,
 ) -> Result<Vec<f64>, JsValue> {
+    let candidates = strings_from_js(&candidates)?;
     core_dist::jaro_many(&reference, &candidates, min_similarity).map_err(dist_error)
 }
 
@@ -276,9 +281,10 @@ pub fn jaro_winkler_batch(
 #[wasm_bindgen(js_name = "jaroWinklerMany")]
 pub fn jaro_winkler_many(
     reference: String,
-    candidates: Vec<String>,
+    #[wasm_bindgen(unchecked_param_type = "string[]")] candidates: JsValue,
     #[wasm_bindgen(js_name = "minSimilarity")] min_similarity: Option<f64>,
 ) -> Result<Vec<f64>, JsValue> {
+    let candidates = strings_from_js(&candidates)?;
     core_dist::jaro_winkler_many(&reference, &candidates, min_similarity).map_err(dist_error)
 }
 
@@ -312,9 +318,10 @@ pub fn sorensen_dice_batch(
 #[wasm_bindgen(js_name = "sorensenDiceMany")]
 pub fn sorensen_dice_many(
     reference: String,
-    candidates: Vec<String>,
+    #[wasm_bindgen(unchecked_param_type = "string[]")] candidates: JsValue,
     #[wasm_bindgen(js_name = "minSimilarity")] min_similarity: Option<f64>,
 ) -> Result<Vec<f64>, JsValue> {
+    let candidates = strings_from_js(&candidates)?;
     core_dist::sorensen_dice_many(&reference, &candidates, min_similarity).map_err(dist_error)
 }
 
@@ -350,9 +357,10 @@ pub fn normalized_levenshtein_batch(
 #[wasm_bindgen(js_name = "normalizedLevenshteinMany")]
 pub fn normalized_levenshtein_many(
     reference: String,
-    candidates: Vec<String>,
+    #[wasm_bindgen(unchecked_param_type = "string[]")] candidates: JsValue,
     #[wasm_bindgen(js_name = "minSimilarity")] min_similarity: Option<f64>,
 ) -> Result<Vec<f64>, JsValue> {
+    let candidates = strings_from_js(&candidates)?;
     core_dist::normalized_levenshtein_many(&reference, &candidates, min_similarity)
         .map_err(dist_error)
 }
@@ -395,9 +403,10 @@ pub fn indel_batch(
 #[wasm_bindgen(js_name = "indelMany")]
 pub fn indel_many(
     reference: String,
-    candidates: Vec<String>,
+    #[wasm_bindgen(unchecked_param_type = "string[]")] candidates: JsValue,
     #[wasm_bindgen(js_name = "maxDistance")] max_distance: Option<f64>,
 ) -> Result<Vec<u32>, JsValue> {
+    let candidates = strings_from_js(&candidates)?;
     let max_distance = check_max_distance(max_distance).map_err(dist_error)?;
     Ok(core_dist::indel_many(&reference, &candidates, max_distance))
 }
@@ -436,9 +445,10 @@ pub fn normalized_indel_batch(
 #[wasm_bindgen(js_name = "normalizedIndelMany")]
 pub fn normalized_indel_many(
     reference: String,
-    candidates: Vec<String>,
+    #[wasm_bindgen(unchecked_param_type = "string[]")] candidates: JsValue,
     #[wasm_bindgen(js_name = "minSimilarity")] min_similarity: Option<f64>,
 ) -> Result<Vec<f64>, JsValue> {
+    let candidates = strings_from_js(&candidates)?;
     core_dist::normalized_indel_many(&reference, &candidates, min_similarity).map_err(dist_error)
 }
 
@@ -472,9 +482,10 @@ pub fn token_sort_ratio_batch(
 #[wasm_bindgen(js_name = "tokenSortRatioMany")]
 pub fn token_sort_ratio_many(
     reference: String,
-    candidates: Vec<String>,
+    #[wasm_bindgen(unchecked_param_type = "string[]")] candidates: JsValue,
     #[wasm_bindgen(js_name = "minSimilarity")] min_similarity: Option<f64>,
 ) -> Result<Vec<f64>, JsValue> {
+    let candidates = strings_from_js(&candidates)?;
     core_dist::token_sort_ratio_many(&reference, &candidates, min_similarity).map_err(dist_error)
 }
 
@@ -510,9 +521,10 @@ pub fn token_set_ratio_batch(
 #[wasm_bindgen(js_name = "tokenSetRatioMany")]
 pub fn token_set_ratio_many(
     reference: String,
-    candidates: Vec<String>,
+    #[wasm_bindgen(unchecked_param_type = "string[]")] candidates: JsValue,
     #[wasm_bindgen(js_name = "minSimilarity")] min_similarity: Option<f64>,
 ) -> Result<Vec<f64>, JsValue> {
+    let candidates = strings_from_js(&candidates)?;
     core_dist::token_set_ratio_many(&reference, &candidates, min_similarity).map_err(dist_error)
 }
 
@@ -553,9 +565,10 @@ pub fn partial_ratio_batch(
 #[wasm_bindgen(js_name = "partialRatioMany")]
 pub fn partial_ratio_many(
     reference: String,
-    candidates: Vec<String>,
+    #[wasm_bindgen(unchecked_param_type = "string[]")] candidates: JsValue,
     #[wasm_bindgen(js_name = "minSimilarity")] min_similarity: Option<f64>,
 ) -> Result<Vec<f64>, JsValue> {
+    let candidates = strings_from_js(&candidates)?;
     core_dist::partial_ratio_many(&reference, &candidates, min_similarity).map_err(dist_error)
 }
 
@@ -591,8 +604,9 @@ pub fn weighted_ratio_batch(
 #[wasm_bindgen(js_name = "weightedRatioMany")]
 pub fn weighted_ratio_many(
     reference: String,
-    candidates: Vec<String>,
+    #[wasm_bindgen(unchecked_param_type = "string[]")] candidates: JsValue,
     #[wasm_bindgen(js_name = "minSimilarity")] min_similarity: Option<f64>,
 ) -> Result<Vec<f64>, JsValue> {
+    let candidates = strings_from_js(&candidates)?;
     core_dist::weighted_ratio_many(&reference, &candidates, min_similarity).map_err(dist_error)
 }

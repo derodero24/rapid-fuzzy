@@ -48,11 +48,28 @@ const OBSOLETE_FILES = [
   `${OUT_NAME}_bg.wasm.d.ts`,
 ];
 
-/** Point the `@ts-self-types` pragma (read by Deno) at the renamed declarations. */
+/**
+ * Post-process the glue:
+ *
+ * - Point the `@ts-self-types` pragma (read by Deno) at the renamed
+ *   declarations.
+ * - Fail if an export takes a `Vec<String>` (or another `Vec<JsValue>`-based)
+ *   parameter again, which the glue passes with `passArrayJsValueToWasm0`:
+ *   wasm-bindgen converts such an array inside the wasm call and throws from
+ *   there on an element of the wrong type, which leaks the converted strings
+ *   and the call's shadow-stack space and leaves an index permanently borrowed.
+ *   `string[]` parameters are taken as `JsValue` and checked with
+ *   `strings_from_js` instead (crates/wasm/src/convert.rs).
+ */
 function rewriteGlue(source) {
   const from = `/* @ts-self-types="./${OUT_NAME}.d.ts" */`;
   if (!source.startsWith(from)) {
     throw new Error(`build-wasm-bindgen: expected the glue to start with ${from}`);
+  }
+  if (source.includes('passArrayJsValueToWasm0')) {
+    throw new Error(
+      'build-wasm-bindgen: an export takes a Vec<String> / Vec<JsValue> parameter; take a JsValue and convert it with strings_from_js (crates/wasm/src/convert.rs)',
+    );
   }
   return `/* @ts-self-types="./${OUT_NAME}.d.mts" */${source.slice(from.length)}`;
 }

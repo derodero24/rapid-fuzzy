@@ -15,14 +15,24 @@ pub struct FuzzyIndex {
     core: FuzzyIndexCore,
 }
 
-#[wasm_bindgen]
 impl FuzzyIndex {
-    /// Create a new FuzzyIndex from an array of strings.
-    #[wasm_bindgen(constructor)]
-    pub fn new(items: Vec<String>) -> Self {
+    fn from_items(items: Vec<String>) -> Self {
         Self {
             core: FuzzyIndexCore::new(items),
         }
+    }
+}
+
+#[wasm_bindgen]
+impl FuzzyIndex {
+    /// Create a new FuzzyIndex from an array of strings.
+    ///
+    /// Throws a `TypeError` for anything but an array of strings.
+    #[wasm_bindgen(constructor)]
+    pub fn new(
+        #[wasm_bindgen(unchecked_param_type = "string[]")] items: JsValue,
+    ) -> Result<FuzzyIndex, JsValue> {
+        Ok(Self::from_items(strings_from_js(&items)?))
     }
 
     /// Return the number of items in the index.
@@ -44,7 +54,7 @@ impl FuzzyIndex {
         #[wasm_bindgen(unchecked_param_type = "string[]")] items: JsValue,
     ) -> js_sys::Promise {
         match strings_from_js(&items) {
-            Ok(items) => js_sys::Promise::resolve(&JsValue::from(Self::new(items))),
+            Ok(items) => js_sys::Promise::resolve(&JsValue::from(Self::from_items(items))),
             Err(err) => js_sys::Promise::reject(&err),
         }
     }
@@ -178,9 +188,17 @@ impl FuzzyIndex {
     }
 
     /// Add multiple items to the index at once.
+    ///
+    /// Throws a `TypeError`, adding nothing, for anything but an array of
+    /// strings.
     #[wasm_bindgen(js_name = "addMany")]
-    pub fn add_many(&mut self, items: Vec<String>) {
+    pub fn add_many(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "string[]")] items: JsValue,
+    ) -> Result<(), JsValue> {
+        let items = strings_from_js(&items)?;
         self.core.add_many(items);
+        Ok(())
     }
 
     /// Remove the item at the given index.
