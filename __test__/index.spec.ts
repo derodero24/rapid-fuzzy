@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -2004,22 +2006,38 @@ describe('KeyedFuzzyIndex error propagation', () => {
 });
 
 describe('ESM/CJS export parity', () => {
-  // Exported by the napi-rs loader itself, not part of the public API.
-  const napiInternal = new Set(['__napiBindingTarget']);
-
   it('should have matching exports between CJS and ESM', async () => {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const cjs = require('../index.js') as Record<string, unknown>;
     const esm: Record<string, unknown> = { ...(await import('../index.mjs')) };
 
-    const cjsNames = Object.keys(cjs).filter((name) => !napiInternal.has(name));
-    const esmNames = Object.keys(esm).filter((name) => !napiInternal.has(name));
+    const cjsNames = Object.keys(cjs);
+    const esmNames = Object.keys(esm);
 
-    // Every CJS export is available from the ESM entry, and vice versa.
+    // Every CJS export is available from the ESM entry, and vice versa,
+    // including the loader's `__napiBindingTarget`.
     expect(cjsNames.filter((name) => !(name in esm))).toEqual([]);
     expect(esmNames.filter((name) => !(name in cjs))).toEqual([]);
     // Both entries hand out the same objects.
     expect(esmNames.filter((name) => esm[name] !== cjs[name])).toEqual([]);
+    expect(esm.__napiBindingTarget).toBe('native');
+  });
+
+  // index.d.mts re-exports index.d.ts, so every value it declares must exist
+  // at runtime: an import of a declared name missing from index.mjs
+  // type-checks, then fails when the ES module graph is linked.
+  it('exports every value index.d.ts declares from both entries', async () => {
+    const dts = readFileSync(join(__dirname, '..', 'index.d.ts'), 'utf8');
+    const declared = [...dts.matchAll(/^export declare (?:const|function|class|enum) (\w+)/gm)].map(
+      (m) => m[1] ?? '',
+    );
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const cjs = require('../index.js') as Record<string, unknown>;
+    const esm: Record<string, unknown> = { ...(await import('../index.mjs')) };
+    expect(declared.length).toBeGreaterThan(50);
+    expect(declared).toContain('__napiBindingTarget');
+    expect(declared.filter((name) => !(name in esm))).toEqual([]);
+    expect(declared.filter((name) => !(name in cjs))).toEqual([]);
   });
 });
 
