@@ -96,6 +96,14 @@
     },
     {
       "customType": "regex",
+      "description": "npm CLI pinned in the release workflow (npm trusted publishing needs 11.5.1 or later)",
+      "managerFilePatterns": ["/^\\.github/workflows/release\\.yml$/"],
+      "matchStrings": ["NPM_VERSION: (?<currentValue>\\d+\\.\\d+\\.\\d+)"],
+      "depNameTemplate": "npm",
+      "datasourceTemplate": "npm"
+    },
+    {
+      "customType": "regex",
       "description": "Tool versions installed with taiki-e/install-action in workflows",
       "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.ya?ml$/"],
       "matchStrings": ["tool: (?<depName>[a-z0-9-]+)@(?<currentValue>\\d+\\.\\d+\\.\\d+)"],

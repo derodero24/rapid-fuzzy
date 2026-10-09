@@ -327,7 +327,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write # npm provenance attestations
+      id-token: write # npm trusted publishing (OIDC) and provenance attestations
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -336,8 +336,24 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version-file: .nvmrc
-          cache: pnpm
+          # No dependency cache in the job that holds the publish credentials:
+          # whatever a cache restores was written by some other run, and only
+          # this job's own install may feed the publish steps (npm's trusted
+          # publishing guide: never use caching in release builds).
           registry-url: https://registry.npmjs.org/
+
+      # npm trusted publishing (OIDC) needs npm >= 11.5.1 on Node >= 22.14.0.
+      # Pin the npm on PATH, which both publish steps below use (`napi
+      # prepublish` shells out to `npm publish`), instead of whichever npm the
+      # runner's Node bundles. Renovate bumps the version.
+      - name: Install npm
+        run: |
+          npm install --global "npm@${NPM_VERSION}"
+          test "$(npm --version)" = "${NPM_VERSION}"
+          echo "node $(node --version), npm $(npm --version) at $(command -v npm)"
+        env:
+          NPM_VERSION: 11.21.0
+
       - run: pnpm install --frozen-lockfile
 
       - name: Download all artifacts
@@ -411,11 +427,14 @@ jobs:
       # package.json. GitHub release creation is left to the github-release
       # job, which only runs once everything is on npm.
       #
-      # npm trusted publishing (OIDC instead of the long-lived NPM_TOKEN)
-      # needs this workflow to be registered as a trusted publisher for all ten
-      # packages on npmjs.com (package settings, "Trusted publishing"). Once
-      # that is done, NODE_AUTH_TOKEN can be dropped from both steps below:
-      # `id-token: write` is already granted for provenance.
+      # Authentication: for each package, `npm publish` first tries npm trusted
+      # publishing (an OIDC token exchange, using `id-token: write`) and falls
+      # back to NODE_AUTH_TOKEN (the long-lived NPM_TOKEN) when the exchange
+      # fails, e.g. because the package has no trusted publisher for this
+      # workflow yet. npm logs that failure only at verbose level, so the
+      # fallback stays until a release has been confirmed to publish every
+      # package through OIDC. CONTRIBUTING.md ("Releasing") lists the cut-over
+      # steps, which end with removing NODE_AUTH_TOKEN from both steps below.
       - name: Publish platform packages
         run: |
           npm config set provenance true
