@@ -283,9 +283,9 @@ In `search()`, `closest()` and `FuzzyIndex`, terms are separated by any whitespa
 
 Search uses the [nucleo](https://github.com/helix-editor/nucleo) matcher, the one in the Helix editor. Each query term matches an item when all of its characters occur in the item **in order** (a subsequence match): `tsc` matches `TypeScript`, and `typscript` matches `TypeScript` because the query only *omits* a letter. Typos that **substitute or swap** letters do not match: `tpyescript` and `typozcript` find nothing in `['TypeScript']`. To tolerate those, compare strings with a [distance function](#string-distance) instead (for example `levenshteinMany` or `jaroWinklerMany` over your candidates).
 
-- **Scores** are nucleo's scores normalized to 0.0–1.0, where 1.0 is the best score the query can get: typically the query appears verbatim at the start of the item or of a space-separated word. Matches at the start of the item, after a space or other delimiter (`-`, `_`, `.`, `/`), at camelCase humps and in consecutive runs score higher, so `york` scores 1.0 against `new york city` but 0.67 against `newyorkcity`. A query with several terms gets the average of its terms' scores. Scores are for ranking: they are not a percentage of similarity, and they are not comparable with fuse.js or fuzzysort scores. Pick `minScore` by looking at scores on your own data.
+- **Scores** are nucleo's scores normalized to 0.0–1.0, where 1.0 is the best score the query can get: typically the query appears verbatim at the start of the item or of a space-separated word. Matches at the start of the item, after a space or other delimiter (`-`, `_`, `.`, `/`), at camelCase humps and in consecutive runs score higher, so `york` scores 1.0 against `new york city` but 0.67 against `newyorkcity`. A query with several terms gets the sum of its terms' raw scores divided by the sum of their best possible scores: an average weighted by each term's best possible score, which grows with its length, so a short term moves the score less than a long one (`k newyorkcity` scores 0.94 against `xxxxkxxxx newyorkcity`, where `k` alone scores 0.44 and `newyorkcity` 1.0). Excluded terms (`!term`) do not count. Scores are for ranking: they are not a percentage of similarity, and they are not comparable with fuse.js or fuzzysort scores. Pick `minScore` by looking at scores on your own data.
 - **Case**: smart case by default — a query in lower case matches any case; a query with an upper-case letter is matched case-sensitively. `isCaseSensitive: true` makes every query case-sensitive. There is no option that forces case-insensitive matching for a query with capitals; lower-case the query instead.
-- **Ties** are broken by item length (shorter first), then by index.
+- **Ties** are broken by the item's length in UTF-8 bytes (shorter first; an ASCII character takes 1 byte, most CJK characters 3 and an emoji 4), then by index.
 
 ### Object Search
 
@@ -322,7 +322,7 @@ searchObjects('john', users, {
 searchObjects('new york', items, { keys: ['address.city'] });
 ```
 
-By default the combined score is the weighted average of the per-key scores (`keyScores`, one per key, each computed like `search()` scores a string) over all keys; the `scoreMode` option below changes that. A key with weight `0` is still scored in `keyScores` but never selects an item on its own. Ties are broken like `search()`: the item whose best-matching key text is shorter comes first, then the lower index.
+By default the combined score is the weighted average of the per-key scores (`keyScores`, one per key, each computed like `search()` scores a string) over all keys; the `scoreMode` option below changes that. A key with weight `0` is still scored in `keyScores` but never selects an item on its own. Ties are broken like `search()`: the item whose best-matching key text is shorter in UTF-8 bytes comes first, then the lower index.
 
 #### Combining key scores (`scoreMode`)
 

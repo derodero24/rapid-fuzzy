@@ -492,11 +492,11 @@ export interface KeySearchOptions {
    *   keys that take part (weight > 0).
    *
    * `keyScores` are the same in every mode; `minScore` and `maxResults`
-   * apply to the combined score. Equal scores are ordered by the length of
-   * the best-matching key's text (the key contributing most to the score:
-   * highest `weight * keyScore`, or highest `keyScore` in `'max'` mode;
-   * the first one on a tie), then by index. Any other value throws an
-   * `InvalidArg` error.
+   * apply to the combined score. Equal scores are ordered by the UTF-8
+   * byte length of the best-matching key's text (the key contributing
+   * most to the score: highest `weight * keyScore`, or highest `keyScore`
+   * in `'max'` mode; the first one on a tie), then by index. Any other
+   * value throws an `InvalidArg` error.
    *
    * With `matchMode: 'crossKey'`, `'matched'` counts the weight of each
    * key in proportion to the share of the query it matches, and `'max'`
@@ -814,9 +814,9 @@ export declare function search(query: string, items: ReadonlyArray<string>, opti
  * on a key with a positive weight) are not returned.
  *
  * Returns results sorted by combined score (best match first), then by the
- * length of the best-matching key's text (shorter first, like `search()`),
- * then by index. `new KeyedFuzzyIndex(keyTexts, weights)` returns exactly
- * the same results.
+ * UTF-8 byte length of the best-matching key's text (shorter first, like
+ * `search()`), then by index. `new KeyedFuzzyIndex(keyTexts, weights)`
+ * returns exactly the same results.
  *
  * The fourth argument accepts either a number (maxResults) or a
  * KeySearchOptions object. Throws when the key texts have different lengths,

@@ -280,11 +280,11 @@ pub struct KeySearchOptions {
     ///   keys that take part (weight > 0).
     ///
     /// `keyScores` are the same in every mode; `minScore` and `maxResults`
-    /// apply to the combined score. Equal scores are ordered by the length of
-    /// the best-matching key's text (the key contributing most to the score:
-    /// highest `weight * keyScore`, or highest `keyScore` in `'max'` mode;
-    /// the first one on a tie), then by index. Any other value throws an
-    /// `InvalidArg` error.
+    /// apply to the combined score. Equal scores are ordered by the UTF-8
+    /// byte length of the best-matching key's text (the key contributing
+    /// most to the score: highest `weight * keyScore`, or highest `keyScore`
+    /// in `'max'` mode; the first one on a tie), then by index. Any other
+    /// value throws an `InvalidArg` error.
     ///
     /// With `matchMode: 'crossKey'`, `'matched'` counts the weight of each
     /// key in proportion to the share of the query it matches, and `'max'`
