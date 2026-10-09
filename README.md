@@ -699,7 +699,7 @@ Serialized indexes contain the item strings plus 4 bytes per item (see [Index Se
 ## Benchmarks
 
 <!-- bench:env:start -->
-Measured on 2026-10-04 with Node.js v22.22.0 on linux x64 (Intel(R) Xeon(R) Processor @ 2.10GHz, 4 logical CPUs, a shared cloud VM), using the release build of the native addon and [Vitest bench](https://vitest.dev/guide/features.html#benchmarking). Numbers vary by up to about ±10% between runs; treat them as relative, not absolute.
+Measured on 2026-10-04 with Node.js v22.22.0 on linux x64 (Intel(R) Xeon(R) Processor @ 2.10GHz, 4 logical CPUs, a shared cloud VM), using the release build of the native addon and [Vitest bench](https://vitest.dev/guide/benchmarking). Numbers vary by up to about ±10% between runs; treat them as relative, not absolute.
 <!-- bench:env:end -->
 
 How these numbers were produced (sources: [`__test__/search.compare.bench.ts`](__test__/search.compare.bench.ts), [`__test__/distance.compare.bench.ts`](__test__/distance.compare.bench.ts) and the datasets in [`__test__/bench-fixtures.ts`](__test__/bench-fixtures.ts); `pnpm bench:readme` re-runs them and rewrites the tables below):
