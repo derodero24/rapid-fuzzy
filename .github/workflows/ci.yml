@@ -366,6 +366,11 @@ jobs:
     name: Coverage
     needs: [build]
     runs-on: ubuntu-latest
+    # Job-level permissions replace the workflow-level block, so contents: read
+    # is restated.
+    permissions:
+      contents: read # actions/checkout
+      id-token: write # the Codecov upload authenticates with a GitHub OIDC token (no CODECOV_TOKEN secret)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -397,12 +402,24 @@ jobs:
       - name: JS coverage
         run: pnpm test --coverage
 
-      # Upload to Codecov
+      # Upload to Codecov. Pull requests from forks get no OIDC token; the
+      # action detects them and falls back to a tokenless upload.
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7
         with:
           files: rust-lcov.info,coverage/lcov.info
           flags: rust,javascript
+          use_oidc: true
+          # The Codecov CLI release the action downloads (it defaults to the
+          # latest one). Renovate updates it through the custom manager in
+          # renovate.json, which matches the trailing comment.
+          version: v11.3.1 # codecov-cli
+          # Keep this false until the repository is activated on codecov.io
+          # (sign in there, or install the Codecov GitHub App, and enable
+          # derodero24/rapid-fuzzy): until then every upload is rejected and
+          # would fail the job. Once uploads succeed, change it to
+          # ${{ github.event_name == 'push' }} so a broken upload on develop
+          # turns the job red while a Codecov outage does not block PRs.
           fail_ci_if_error: false
 
   build-wasm-bindgen:
