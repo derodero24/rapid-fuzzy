@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  type KeyClosestOptions,
   KeyedFuzzyIndex,
   type KeyMatchMode,
   type KeyScoreMode,
@@ -520,21 +521,18 @@ describe('scoreMode', () => {
 
   it('closest() returns the first result of search() in the given mode', () => {
     const index = new KeyedFuzzyIndex(PEOPLE_KEYS, [1, 1, 1]);
-    for (const scoreMode of [...MODES, undefined, null]) {
-      for (const minScore of [undefined, null, 0, 0.3, 0.6, 0.9, 1]) {
+    for (const scoreMode of [...MODES, undefined]) {
+      for (const minScore of [undefined, 0, 0.3, 0.6, 0.9, 1]) {
         for (const query of ['smith', 'mitchell', 'jane', 'zzz']) {
-          const [best] = index.search(query, {
-            maxResults: 1,
-            minScore: minScore ?? undefined,
-            scoreMode: scoreMode ?? undefined,
-          });
-          expect(index.closest(query, minScore, scoreMode)).toBe(best?.index ?? null);
+          const [best] = index.search(query, { maxResults: 1, minScore, scoreMode });
+          expect(index.closest(query, { minScore, scoreMode })).toBe(best?.index ?? null);
         }
       }
     }
     expect(index.closest('smith', 0.9)).toBeNull();
-    expect(index.closest('smith', 0.9, 'matched')).toBe(0);
-    expect(index.closest('smith', 0.9, 'max')).toBe(0);
+    expect(index.closest('smith', { minScore: 0.9 })).toBeNull();
+    expect(index.closest('smith', { minScore: 0.9, scoreMode: 'matched' })).toBe(0);
+    expect(index.closest('smith', { minScore: 0.9, scoreMode: 'max' })).toBe(0);
   });
 
   it('is passed through by searchObjects() and FuzzyObjectIndex', () => {
@@ -549,11 +547,11 @@ describe('scoreMode', () => {
         expect(searchObjects(query, PEOPLE, { keys, scoreMode })).toEqual(expected);
         expect(objectIndex.search(query, { scoreMode })).toEqual(expected);
         const [best] = searchObjects(query, PEOPLE, { keys, scoreMode, minScore: 0.6 });
-        expect(objectIndex.closest(query, 0.6, scoreMode)).toBe(best?.item ?? null);
+        expect(objectIndex.closest(query, { minScore: 0.6, scoreMode })).toBe(best?.item ?? null);
       }
     }
     expect(objectIndex.closest('smith', 0.9)).toBeNull();
-    expect(objectIndex.closest('smith', 0.9, 'matched')).toBe(PEOPLE[0]);
+    expect(objectIndex.closest('smith', { minScore: 0.9, scoreMode: 'matched' })).toBe(PEOPLE[0]);
   });
 
   it('rejects anything but the three modes with an InvalidArg error', () => {
@@ -576,18 +574,22 @@ describe('scoreMode', () => {
       const error = invalidScoreMode(got);
       expect(() => searchKeys('smith', PEOPLE_KEYS, [1, 1, 1], { scoreMode })).toThrow(error);
       expect(() => index.search('smith', { scoreMode })).toThrow(error);
-      expect(() => index.closest('smith', undefined, scoreMode)).toThrow(error);
+      expect(() => index.closest('smith', { scoreMode })).toThrow(error);
       expect(() => searchObjects('smith', PEOPLE, { keys: ['name'], scoreMode })).toThrow(error);
       expect(() => objectIndex.search('smith', { scoreMode })).toThrow(error);
-      expect(() => objectIndex.closest('smith', undefined, scoreMode)).toThrow(error);
+      expect(() => objectIndex.closest('smith', { scoreMode })).toThrow(error);
       // Also when there is nothing to search.
       expect(() => searchKeys('', [[]], [1], { scoreMode })).toThrow(error);
     }
     // In an options object, null is rejected like in the other fields.
-    const nullMode = { scoreMode: null } as unknown as KeySearchOptions;
-    expect(() => searchKeys('smith', PEOPLE_KEYS, [1, 1, 1], nullMode)).toThrow(
-      invalidScoreMode('null'),
-    );
+    const nullMode = { scoreMode: null } as unknown as KeySearchOptions & KeyClosestOptions;
+    for (const call of [
+      () => searchKeys('smith', PEOPLE_KEYS, [1, 1, 1], nullMode),
+      () => index.closest('smith', nullMode),
+      () => objectIndex.closest('smith', nullMode),
+    ]) {
+      expect(call).toThrow(invalidScoreMode('null'));
+    }
   });
 
   it('is not an option of search()', () => {
@@ -817,7 +819,7 @@ describe('matchMode', () => {
     const objectIndex = new FuzzyObjectIndex(RESIDENTS, {
       keys: [{ name: 'name', weight: 2 }, 'city'],
     });
-    const cases = [...MATCH_MODES, undefined, null].flatMap((matchMode) =>
+    const cases = [...MATCH_MODES, undefined].flatMap((matchMode) =>
       [...MODES, undefined].flatMap((scoreMode) =>
         [undefined, 0.3, 0.6, 1].flatMap((minScore) =>
           ['john tokyo', 'doe osaka', 'john !tokyo', 'zzz'].map((query) => ({
@@ -830,18 +832,17 @@ describe('matchMode', () => {
       ),
     );
     for (const { query, minScore, scoreMode, matchMode } of cases) {
-      const options = { maxResults: 1, minScore, scoreMode, matchMode: matchMode ?? undefined };
-      const [best] = index.search(query, options);
-      expect(index.closest(query, minScore, scoreMode, matchMode)).toBe(best?.index ?? null);
-      expect(objectIndex.closest(query, minScore, scoreMode, matchMode)).toBe(
+      const [best] = index.search(query, { maxResults: 1, minScore, scoreMode, matchMode });
+      expect(index.closest(query, { minScore, scoreMode, matchMode })).toBe(best?.index ?? null);
+      expect(objectIndex.closest(query, { minScore, scoreMode, matchMode })).toBe(
         best === undefined ? null : RESIDENTS[best.index],
       );
     }
     // Per-key, only Tokyo John has both terms in one key; across keys, John
     // Smith (Tokyo) matches every term perfectly too, and its best key text
     // is shorter.
-    expect(index.closest('john tokyo', null, 'max')).toBe(3);
-    expect(index.closest('john tokyo', null, 'max', 'crossKey')).toBe(0);
+    expect(index.closest('john tokyo', { scoreMode: 'max' })).toBe(3);
+    expect(index.closest('john tokyo', { scoreMode: 'max', matchMode: 'crossKey' })).toBe(0);
   });
 
   it('is passed through by searchObjects() and FuzzyObjectIndex', () => {
@@ -905,18 +906,22 @@ describe('matchMode', () => {
       const error = invalidMatchMode(got);
       expect(() => searchKeys('john', RESIDENT_KEYS, [1, 1], { matchMode })).toThrow(error);
       expect(() => index.search('john', { matchMode })).toThrow(error);
-      expect(() => index.closest('john', undefined, undefined, matchMode)).toThrow(error);
+      expect(() => index.closest('john', { matchMode })).toThrow(error);
       expect(() => searchObjects('john', RESIDENTS, { keys: ['name'], matchMode })).toThrow(error);
       expect(() => objectIndex.search('john', { matchMode })).toThrow(error);
-      expect(() => objectIndex.closest('john', undefined, undefined, matchMode)).toThrow(error);
+      expect(() => objectIndex.closest('john', { matchMode })).toThrow(error);
       // Also when there is nothing to search.
       expect(() => searchKeys('', [[]], [1], { matchMode })).toThrow(error);
     }
     // In an options object, null is rejected like in the other fields.
-    const nullMode = { matchMode: null } as unknown as KeySearchOptions;
-    expect(() => searchKeys('john', RESIDENT_KEYS, [1, 1], nullMode)).toThrow(
-      invalidMatchMode('null'),
-    );
+    const nullMode = { matchMode: null } as unknown as KeySearchOptions & KeyClosestOptions;
+    for (const call of [
+      () => searchKeys('john', RESIDENT_KEYS, [1, 1], nullMode),
+      () => index.closest('john', nullMode),
+      () => objectIndex.closest('john', nullMode),
+    ]) {
+      expect(call).toThrow(invalidMatchMode('null'));
+    }
   });
 
   it('is not an option of search()', () => {
@@ -924,5 +929,207 @@ describe('matchMode', () => {
     // Unknown SearchOptions fields are ignored, as before.
     const options = { matchMode: 'crossKey' } as SearchOptions;
     expect(search('john tokyo', items, options)).toEqual(search('john tokyo', items));
+  });
+});
+
+// ─── closest() options ──────────────────────────────────────────────────────
+
+/** The smallest double greater than the non-negative number `x`. */
+function nextUp(x: number): number {
+  const bits = new BigInt64Array(new Float64Array([x]).buffer);
+  bits[0] = (bits[0] ?? 0n) + 1n;
+  return new Float64Array(bits.buffer)[0] ?? Number.NaN;
+}
+
+/** Call `fn` with arguments its TypeScript signature rejects. */
+function callUnchecked(fn: unknown, ...args: unknown[]): unknown {
+  return (fn as (...a: unknown[]) => unknown)(...args);
+}
+
+/** The error `fn` throws (fails the test if it does not throw). */
+function thrownBy(fn: () => unknown): Error {
+  try {
+    fn();
+  } catch (error) {
+    if (error instanceof Error) return error;
+    throw new Error(`threw a non-Error: ${String(error)}`);
+  }
+  throw new Error('expected the call to throw');
+}
+
+describe('closest() options', () => {
+  const weights = [2, 1];
+  const index = (): KeyedFuzzyIndex => new KeyedFuzzyIndex(RESIDENT_KEYS, weights);
+  const objectIndex = (): FuzzyObjectIndex<(typeof RESIDENTS)[number]> =>
+    new FuzzyObjectIndex(RESIDENTS, { keys: [{ name: 'name', weight: 2 }, 'city'] });
+  const QUERIES = ['john tokyo', 'doe osaka', 'tokyo', 'john !tokyo', 'zzz', ''];
+
+  /** The options of every combination of the modes, unset ones included. */
+  const MODE_OPTIONS: readonly KeyClosestOptions[] = [...MATCH_MODES, undefined].flatMap(
+    (matchMode) => [...MODES, undefined].map((scoreMode) => ({ scoreMode, matchMode })),
+  );
+
+  it('return the first result of search() with maxResults 1', () => {
+    const keyed = index();
+    const objects = objectIndex();
+    for (const modes of MODE_OPTIONS) {
+      for (const minScore of [undefined, 0, 0.25, 0.5, 0.75, 1, 1.5]) {
+        for (const query of QUERIES) {
+          const options = { ...modes, minScore };
+          const [best] = keyed.search(query, { ...options, maxResults: 1 });
+          expect(keyed.closest(query, options)).toBe(best?.index ?? null);
+          expect(objects.closest(query, options)).toBe(
+            best === undefined ? null : RESIDENTS[best.index],
+          );
+        }
+      }
+    }
+  });
+
+  it('take a number as a shorthand for minScore', () => {
+    const keyed = index();
+    const objects = objectIndex();
+    for (const minScore of [0, 0.3, 0.5, 0.6, 0.9, 1, 2, -1, Number.NaN, Infinity]) {
+      for (const query of QUERIES) {
+        expect(keyed.closest(query, minScore)).toBe(keyed.closest(query, { minScore }));
+        expect(objects.closest(query, minScore)).toBe(objects.closest(query, { minScore }));
+      }
+    }
+    // The modes are the defaults ('weighted', 'perKey').
+    expect(keyed.closest('john tokyo', 0)).toBe(3);
+    expect(keyed.closest('john tokyo', { scoreMode: 'max', matchMode: 'crossKey' })).toBe(0);
+    // Only the second argument is read: the former positional modes are gone.
+    expect(callUnchecked(keyed.closest.bind(keyed), 'john tokyo', 0, 'max', 'crossKey')).toBe(3);
+    expect(callUnchecked(objects.closest.bind(objects), 'john tokyo', 0, 'max', 'crossKey')).toBe(
+      RESIDENTS[3],
+    );
+  });
+
+  it('use the defaults for undefined, null, {} and fields set to undefined', () => {
+    const keyed = index();
+    const objects = objectIndex();
+    const defaults = { minScore: undefined, scoreMode: undefined, matchMode: undefined };
+    for (const query of QUERIES) {
+      const [best] = keyed.search(query, 1);
+      const expected = best?.index ?? null;
+      for (const options of [undefined, null, {}, defaults]) {
+        expect(keyed.closest(query, options)).toBe(expected);
+        expect(objects.closest(query, options)).toBe(
+          expected === null ? null : RESIDENTS[expected],
+        );
+      }
+      expect(keyed.closest(query)).toBe(expected);
+      expect(objects.closest(query)).toBe(expected === null ? null : RESIDENTS[expected]);
+    }
+  });
+
+  it('keep the best match when it scores exactly minScore', () => {
+    const keyed = index();
+    let checked = 0;
+    for (const modes of MODE_OPTIONS) {
+      for (const query of QUERIES) {
+        const [best] = keyed.search(query, { ...modes, maxResults: 1 });
+        if (best === undefined) continue;
+        checked++;
+        expect(keyed.closest(query, { ...modes, minScore: best.score })).toBe(best.index);
+        // Just above the best score, nothing qualifies.
+        expect(keyed.closest(query, { ...modes, minScore: nextUp(best.score) })).toBeNull();
+        if (modes.scoreMode === undefined && modes.matchMode === undefined) {
+          expect(keyed.closest(query, best.score)).toBe(best.index);
+          expect(keyed.closest(query, nextUp(best.score))).toBeNull();
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(20);
+  });
+
+  it('ignore the KeySearchOptions fields that are not closest() options', () => {
+    const keyed = index();
+    const objects = objectIndex();
+    // Like unknown fields of the other options objects.
+    const ignored = [
+      { maxResults: 0 },
+      { maxResults: -1 },
+      { includePositions: 'yes' },
+      { isCaseSensitive: true },
+      { returnAllOnEmpty: true },
+      { unknown: 1 },
+    ];
+    for (const extra of ignored) {
+      for (const query of ['John tokyo', 'tokyo', '']) {
+        const options = { ...extra, scoreMode: 'max', matchMode: 'crossKey' };
+        const expected = keyed.closest(query, { scoreMode: 'max', matchMode: 'crossKey' });
+        expect(callUnchecked(keyed.closest.bind(keyed), query, options)).toBe(expected);
+        expect(callUnchecked(objects.closest.bind(objects), query, options)).toBe(
+          expected === null ? null : RESIDENTS[expected],
+        );
+      }
+    }
+  });
+
+  it('read the fields by name, from getters and the prototype chain too', () => {
+    const keyed = index();
+    class Getters {
+      get scoreMode(): KeyScoreMode {
+        return 'max';
+      }
+      get matchMode(): KeyMatchMode {
+        return 'crossKey';
+      }
+    }
+    const crossKey = { scoreMode: 'max', matchMode: 'crossKey' } as const;
+    expect(keyed.closest('john tokyo', crossKey)).toBe(0);
+    for (const options of [new Getters(), Object.create(crossKey) as KeyClosestOptions]) {
+      expect(keyed.closest('john tokyo', options)).toBe(0);
+      expect(objectIndex().closest('john tokyo', options)).toBe(RESIDENTS[0]);
+    }
+    const inheritedMinScore = Object.create({ minScore: 2 }) as KeyClosestOptions;
+    expect(keyed.closest('tokyo', inheritedMinScore)).toBeNull();
+  });
+
+  it('reject an invalid minScore with the error of KeySearchOptions.minScore', () => {
+    const keyed = index();
+    for (const minScore of ['0.5', true, null, 2n, {}]) {
+      const searchError = thrownBy(() =>
+        callUnchecked(keyed.search.bind(keyed), 'tokyo', { minScore }),
+      );
+      expect(searchError.message).toMatch(/ on KeySearchOptions\.minScore$/);
+      const expected = expect.objectContaining({
+        code: (searchError as Error & { code?: unknown }).code,
+        message: searchError.message.replace('KeySearchOptions', 'KeyClosestOptions'),
+      });
+      expect(() => callUnchecked(keyed.closest.bind(keyed), 'tokyo', { minScore })).toThrow(
+        expected,
+      );
+      const objects = objectIndex();
+      expect(() => callUnchecked(objects.closest.bind(objects), 'tokyo', { minScore })).toThrow(
+        expected,
+      );
+    }
+  });
+
+  it('reject an argument that is neither a number nor an object', () => {
+    const keyed = index();
+    const objects = objectIndex();
+    // The value, its typeof and its napi value type.
+    for (const [value, type, napiType] of [
+      ['0.5', 'string', 'String'],
+      [true, 'boolean', 'Boolean'],
+      [2n, 'bigint', 'BigInt'],
+      [Symbol('x'), 'symbol', 'Symbol'],
+      [() => 0.5, 'function', 'Function'],
+    ] as const) {
+      expect(() => callUnchecked(keyed.closest.bind(keyed), 'tokyo', value)).toThrow(
+        expect.objectContaining({
+          code: 'InvalidArg',
+          message: `Expected a number (minScore) or a KeyClosestOptions object, got ${napiType}`,
+        }),
+      );
+      const error = thrownBy(() => callUnchecked(objects.closest.bind(objects), 'tokyo', value));
+      expect(error).toBeInstanceOf(TypeError);
+      expect(error.message).toBe(
+        `options must be a number (minScore) or a KeyClosestOptions object, got ${type}`,
+      );
+    }
   });
 });

@@ -270,24 +270,25 @@ export class KeyedFuzzyIndex {
     /**
      * Find the index of the closest matching item.
      *
-     * Returns the index of the best match, or null if no match is found.
-     * If `minScore` is provided, returns null when the best match scores below the threshold.
-     * `scoreMode` and `matchMode` work like the `search()` options of the
-     * same names (defaults `"weighted"` and `"perKey"`): the result is the
-     * first result of
+     * Returns the index of the best match, or null if no match is found:
+     * the index of the first result of
      * `search(query, { maxResults: 1, minScore, scoreMode, matchMode })`.
+     *
+     * The second argument accepts either a number (minScore shorthand) or a
+     * KeyClosestOptions object: `minScore` makes it return null when the
+     * best match scores below the threshold, and `scoreMode` and
+     * `matchMode` work like the `search()` options of the same names
+     * (defaults `"weighted"` and `"perKey"`).
      * @param {string} query
-     * @param {number | null} [minScore]
-     * @param {KeyScoreMode | null} [scoreMode]
-     * @param {KeyMatchMode | null} [matchMode]
+     * @param {number | KeyClosestOptions | null} [options]
      * @returns {number | null}
      */
-    closest(query, minScore, scoreMode, matchMode) {
+    closest(query, options) {
         try {
             const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
             const ptr0 = passStringToWasm0(query, wasm.__wbindgen_export, wasm.__wbindgen_export2);
             const len0 = WASM_VECTOR_LEN;
-            wasm.keyedfuzzyindex_closest(retptr, this.__wbg_ptr, ptr0, len0, !isLikeNone(minScore), isLikeNone(minScore) ? 0 : minScore, isLikeNone(scoreMode) ? 0 : addHeapObject(scoreMode), isLikeNone(matchMode) ? 0 : addHeapObject(matchMode));
+            wasm.keyedfuzzyindex_closest(retptr, this.__wbg_ptr, ptr0, len0, isLikeNone(options) ? 0 : addHeapObject(options));
             var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
             var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
             var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);

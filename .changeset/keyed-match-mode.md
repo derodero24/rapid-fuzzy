@@ -12,7 +12,7 @@ searchObjects('john tokyo', [{ name: 'John Smith', city: 'Tokyo' }], {
   keys: ['name', 'city'],
   matchMode: 'crossKey',
 }); // → John Smith (previously no result)
-index.closest('john tokyo', null, 'max', 'crossKey'); // closest(query, minScore?, scoreMode?, matchMode?)
+index.closest('john tokyo', { scoreMode: 'max', matchMode: 'crossKey' });
 ```
 
-A query of a single term without `!term`s gives the same results in both modes, keys with weight 0 never select or exclude items, and `KeyedFuzzyIndex` returns exactly what `searchKeys()` returns. A `matchMode` other than the two modes throws (an `InvalidArg` error in Node.js, a `TypeError` in the WebAssembly build). TypeScript: the new `KeyMatchMode` type is `'perKey' | 'crossKey'`, and `KeySearchOptions` and `ObjectIndexSearchOptions` gain `matchMode`.
+A query of a single term without `!term`s gives the same results in both modes, keys with weight 0 never select or exclude items, and `KeyedFuzzyIndex` returns exactly what `searchKeys()` returns. A `matchMode` other than the two modes throws (an `InvalidArg` error in Node.js, a `TypeError` in the WebAssembly build). TypeScript: the new `KeyMatchMode` type is `'perKey' | 'crossKey'`, and `KeySearchOptions`, `KeyClosestOptions` and `ObjectIndexSearchOptions` gain `matchMode`.

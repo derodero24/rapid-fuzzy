@@ -1,4 +1,4 @@
-import type { KeyMatchMode, KeyScoreMode, KeySearchOptions } from './index';
+import type { KeyClosestOptions, KeyMatchMode, KeyScoreMode, KeySearchOptions } from './index';
 
 type Primitive = string | number | bigint | boolean | symbol | null | undefined;
 type AnyFunction = (...args: never) => unknown;
@@ -325,18 +325,24 @@ export declare class FuzzyObjectIndex<T, S extends string = string, C extends st
    * Find the closest matching object, or null if no match: the item of the
    * first result of
    * `search(query, { maxResults: 1, minScore, scoreMode, matchMode })`.
-   * `scoreMode` defaults to `'weighted'` and `matchMode` to `'perKey'`.
    *
+   * The second argument accepts a number (minScore shorthand) or a
+   * {@link KeyClosestOptions} object, whose `scoreMode` defaults to
+   * `'weighted'` and `matchMode` to `'perKey'`.
+   *
+   * @example
+   * ```typescript
+   * index.closest('smith', 0.9); // minScore 0.9
+   * index.closest('smith', { minScore: 0.9, scoreMode: 'matched' });
+   * index.closest('john tokyo', { scoreMode: 'max', matchMode: 'crossKey' });
+   * ```
+   *
+   * @throws {TypeError} If `options` is neither a number nor an object.
    * @throws {Error} If `scoreMode` is not `'weighted'`, `'matched'` or `'max'`,
-   *   or `matchMode` is not `'perKey'` or `'crossKey'` (an `InvalidArg` error;
-   *   a `TypeError` in the browser build).
+   *   `matchMode` is not `'perKey'` or `'crossKey'`, or `minScore` is not a
+   *   number (a `TypeError` in the browser build).
    */
-  closest(
-    query: string,
-    minScore?: number | undefined | null,
-    scoreMode?: KeyScoreMode | undefined | null,
-    matchMode?: KeyMatchMode | undefined | null,
-  ): T | null;
+  closest(query: string, options?: number | KeyClosestOptions | undefined | null): T | null;
 
   /** Add a single item to the index. */
   add(item: T): void;

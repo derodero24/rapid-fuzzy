@@ -1,9 +1,9 @@
+use rapid_fuzzy_core::search::KeyedFuzzyIndexCore;
 use rapid_fuzzy_core::search::serialization::{deserialize_keyed_index, serialize_keyed_index};
-use rapid_fuzzy_core::search::{KeyedFuzzyIndexCore, SearchKeysOptions};
 use wasm_bindgen::prelude::*;
 
 use super::keys::KeySearchResult;
-use super::{KeyMatchMode, KeyScoreMode, KeySearchOptions};
+use super::{KeyClosestOptions, KeySearchOptions};
 use crate::convert::{error, from_js, or_null, string_matrix_from_js, to_js};
 
 /// A persistent multi-key fuzzy search index backed by Rust-side data.
@@ -65,40 +65,23 @@ impl KeyedFuzzyIndex {
 
     /// Find the index of the closest matching item.
     ///
-    /// Returns the index of the best match, or null if no match is found.
-    /// If `minScore` is provided, returns null when the best match scores below the threshold.
-    /// `scoreMode` and `matchMode` work like the `search()` options of the
-    /// same names (defaults `"weighted"` and `"perKey"`): the result is the
-    /// first result of
+    /// Returns the index of the best match, or null if no match is found:
+    /// the index of the first result of
     /// `search(query, { maxResults: 1, minScore, scoreMode, matchMode })`.
+    ///
+    /// The second argument accepts either a number (minScore shorthand) or a
+    /// KeyClosestOptions object: `minScore` makes it return null when the
+    /// best match scores below the threshold, and `scoreMode` and
+    /// `matchMode` work like the `search()` options of the same names
+    /// (defaults `"weighted"` and `"perKey"`).
     #[wasm_bindgen(unchecked_return_type = "number | null")]
     pub fn closest(
         &self,
         query: String,
-        #[wasm_bindgen(js_name = "minScore", unchecked_optional_param_type = "number | null")]
-        min_score: Option<f64>,
-        #[wasm_bindgen(
-            js_name = "scoreMode",
-            unchecked_optional_param_type = "KeyScoreMode | null"
-        )]
-        score_mode: Option<JsValue>,
-        #[wasm_bindgen(
-            js_name = "matchMode",
-            unchecked_optional_param_type = "KeyMatchMode | null"
-        )]
-        match_mode: Option<JsValue>,
+        #[wasm_bindgen(unchecked_optional_param_type = "number | KeyClosestOptions | null")]
+        options: Option<JsValue>,
     ) -> Result<JsValue, JsValue> {
-        let options = SearchKeysOptions {
-            max_results: Some(1),
-            min_score,
-            score_mode: score_mode
-                .map(|value| KeyScoreMode::from_js(&value).map(Into::into))
-                .transpose()?,
-            match_mode: match_mode
-                .map(|value| KeyMatchMode::from_js(&value).map(Into::into))
-                .transpose()?,
-            ..SearchKeysOptions::default()
-        };
+        let options = KeyClosestOptions::from_js_or_min_score(options)?.to_core();
         let results = self.core.search_with_options(&query, options);
         Ok(or_null(results.into_iter().next().map(|r| r.index)))
     }

@@ -1,13 +1,11 @@
 use napi::Env;
 use napi::bindgen_prelude::{Buffer, ObjectFinalize};
 use napi_derive::napi;
+use rapid_fuzzy_core::search::KeyedFuzzyIndexCore;
 use rapid_fuzzy_core::search::serialization::{deserialize_keyed_index, serialize_keyed_index};
-use rapid_fuzzy_core::search::{
-    KeyMatchMode, KeyScoreMode, KeyedFuzzyIndexCore, SearchKeysOptions,
-};
 
 use super::keys::KeySearchResult;
-use super::{KeySearchOptionsArg, MatchModeArg, ScoreModeArg};
+use super::{KeyClosestOptions, KeyClosestOptionsArg, KeySearchOptionsArg};
 
 /// A persistent multi-key fuzzy search index backed by Rust-side data.
 ///
@@ -115,25 +113,26 @@ impl KeyedFuzzyIndex {
 
     /// Find the index of the closest matching item.
     ///
-    /// Returns the index of the best match, or null if no match is found.
-    /// If `minScore` is provided, returns null when the best match scores below the threshold.
-    /// `scoreMode` and `matchMode` work like the `search()` options of the
-    /// same names (defaults `'weighted'` and `'perKey'`): the result is the
-    /// first result of
+    /// Returns the index of the best match, or null if no match is found:
+    /// the index of the first result of
     /// `search(query, { maxResults: 1, minScore, scoreMode, matchMode })`.
+    ///
+    /// The second argument accepts either a number (minScore shorthand) or a
+    /// KeyClosestOptions object: `minScore` makes it return null when the
+    /// best match scores below the threshold, and `scoreMode` and
+    /// `matchMode` work like the `search()` options of the same names
+    /// (defaults `'weighted'` and `'perKey'`).
     ///
     /// Use the returned index to look up the item in your own data array.
     #[napi]
     pub fn closest(
         &self,
         query: String,
-        min_score: Option<f64>,
-        #[napi(ts_arg_type = "KeyScoreMode | undefined | null")] score_mode: Option<ScoreModeArg>,
-        #[napi(ts_arg_type = "KeyMatchMode | undefined | null")] match_mode: Option<MatchModeArg>,
+        #[napi(ts_arg_type = "number | KeyClosestOptions | undefined | null")] options: Option<
+            KeyClosestOptionsArg,
+        >,
     ) -> Option<u32> {
-        let score_mode = score_mode.map_or(KeyScoreMode::Weighted, |arg| arg.0);
-        let match_mode = match_mode.map_or(KeyMatchMode::PerKey, |arg| arg.0);
-        self.closest_impl(&query, min_score, score_mode, match_mode)
+        self.closest_impl(&query, &options.map(|arg| arg.0).unwrap_or_default())
     }
 
     /// Add a single item to the index.
@@ -202,21 +201,8 @@ impl KeyedFuzzyIndex {
 
 /// Non-napi helper methods.
 impl KeyedFuzzyIndex {
-    fn closest_impl(
-        &self,
-        query: &str,
-        min_score: Option<f64>,
-        score_mode: KeyScoreMode,
-        match_mode: KeyMatchMode,
-    ) -> Option<u32> {
-        let options = SearchKeysOptions {
-            max_results: Some(1),
-            min_score,
-            score_mode: Some(score_mode),
-            match_mode: Some(match_mode),
-            ..SearchKeysOptions::default()
-        };
-        let results = self.core.search_with_options(query, options);
+    fn closest_impl(&self, query: &str, options: &KeyClosestOptions) -> Option<u32> {
+        let results = self.core.search_with_options(query, options.to_core());
         results.into_iter().next().map(|r| r.index)
     }
 
@@ -240,6 +226,19 @@ impl KeyedFuzzyIndex {
 mod tests {
     use super::*;
     use crate::search::KeySearchOptions;
+    use rapid_fuzzy_core::search::{KeyMatchMode, KeyScoreMode};
+
+    fn closest_options(
+        min_score: Option<f64>,
+        score_mode: Option<KeyScoreMode>,
+        match_mode: Option<KeyMatchMode>,
+    ) -> KeyClosestOptions {
+        KeyClosestOptions {
+            min_score,
+            score_mode,
+            match_mode,
+        }
+    }
 
     fn make_index() -> KeyedFuzzyIndex {
         KeyedFuzzyIndex::new_impl(
@@ -547,19 +546,14 @@ mod tests {
     #[test]
     fn test_closest_returns_correct_index() {
         let index = make_index();
-        let result = index.closest_impl("john", None, KeyScoreMode::Weighted, KeyMatchMode::PerKey);
+        let result = index.closest_impl("john", &KeyClosestOptions::default());
         assert_eq!(result, Some(0)); // John Smith is at index 0
     }
 
     #[test]
     fn test_closest_returns_none_when_min_score_too_high() {
         let index = make_index();
-        let result = index.closest_impl(
-            "john",
-            Some(1.1),
-            KeyScoreMode::Weighted,
-            KeyMatchMode::PerKey,
-        );
+        let result = index.closest_impl("john", &closest_options(Some(1.1), None, None));
         assert_eq!(result, None);
     }
 
@@ -649,7 +643,7 @@ mod tests {
             );
             assert_eq!(results.len(), expected, "{score_mode:?}");
             assert_eq!(
-                index.closest_impl("smith", Some(0.9), score_mode, KeyMatchMode::PerKey),
+                index.closest_impl("smith", &closest_options(Some(0.9), Some(score_mode), None)),
                 (expected == 1).then_some(0),
                 "{score_mode:?}"
             );
@@ -695,7 +689,7 @@ mod tests {
             (KeyMatchMode::CrossKey, Some(0)),
         ] {
             assert_eq!(
-                index.closest_impl("john tokyo", None, KeyScoreMode::Weighted, match_mode),
+                index.closest_impl("john tokyo", &closest_options(None, None, Some(match_mode))),
                 expected
             );
         }

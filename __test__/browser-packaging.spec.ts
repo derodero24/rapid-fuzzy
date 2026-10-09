@@ -336,18 +336,21 @@ describe.skipIf(!wasmAvailable)('browser.mjs (the WebAssembly build)', () => {
             const expected = searchObjects(query, users, { keys, ...options });
             expect(browser.searchObjects(query, users, { keys, ...options })).toEqual(expected);
             expect(index.search(query, options)).toEqual(native.search(query, options));
-            expect(index.closest(query, 0.6, scoreMode, matchMode)).toEqual(
-              native.closest(query, 0.6, scoreMode, matchMode),
+            const closestOptions = { minScore: 0.6, ...options };
+            expect(index.closest(query, closestOptions)).toEqual(
+              native.closest(query, closestOptions),
             );
           }
         }
       }
       // The terms of 'john boston' are in different keys of John Smith.
       expect(index.search('john boston')).toEqual([]);
-      expect(index.closest('john boston', null, 'max', 'crossKey')).toEqual(users[0]);
+      expect(index.closest('john boston', { scoreMode: 'max', matchMode: 'crossKey' })).toEqual(
+        users[0],
+      );
       const bogus = 'cross' as 'crossKey';
       expect(() => index.search('john', { matchMode: bogus })).toThrow(TypeError);
-      expect(() => index.closest('john', null, null, bogus)).toThrow(TypeError);
+      expect(() => index.closest('john', { matchMode: bogus })).toThrow(TypeError);
       expect(() => browser.searchObjects('john', users, { keys, matchMode: bogus })).toThrow(
         TypeError,
       );
@@ -363,17 +366,17 @@ describe.skipIf(!wasmAvailable)('browser.mjs (the WebAssembly build)', () => {
           const expected = searchObjects(query, users, { keys, scoreMode });
           expect(browser.searchObjects(query, users, { keys, scoreMode })).toEqual(expected);
           expect(index.search(query, { scoreMode })).toEqual(native.search(query, { scoreMode }));
-          expect(index.closest(query, 0.6, scoreMode)).toEqual(
-            native.closest(query, 0.6, scoreMode),
+          expect(index.closest(query, { minScore: 0.6, scoreMode })).toEqual(
+            native.closest(query, { minScore: 0.6, scoreMode }),
           );
         }
       }
       // A single exact match on one key out of three scores 1 in 'matched' mode.
       expect(index.closest('boston', 0.9)).toBeNull();
-      expect(index.closest('boston', 0.9, 'matched')).toEqual(users[0]);
+      expect(index.closest('boston', { minScore: 0.9, scoreMode: 'matched' })).toEqual(users[0]);
       const bogus = 'mean' as 'max';
       expect(() => index.search('john', { scoreMode: bogus })).toThrow(TypeError);
-      expect(() => index.closest('john', null, bogus)).toThrow(TypeError);
+      expect(() => index.closest('john', { scoreMode: bogus })).toThrow(TypeError);
       expect(() => browser.searchObjects('john', users, { keys, scoreMode: bogus })).toThrow(
         TypeError,
       );
@@ -426,11 +429,55 @@ describe.skipIf(!wasmAvailable)('browser.mjs (the WebAssembly build)', () => {
           new RegExp(`${field} must be .*, got null$`),
         );
         expect(() => browser.searchObjects('john', users, { keys, ...opts })).toThrow(TypeError);
+        expect(() => native.closest('john', opts)).toThrow(message);
+        expect(() => index.closest('john', opts)).toThrow(TypeError);
+        expect(() => index.closest('john', opts)).toThrow(
+          new RegExp(`${field} must be .*, got null$`),
+        );
       }
-      // As closest() arguments, null means the default mode.
-      expect(index.closest('john', null, null, null)).toEqual(
-        native.closest('john', null, null, null),
-      );
+      // A null options argument means the defaults.
+      expect(index.closest('john', null)).toEqual(native.closest('john', null));
+      expect(index.closest('john', null)).toEqual(users[0]);
+      index.destroy();
+    });
+
+    it('reads closest() options like the Node.js implementation', async () => {
+      const browser = await load();
+      const index = new browser.FuzzyObjectIndex(users, { keys });
+      const native = new NodeFuzzyObjectIndex(users, { keys });
+      const options: Array<number | napi.KeyClosestOptions | undefined | null> = [
+        undefined,
+        null,
+        {},
+        0,
+        0.6,
+        0.9,
+        1,
+        { minScore: 0.9 },
+        { scoreMode: 'matched' },
+        { minScore: 0.9, scoreMode: 'matched' },
+        { scoreMode: 'max', matchMode: 'crossKey' },
+        { minScore: 1, scoreMode: 'max', matchMode: 'crossKey' },
+        { minScore: undefined, scoreMode: undefined, matchMode: undefined },
+      ];
+      let found = 0;
+      for (const opts of options) {
+        for (const query of ['john', 'boston', 'john boston', 'smith example', 'zzz', '']) {
+          const expected = native.closest(query, opts);
+          if (expected !== null) found++;
+          expect(index.closest(query, opts)).toEqual(expected);
+        }
+      }
+      expect(found).toBeGreaterThan(20);
+      // A number is a shorthand for minScore.
+      expect(index.closest('boston', 0.9)).toEqual(index.closest('boston', { minScore: 0.9 }));
+      // Options that are neither a number nor an object are rejected alike.
+      for (const bad of ['0.9', true]) {
+        const message = `options must be a number (minScore) or a KeyClosestOptions object, got ${typeof bad}`;
+        const opts = bad as unknown as number;
+        expect(() => native.closest('john', opts)).toThrow(new TypeError(message));
+        expect(() => index.closest('john', opts)).toThrow(new TypeError(message));
+      }
       index.destroy();
     });
 

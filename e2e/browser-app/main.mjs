@@ -126,6 +126,13 @@ try {
   });
   results.objectIndexSearch = objectIndex.search('john').map((r) => r.item.name);
   results.objectIndexClosest = objectIndex.closest('denvr')?.name ?? null;
+  // closest() options: a minScore number, or { minScore, scoreMode, matchMode }.
+  results.objectIndexClosestOptions = [
+    objectIndex.closest('john boston'),
+    objectIndex.closest('john boston', { scoreMode: 'max', matchMode: 'crossKey' }),
+    objectIndex.closest('denvr', 1),
+    objectIndex.closest('denver', { minScore: 0.9, scoreMode: 'matched' }),
+  ].map((user) => user?.name ?? null);
   results.objectIndexSize = objectIndex.size;
   results.objectsFromMainEntry = rf.FuzzyObjectIndex === FuzzyObjectIndex;
 

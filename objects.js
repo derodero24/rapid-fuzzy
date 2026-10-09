@@ -152,12 +152,16 @@ function keyColumns(items, paths) {
 }
 
 /**
+ * Check a `number | options` argument, so that both builds throw the same
+ * `TypeError` for anything else.
  * @param {unknown} options
+ * @param {string} shorthand - The option a number sets.
+ * @param {string} type - The name of the options type.
  */
-function assertSearchOptions(options) {
+function assertOptions(options, shorthand, type) {
   if (options != null && typeof options !== 'number' && typeof options !== 'object') {
     throw new TypeError(
-      `options must be a number (maxResults) or a SearchOptions object, got ${typeof options}`,
+      `options must be a number (${shorthand}) or a ${type} object, got ${typeof options}`,
     );
   }
 }
@@ -267,7 +271,7 @@ class FuzzyObjectIndex {
    * @returns {Array<{ item: T; index: number; score: number; keyScores: number[] }>}
    */
   search(query, options) {
-    assertSearchOptions(options);
+    assertOptions(options, 'maxResults', 'SearchOptions');
     return this.#index.search(query, options).map((r) => ({
       item: this.#items[r.index],
       index: r.index,
@@ -280,15 +284,16 @@ class FuzzyObjectIndex {
    * Find the closest matching object: the item of the first result of
    * `search(query, { maxResults: 1, minScore, scoreMode, matchMode })`.
    * @param {string} query
-   * @param {number | null} [minScore]
-   * @param {'weighted' | 'matched' | 'max' | null} [scoreMode] - How the
-   *   per-key scores are combined (default `'weighted'`).
-   * @param {'perKey' | 'crossKey' | null} [matchMode] - How the query is
-   *   matched against the keys (default `'perKey'`).
+   * @param {number | { minScore?: number; scoreMode?: 'weighted' | 'matched' | 'max'; matchMode?: 'perKey' | 'crossKey' } | null} [options]
+   *   A KeyClosestOptions object, or a number as a shorthand for `minScore`.
+   *   `scoreMode` (default `'weighted'`) selects how the per-key scores are
+   *   combined, `matchMode` (default `'perKey'`) how the query is matched
+   *   against the keys.
    * @returns {T | null}
    */
-  closest(query, minScore, scoreMode, matchMode) {
-    const index = this.#index.closest(query, minScore, scoreMode, matchMode);
+  closest(query, options) {
+    assertOptions(options, 'minScore', 'KeyClosestOptions');
+    const index = this.#index.closest(query, options);
     return index === null ? null : this.#items[index];
   }
 

@@ -106,6 +106,32 @@ export type KeyScoreMode = "weighted" | "matched" | "max";
 export type KeyMatchMode = "perKey" | "crossKey";
 
 /**
+ * Options for `KeyedFuzzyIndex.closest()` and `FuzzyObjectIndex.closest()`:
+ * the `KeySearchOptions` fields that apply to finding the best match. The
+ * result is the first result of `search()` with these options and
+ * `maxResults: 1`. Other `KeySearchOptions` fields are not read.
+ */
+export interface KeyClosestOptions {
+    /**
+     * Minimum combined score (0.0-1.0, see `scoreMode`): `closest()`
+     * returns null when the best match scores below it.
+     */
+    minScore?: number;
+    /**
+     * How the per-key scores of an item are combined into its score:
+     * `"weighted"` (default), `"matched"` or `"max"`, as in
+     * `KeySearchOptions.scoreMode`. Any other value throws a `TypeError`.
+     */
+    scoreMode?: KeyScoreMode;
+    /**
+     * How the query is matched against the keys of an item: `"perKey"`
+     * (default) or `"crossKey"`, as in `KeySearchOptions.matchMode`. Any
+     * other value throws a `TypeError`.
+     */
+    matchMode?: KeyMatchMode;
+}
+
+/**
  * Options for multi-key search: `searchKeys()`, `KeyedFuzzyIndex.search()`
  * and the object search built on them (`searchObjects()`,
  * `FuzzyObjectIndex.search()`). The `SearchOptions` fields, plus
@@ -339,14 +365,17 @@ export class KeyedFuzzyIndex {
     /**
      * Find the index of the closest matching item.
      *
-     * Returns the index of the best match, or null if no match is found.
-     * If `minScore` is provided, returns null when the best match scores below the threshold.
-     * `scoreMode` and `matchMode` work like the `search()` options of the
-     * same names (defaults `"weighted"` and `"perKey"`): the result is the
-     * first result of
+     * Returns the index of the best match, or null if no match is found:
+     * the index of the first result of
      * `search(query, { maxResults: 1, minScore, scoreMode, matchMode })`.
+     *
+     * The second argument accepts either a number (minScore shorthand) or a
+     * KeyClosestOptions object: `minScore` makes it return null when the
+     * best match scores below the threshold, and `scoreMode` and
+     * `matchMode` work like the `search()` options of the same names
+     * (defaults `"weighted"` and `"perKey"`).
      */
-    closest(query: string, minScore?: number | null, scoreMode?: KeyScoreMode | null, matchMode?: KeyMatchMode | null): number | null;
+    closest(query: string, options?: number | KeyClosestOptions | null): number | null;
     /**
      * Reconstruct a KeyedFuzzyIndex from a previously serialized Uint8Array.
      */
@@ -868,7 +897,7 @@ export interface InitOutput {
     readonly jaroWinklerMany: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
     readonly keyedfuzzyindex_add: (a: number, b: number, c: number) => void;
     readonly keyedfuzzyindex_addMany: (a: number, b: number, c: number) => void;
-    readonly keyedfuzzyindex_closest: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => void;
+    readonly keyedfuzzyindex_closest: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly keyedfuzzyindex_deserialize: (a: number, b: number, c: number) => void;
     readonly keyedfuzzyindex_destroy: (a: number) => void;
     readonly keyedfuzzyindex_new: (a: number, b: number, c: number, d: number) => void;

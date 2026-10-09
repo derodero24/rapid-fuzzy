@@ -59,6 +59,7 @@ export type {
   KeySearchResult,
   KeyScoreMode,
   KeyMatchMode,
+  KeyClosestOptions,
   KeySearchOptions,
   SearchOptions,
 } from './rapid-fuzzy-wasm-bindgen.mjs';

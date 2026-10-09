@@ -153,6 +153,15 @@ searchObjects('john tokyo', people, { keys: ['name', 'city'], matchMode: 'crossK
 
 See [Matching terms across keys](../../README.md#matching-terms-across-keys-matchmode).
 
+For the best match only (fuse.js's `fuse.search(query)[0]?.item`), `FuzzyObjectIndex.closest()` returns the object or `null`. It takes `minScore`, `scoreMode` and `matchMode` in an options object, or a number as the `minScore`:
+
+```typescript
+import { FuzzyObjectIndex } from 'rapid-fuzzy';
+const index = new FuzzyObjectIndex(users, { keys: ['name', { name: 'email', weight: 0.5 }] });
+index.closest('john', { minScore: 0.9, scoreMode: 'matched' })?.name; // 'John Smith'
+index.closest('johnson', 0.9); // null: Bob Johnson scores 0.67 by default
+```
+
 ### Match highlighting
 
 ```typescript

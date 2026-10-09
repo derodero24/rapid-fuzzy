@@ -567,5 +567,32 @@ describe.skipIf(!wasmAvailable)('wasm', () => {
         expect(wasmResults[i]?.keyScores).toHaveLength(nativeResults[i]?.keyScores.length ?? 0);
       }
     });
+
+    it('KeyedFuzzyIndex.closest() options should match native', () => {
+      const keyTexts = [
+        ['John Smith', 'Jane Doe', 'Tokyo John'],
+        ['Tokyo', 'Osaka', 'Kyoto'],
+      ];
+      const w = new wasm.KeyedFuzzyIndex(keyTexts, [2, 1]);
+      const n = new native.KeyedFuzzyIndex(keyTexts, [2, 1]);
+      const options = [
+        undefined,
+        null,
+        0.5,
+        1,
+        {},
+        { minScore: 0.9, scoreMode: 'matched' },
+        { scoreMode: 'max', matchMode: 'crossKey' },
+      ] as const;
+      for (const opts of options) {
+        for (const query of ['john tokyo', 'doe', 'osaka', 'zzz']) {
+          expect(w.closest(query, opts)).toBe(n.closest(query, opts));
+        }
+      }
+      expect(w.closest('john tokyo', { scoreMode: 'max', matchMode: 'crossKey' })).toBe(0);
+      expect(() => w.closest('john', { matchMode: 'cross' })).toThrow(
+        'matchMode must be "perKey" or "crossKey", got "cross"',
+      );
+    });
   });
 });

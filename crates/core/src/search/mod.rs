@@ -180,6 +180,36 @@ pub(crate) trait OptionsObject: Sized {
     fn read(obj: &Object<'_>) -> napi::Result<Self>;
 }
 
+/// Convert a `number | options` argument: a number with `from_number`, an
+/// options object `T` with `from_options`. Any other value is rejected with
+/// an `InvalidArg` error naming `shorthand`, the option a number sets.
+///
+/// # Safety
+///
+/// `env` and `napi_val` must be valid, as for [`FromNapiValue::from_napi_value`].
+unsafe fn number_or_options<T: OptionsObject, R>(
+    env: sys::napi_env,
+    napi_val: sys::napi_value,
+    shorthand: &str,
+    from_number: impl FnOnce(f64) -> napi::Result<R>,
+    from_options: impl FnOnce(T) -> R,
+) -> napi::Result<R> {
+    let value_type = unsafe { Unknown::from_napi_value(env, napi_val)? }.get_type()?;
+    match value_type {
+        ValueType::Number => from_number(unsafe { f64::from_napi_value(env, napi_val)? }),
+        ValueType::Object => Ok(from_options(T::read(&unsafe {
+            Object::from_napi_value(env, napi_val)?
+        })?)),
+        _ => Err(napi::Error::new(
+            Status::InvalidArg,
+            format!(
+                "Expected a number ({shorthand}) or a {} object, got {value_type}",
+                T::NAME
+            ),
+        )),
+    }
+}
+
 /// Read the `SearchOptions` fields of `obj`, an options object `type_name`.
 fn read_search_options(obj: &Object<'_>, type_name: &str) -> napi::Result<SearchOptions> {
     let max_results = match optional_field::<f64>(obj, type_name, "maxResults")? {
@@ -303,10 +333,104 @@ impl OptionsObject for KeySearchOptions {
     fn read(obj: &Object<'_>) -> napi::Result<Self> {
         let base = read_search_options(obj, Self::NAME)?;
         Ok(Self {
-            score_mode: obj.get::<ScoreModeArg>("scoreMode")?.map(|arg| arg.0),
-            match_mode: obj.get::<MatchModeArg>("matchMode")?.map(|arg| arg.0),
+            score_mode: read_score_mode(obj)?,
+            match_mode: read_match_mode(obj)?,
             ..base.into()
         })
+    }
+}
+
+/// Read the `scoreMode` field of a multi-key options object.
+fn read_score_mode(obj: &Object<'_>) -> napi::Result<Option<KeyScoreMode>> {
+    Ok(obj.get::<ScoreModeArg>("scoreMode")?.map(|arg| arg.0))
+}
+
+/// Read the `matchMode` field of a multi-key options object.
+fn read_match_mode(obj: &Object<'_>) -> napi::Result<Option<KeyMatchMode>> {
+    Ok(obj.get::<MatchModeArg>("matchMode")?.map(|arg| arg.0))
+}
+
+/// Options for `KeyedFuzzyIndex.closest()` and `FuzzyObjectIndex.closest()`:
+/// the `KeySearchOptions` fields that apply to finding the best match. The
+/// result is the first result of `search()` with these options and
+/// `maxResults: 1`. Other `KeySearchOptions` fields are not read.
+#[napi(object, object_from_js = false, object_to_js = false)]
+#[derive(Default)]
+pub struct KeyClosestOptions {
+    /// Minimum combined score (0.0-1.0, see `scoreMode`): `closest()`
+    /// returns null when the best match scores below it.
+    pub min_score: Option<f64>,
+    /// How the per-key scores of an item are combined into its score:
+    /// `'weighted'` (default), `'matched'` or `'max'`, as in
+    /// `KeySearchOptions.scoreMode`. Any other value throws an `InvalidArg`
+    /// error.
+    #[napi(ts_type = "KeyScoreMode")]
+    pub score_mode: Option<KeyScoreMode>,
+    /// How the query is matched against the keys of an item: `'perKey'`
+    /// (default) or `'crossKey'`, as in `KeySearchOptions.matchMode`. Any
+    /// other value throws an `InvalidArg` error.
+    #[napi(ts_type = "KeyMatchMode")]
+    pub match_mode: Option<KeyMatchMode>,
+}
+
+impl OptionsObject for KeyClosestOptions {
+    const NAME: &'static str = "KeyClosestOptions";
+    const ARG_TYPE: &'static str = "number | KeyClosestOptions";
+
+    /// Read the fields like [`KeySearchOptions`] reads them, in the same order.
+    fn read(obj: &Object<'_>) -> napi::Result<Self> {
+        Ok(Self {
+            min_score: optional_field(obj, Self::NAME, "minScore")?,
+            score_mode: read_score_mode(obj)?,
+            match_mode: read_match_mode(obj)?,
+        })
+    }
+}
+
+impl KeyClosestOptions {
+    /// The options of the search whose first result `closest()` returns.
+    pub(crate) fn to_core(&self) -> SearchKeysOptions {
+        SearchKeysOptions {
+            max_results: Some(1),
+            min_score: self.min_score,
+            score_mode: self.score_mode,
+            match_mode: self.match_mode,
+            ..SearchKeysOptions::default()
+        }
+    }
+}
+
+/// The `options` argument of `KeyedFuzzyIndex.closest`: a `KeyClosestOptions`
+/// object, or a number as a shorthand for `{ minScore }`.
+pub struct KeyClosestOptionsArg(pub KeyClosestOptions);
+
+impl TypeName for KeyClosestOptionsArg {
+    fn type_name() -> &'static str {
+        KeyClosestOptions::ARG_TYPE
+    }
+
+    fn value_type() -> ValueType {
+        ValueType::Unknown
+    }
+}
+
+impl FromNapiValue for KeyClosestOptionsArg {
+    unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> napi::Result<Self> {
+        let options = unsafe {
+            number_or_options(
+                env,
+                napi_val,
+                "minScore",
+                |min_score| {
+                    Ok(KeyClosestOptions {
+                        min_score: Some(min_score),
+                        ..KeyClosestOptions::default()
+                    })
+                },
+                |options| options,
+            )
+        }?;
+        Ok(Self(options))
     }
 }
 
@@ -407,22 +531,14 @@ impl<T: OptionsObject> TypeName for OptionsArg<T> {
 
 impl<T: OptionsObject> FromNapiValue for OptionsArg<T> {
     unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> napi::Result<Self> {
-        let value_type = unsafe { Unknown::from_napi_value(env, napi_val)? }.get_type()?;
-        match value_type {
-            ValueType::Number => {
-                let value = unsafe { f64::from_napi_value(env, napi_val)? };
-                Ok(Self::MaxResults(resolve_max_results(value)?))
-            }
-            ValueType::Object => Ok(Self::Options(T::read(&unsafe {
-                Object::from_napi_value(env, napi_val)?
-            })?)),
-            _ => Err(napi::Error::new(
-                Status::InvalidArg,
-                format!(
-                    "Expected a number (maxResults) or a {} object, got {value_type}",
-                    T::NAME
-                ),
-            )),
+        unsafe {
+            number_or_options(
+                env,
+                napi_val,
+                "maxResults",
+                |value| resolve_max_results(value).map(Self::MaxResults),
+                Self::Options,
+            )
         }
     }
 }

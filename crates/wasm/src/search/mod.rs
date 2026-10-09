@@ -148,27 +148,27 @@ impl SearchOptions {
     /// `{ maxResults }`, as in the Node.js binding) or a `SearchOptions`
     /// object.
     pub(crate) fn from_js_or_max_results(options: Option<JsValue>) -> Result<Self, JsValue> {
-        options_from_js(options, "SearchOptions", |max_results| Self {
-            max_results,
-            ..Self::default()
+        options_from_js(options, "SearchOptions", |number| {
+            Ok(Self {
+                max_results: core::check_max_results(number)?,
+                ..Self::default()
+            })
         })
     }
 }
 
 /// Read an `options` argument: `undefined`/`null` (the defaults), a number
-/// (shorthand for `{ maxResults }`, built by `with_max_results`) or an
-/// options object `T` named `what` in errors.
+/// (a shorthand for one of the options, read by `from_number`) or an options
+/// object `T` named `what` in errors. Errors are `TypeError`s.
 fn options_from_js<T: DeserializeOwned + Default>(
     options: Option<JsValue>,
     what: &str,
-    with_max_results: impl FnOnce(Option<u32>) -> T,
+    from_number: impl FnOnce(f64) -> Result<T, String>,
 ) -> Result<T, JsValue> {
     match options {
         None => Ok(T::default()),
         Some(value) => match value.as_f64() {
-            Some(number) => Ok(with_max_results(
-                core::check_max_results(number).map_err(|e| type_error(&e))?,
-            )),
+            Some(number) => from_number(number).map_err(|e| type_error(&e)),
             None => from_js(value, what),
         },
     }
@@ -212,13 +212,6 @@ impl KeyScoreMode {
     fn from_name(name: &str) -> Result<Self, String> {
         core::KeyScoreMode::from_name(name).map(Self::from)
     }
-
-    /// Read a `scoreMode` argument, rejecting anything but `"weighted"`,
-    /// `"matched"` and `"max"` with a `TypeError` (the message of the Node.js
-    /// binding).
-    pub(crate) fn from_js(value: &JsValue) -> Result<Self, JsValue> {
-        mode_from_js(value, Self::from_name, core::invalid_score_mode)
-    }
 }
 
 /// How multi-key search matches the query against the keys of an item (see
@@ -255,23 +248,6 @@ impl KeyMatchMode {
     fn from_name(name: &str) -> Result<Self, String> {
         core::KeyMatchMode::from_name(name).map(Self::from)
     }
-
-    /// Read a `matchMode` argument, rejecting anything but `"perKey"` and
-    /// `"crossKey"` with a `TypeError` (the message of the Node.js binding).
-    pub(crate) fn from_js(value: &JsValue) -> Result<Self, JsValue> {
-        mode_from_js(value, Self::from_name, core::invalid_match_mode)
-    }
-}
-
-/// Read a mode argument (`scoreMode`, `matchMode`) of `closest()`, which
-/// `null` and `undefined` leave unset: see [`parse_mode`]. Errors are
-/// `TypeError`s.
-fn mode_from_js<T>(
-    value: &JsValue,
-    from_name: fn(&str) -> Result<T, String>,
-    invalid: fn(&str) -> String,
-) -> Result<T, JsValue> {
-    parse_mode(value, from_name, invalid).map_err(|e| type_error(&e))
 }
 
 /// Parse a mode value like the Node.js binding does: a string is parsed by
@@ -309,7 +285,8 @@ fn deserialize_mode<'de, D: Deserializer<'de>, T>(
         .map_err(de::Error::custom)
 }
 
-/// `KeySearchOptions.scoreMode` (see [`deserialize_mode`]).
+/// `KeySearchOptions.scoreMode` and `KeyClosestOptions.scoreMode` (see
+/// [`deserialize_mode`]).
 fn deserialize_score_mode<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Option<KeyScoreMode>, D::Error> {
@@ -320,7 +297,8 @@ fn deserialize_score_mode<'de, D: Deserializer<'de>>(
     )
 }
 
-/// `KeySearchOptions.matchMode` (see [`deserialize_mode`]).
+/// `KeySearchOptions.matchMode` and `KeyClosestOptions.matchMode` (see
+/// [`deserialize_mode`]).
 fn deserialize_match_mode<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Option<KeyMatchMode>, D::Error> {
@@ -439,9 +417,11 @@ impl KeySearchOptions {
     /// `KeyedFuzzyIndex.search`: `undefined`/`null`, a number (shorthand for
     /// `{ maxResults }`) or a `KeySearchOptions` object.
     pub(crate) fn from_js_or_max_results(options: Option<JsValue>) -> Result<Self, JsValue> {
-        options_from_js(options, "KeySearchOptions", |max_results| Self {
-            max_results,
-            ..Self::default()
+        options_from_js(options, "KeySearchOptions", |number| {
+            Ok(Self {
+                max_results: core::check_max_results(number)?,
+                ..Self::default()
+            })
         })
     }
 
@@ -454,6 +434,59 @@ impl KeySearchOptions {
             return_all_on_empty: self.return_all_on_empty,
             score_mode: self.score_mode.map(Into::into),
             match_mode: self.match_mode.map(Into::into),
+        }
+    }
+}
+
+/// Options for `KeyedFuzzyIndex.closest()` and `FuzzyObjectIndex.closest()`:
+/// the `KeySearchOptions` fields that apply to finding the best match. The
+/// result is the first result of `search()` with these options and
+/// `maxResults: 1`. Other `KeySearchOptions` fields are not read.
+#[derive(Debug, Clone, Default, Deserialize, Tsify)]
+#[serde(rename_all = "camelCase")]
+pub struct KeyClosestOptions {
+    // Each field is read exactly like the `KeySearchOptions` field of the same
+    // name (the same serde attributes and deserializers).
+    /// Minimum combined score (0.0-1.0, see `scoreMode`): `closest()`
+    /// returns null when the best match scores below it.
+    #[tsify(optional)]
+    #[serde(default)]
+    pub min_score: Option<f64>,
+    /// How the per-key scores of an item are combined into its score:
+    /// `"weighted"` (default), `"matched"` or `"max"`, as in
+    /// `KeySearchOptions.scoreMode`. Any other value throws a `TypeError`.
+    #[tsify(optional)]
+    #[serde(default, deserialize_with = "deserialize_score_mode")]
+    pub score_mode: Option<KeyScoreMode>,
+    /// How the query is matched against the keys of an item: `"perKey"`
+    /// (default) or `"crossKey"`, as in `KeySearchOptions.matchMode`. Any
+    /// other value throws a `TypeError`.
+    #[tsify(optional)]
+    #[serde(default, deserialize_with = "deserialize_match_mode")]
+    pub match_mode: Option<KeyMatchMode>,
+}
+
+impl KeyClosestOptions {
+    /// Read the `options` argument of `KeyedFuzzyIndex.closest`:
+    /// `undefined`/`null`, a number (shorthand for `{ minScore }`, as in the
+    /// Node.js binding) or a `KeyClosestOptions` object.
+    pub(crate) fn from_js_or_min_score(options: Option<JsValue>) -> Result<Self, JsValue> {
+        options_from_js(options, "KeyClosestOptions", |min_score| {
+            Ok(Self {
+                min_score: Some(min_score),
+                ..Self::default()
+            })
+        })
+    }
+
+    /// The options of the search whose first result `closest()` returns.
+    pub(crate) fn to_core(&self) -> core::SearchKeysOptions {
+        core::SearchKeysOptions {
+            max_results: Some(1),
+            min_score: self.min_score,
+            score_mode: self.score_mode.map(Into::into),
+            match_mode: self.match_mode.map(Into::into),
+            ..core::SearchKeysOptions::default()
         }
     }
 }

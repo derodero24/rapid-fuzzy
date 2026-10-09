@@ -147,16 +147,19 @@ export declare class KeyedFuzzyIndex {
   /**
    * Find the index of the closest matching item.
    *
-   * Returns the index of the best match, or null if no match is found.
-   * If `minScore` is provided, returns null when the best match scores below the threshold.
-   * `scoreMode` and `matchMode` work like the `search()` options of the
-   * same names (defaults `'weighted'` and `'perKey'`): the result is the
-   * first result of
+   * Returns the index of the best match, or null if no match is found:
+   * the index of the first result of
    * `search(query, { maxResults: 1, minScore, scoreMode, matchMode })`.
+   *
+   * The second argument accepts either a number (minScore shorthand) or a
+   * KeyClosestOptions object: `minScore` makes it return null when the
+   * best match scores below the threshold, and `scoreMode` and
+   * `matchMode` work like the `search()` options of the same names
+   * (defaults `'weighted'` and `'perKey'`).
    *
    * Use the returned index to look up the item in your own data array.
    */
-  closest(query: string, minScore?: number | undefined | null, scoreMode?: KeyScoreMode | undefined | null, matchMode?: KeyMatchMode | undefined | null): number | null
+  closest(query: string, options?: number | KeyClosestOptions | undefined | null): number | null
   /**
    * Add a single item to the index.
    *
@@ -411,6 +414,33 @@ export declare function jaroWinklerMany(reference: string, candidates: ReadonlyA
 
 /** Like `jaroWinklerMany`, but returns the scores in a `Float64Array`. */
 export declare function jaroWinklerManyF64(reference: string, candidates: ReadonlyArray<string>, minSimilarity?: number | undefined | null): Float64Array
+
+/**
+ * Options for `KeyedFuzzyIndex.closest()` and `FuzzyObjectIndex.closest()`:
+ * the `KeySearchOptions` fields that apply to finding the best match. The
+ * result is the first result of `search()` with these options and
+ * `maxResults: 1`. Other `KeySearchOptions` fields are not read.
+ */
+export interface KeyClosestOptions {
+  /**
+   * Minimum combined score (0.0-1.0, see `scoreMode`): `closest()`
+   * returns null when the best match scores below it.
+   */
+  minScore?: number | undefined
+  /**
+   * How the per-key scores of an item are combined into its score:
+   * `'weighted'` (default), `'matched'` or `'max'`, as in
+   * `KeySearchOptions.scoreMode`. Any other value throws an `InvalidArg`
+   * error.
+   */
+  scoreMode?: KeyScoreMode | undefined
+  /**
+   * How the query is matched against the keys of an item: `'perKey'`
+   * (default) or `'crossKey'`, as in `KeySearchOptions.matchMode`. Any
+   * other value throws an `InvalidArg` error.
+   */
+  matchMode?: KeyMatchMode | undefined
+}
 
 /**
  * Options for multi-key search: `searchKeys()`, `KeyedFuzzyIndex.search()`

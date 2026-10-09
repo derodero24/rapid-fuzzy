@@ -10,7 +10,9 @@ Add a `scoreMode` option to multi-key search (`searchObjects()`, `FuzzyObjectInd
 
 ```typescript
 searchObjects('smith', people, { keys: ['name', 'email'], scoreMode: 'matched' });
-index.closest('smith', 0.9, 'matched'); // closest(query, minScore?, scoreMode?)
+index.closest('smith', { minScore: 0.9, scoreMode: 'matched' });
 ```
 
-`keyScores`, tie-breaking, zero-weight keys and `returnAllOnEmpty` work the same in every mode, and `minScore` and `maxResults` apply to the mode's score. The `KeyedFuzzyIndex` early exit stays exact in every mode: the index returns the same results as `searchKeys()`. A `scoreMode` other than the three modes throws (an `InvalidArg` error in Node.js, a `TypeError` in the WebAssembly build). TypeScript: the new `KeyScoreMode` type is `'weighted' | 'matched' | 'max'`; `searchKeys()` and `KeyedFuzzyIndex.search()` take the new `KeySearchOptions` (`SearchOptions` plus `scoreMode`), which accepts every existing `SearchOptions` value. Plain `search()` and `FuzzyIndex` options are unchanged.
+`closest()` of `KeyedFuzzyIndex` and `FuzzyObjectIndex` now takes an options object, `closest(query, { minScore, scoreMode, matchMode })`, and returns the item (or, for `KeyedFuzzyIndex`, the index) that `search()` ranks first with these options. A number in place of the object is the `minScore`, so `closest(query, 0.9)` works as before.
+
+`keyScores`, tie-breaking, zero-weight keys and `returnAllOnEmpty` work the same in every mode, and `minScore` and `maxResults` apply to the mode's score. The `KeyedFuzzyIndex` early exit stays exact in every mode: the index returns the same results as `searchKeys()`. A `scoreMode` other than the three modes throws (an `InvalidArg` error in Node.js, a `TypeError` in the WebAssembly build). TypeScript: the new `KeyScoreMode` type is `'weighted' | 'matched' | 'max'`; `searchKeys()` and `KeyedFuzzyIndex.search()` take the new `KeySearchOptions` (`SearchOptions` plus `scoreMode`), which accepts every existing `SearchOptions` value; the `closest()` options are the new `KeyClosestOptions` (`minScore`, `scoreMode` and `matchMode`). Plain `search()` and `FuzzyIndex` options are unchanged.

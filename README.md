@@ -352,7 +352,7 @@ searchObjects('smith', people, { keys, minScore: 0.95 });                      /
 searchObjects('smith', people, { keys, minScore: 0.95, scoreMode: 'matched' }); // → [John Smith]
 ```
 
-`scoreMode` is accepted by `searchObjects()`, `FuzzyObjectIndex.search()`, `searchKeys()` and `KeyedFuzzyIndex.search()`, and as the third argument of `closest(query, minScore?, scoreMode?)` on both indexes. In every mode `keyScores` are the same, `minScore` and `maxResults` apply to the combined score, keys with weight `0` never count, and `returnAllOnEmpty` gives every item a score of 1. For ties, the best-matching key is the one contributing most to the score (highest `weight × keyScore`, or highest `keyScore` in `'max'` mode). Any other value throws (an `InvalidArg` error in Node.js, a `TypeError` in the WebAssembly build).
+`scoreMode` is accepted by `searchObjects()`, `FuzzyObjectIndex.search()`, `searchKeys()` and `KeyedFuzzyIndex.search()`, and in the options of `closest(query, { minScore, scoreMode, matchMode })` on both indexes. In every mode `keyScores` are the same, `minScore` and `maxResults` apply to the combined score, keys with weight `0` never count, and `returnAllOnEmpty` gives every item a score of 1. For ties, the best-matching key is the one contributing most to the score (highest `weight × keyScore`, or highest `keyScore` in `'max'` mode). Any other value throws (an `InvalidArg` error in Node.js, a `TypeError` in the WebAssembly build).
 
 #### Matching terms across keys (`matchMode`)
 
@@ -383,7 +383,7 @@ In `'crossKey'` mode:
 - `scoreMode` combines the key scores: `'weighted'` is `sum(weight × keyScore) / sum(weight)`, as in `'perKey'` mode; `'matched'` divides by `sum(weight × coverage)` instead, a key's coverage being the share of the query made up by the terms it matches (in `'perKey'` mode, 1 for a matching key and 0 otherwise); `'max'` adds up each term's score on the key it matches best. With `'max'`, an item whose every term matches some key perfectly scores 1. With `'matched'`, only an item whose every term matches perfectly each key it matches scores 1: a term that also matches another key partially lowers the score, so `john tokyo` scores 0.89 on `{ name: 'John Smith', city: 'Tokyo', email: 'jtokyo@example.com' }` with keys `['name', 'city', 'email']`, because `tokyo` also matches the email partially.
 - A query of a single term without `!term`s returns exactly what `'perKey'` mode returns. Empty queries and `returnAllOnEmpty` behave the same in both modes.
 
-`matchMode` is accepted wherever `scoreMode` is, and as the fourth argument of `closest(query, minScore?, scoreMode?, matchMode?)` on both indexes. Any value other than `'perKey'` (the default) or `'crossKey'` throws.
+`matchMode` is accepted wherever `scoreMode` is, including the options of `closest()` on both indexes. Any value other than `'perKey'` (the default) or `'crossKey'` throws.
 
 Key paths read own properties (`'address.city'`, array elements as `'tags.0'`). Strings are indexed as-is; numbers, booleans, bigints and objects with their own `toString()` (such as `Date`) via `String()`; arrays as their elements joined with spaces; missing values, `null` and plain objects as an empty string. In TypeScript, key names written as literals are checked against the item type. `includePositions` has no effect on object search.
 
@@ -403,10 +403,11 @@ searchKeys('jane', keyTexts, [2, 1]);
 const keyed = new KeyedFuzzyIndex(keyTexts, [2, 1]);
 keyed.search('jane', { maxResults: 10 }); // same results as searchKeys()
 keyed.closest('jane');                    // → 1 (an index, or null)
+keyed.closest('jane', 0.9);               // → 1 (a number is the minScore)
 keyed.search('jane', { scoreMode: 'matched' }); // see scoreMode above
-keyed.closest('jane', 0.9, 'max');        // minScore, scoreMode
 keyed.search('jane example', { matchMode: 'crossKey' }); // see matchMode above
-keyed.closest('jane example', null, 'max', 'crossKey');  // → 1
+// closest(query, options) is search(query, { ...options, maxResults: 1 })[0]?.index ?? null
+keyed.closest('jane example', { minScore: 0.9, scoreMode: 'max', matchMode: 'crossKey' }); // → 1
 ```
 
 ### Persistent Index
@@ -448,13 +449,15 @@ const userIndex = new FuzzyObjectIndex(users, {
 });
 
 userIndex.search('john', { maxResults: 10 });
+userIndex.closest('john'); // the best-matching object, or null
+userIndex.closest('john', { minScore: 0.9, scoreMode: 'matched' }); // or closest('john', 0.9)
 
 // Free Rust-side memory when done
 index.destroy();
 userIndex.destroy();
 ```
 
-`FuzzyObjectIndex` (also exported from `rapid-fuzzy/objects`) has the same methods: `size`, `search(query, options | maxResults)`, `closest(query, minScore?, scoreMode?, matchMode?)` (returns the object or `null`), `add`, `addMany`, `remove`, `destroy`, and in Node.js `serialize()` / `FuzzyObjectIndex.deserialize()` (items must be JSON-serializable).
+`FuzzyObjectIndex` (also exported from `rapid-fuzzy/objects`) has the same methods: `size`, `search(query, options | maxResults)`, `closest(query, options | minScore)` (returns the object or `null`; the options are `minScore`, `scoreMode` and `matchMode`), `add`, `addMany`, `remove`, `destroy`, and in Node.js `serialize()` / `FuzzyObjectIndex.deserialize()` (items must be JSON-serializable).
 
 After `destroy()`, an index releases its Rust-side memory but stays usable: it behaves as an empty index (searches return no results, `size` is 0), and `add()` / `addMany()` work as before.
 

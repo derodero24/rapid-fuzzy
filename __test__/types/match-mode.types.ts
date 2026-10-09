@@ -7,6 +7,7 @@
 import type * as Browser from '../../browser.mjs' with { 'resolution-mode': 'import' };
 import {
   FuzzyIndex,
+  type KeyClosestOptions,
   KeyedFuzzyIndex,
   type KeyMatchMode,
   type KeySearchOptions,
@@ -44,12 +45,9 @@ export type MatchModeTypeChecks = [
   // Plain search options have no matchMode.
   Expect<Equal<'matchMode' extends keyof SearchOptions ? true : false, false>>,
   Expect<Equal<'matchMode' extends keyof Wasm.SearchOptions ? true : false, false>>,
-  // The closest() overloads take the mode as their fourth argument.
-  Expect<Equal<Parameters<KeyedFuzzyIndex['closest']>[3], KeyMatchMode | undefined | null>>,
-  Expect<
-    Equal<Parameters<FuzzyObjectIndex<unknown>['closest']>[3], KeyMatchMode | undefined | null>
-  >,
-  Expect<Equal<NonNullable<Parameters<Wasm.KeyedFuzzyIndex['closest']>[3]>, Modes>>,
+  // closest() takes the mode in its options object (see closest-options.types.ts).
+  Expect<Equal<KeyClosestOptions['matchMode'], KeyMatchMode | undefined>>,
+  Expect<Equal<NonNullable<Wasm.KeyClosestOptions['matchMode']>, Modes>>,
 ];
 
 declare const matrix: ReadonlyArray<readonly string[]>;
@@ -69,12 +67,11 @@ const modes: readonly KeyMatchMode[] = ['perKey', 'crossKey'];
 for (const matchMode of modes) {
   searchKeys('a', matrix, [1], { matchMode });
   keyed.search('a', { matchMode, scoreMode: 'max', minScore: 0.5, maxResults: 3 });
-  keyed.closest('a', 0.5, 'matched', matchMode);
-  keyed.closest('a', undefined, undefined, matchMode);
-  keyed.closest('a', null, null, matchMode);
+  keyed.closest('a', { minScore: 0.5, scoreMode: 'matched', matchMode });
+  keyed.closest('a', { matchMode });
   searchObjects('a', residents, { keys: ['name', 'city'], matchMode });
   objectIndex.search('a', { matchMode });
-  objectIndex.closest('a', undefined, undefined, matchMode);
+  objectIndex.closest('a', { matchMode });
 }
 searchKeys('john tokyo', matrix, [1], { matchMode: 'crossKey' });
 keyed.search('a', { matchMode: 'perKey' });
@@ -83,9 +80,8 @@ objectIndex.search('a', { matchMode: 'crossKey', scoreMode: 'matched' });
 // exactOptionalPropertyTypes: an explicit undefined means "default".
 searchKeys('a', matrix, [1], { matchMode: undefined });
 objectIndex.search('a', { matchMode: undefined });
-keyed.closest('a', 0.5, 'max', undefined);
-keyed.closest('a', 0.5, 'max', null);
-objectIndex.closest('a', 0.5, null, null);
+keyed.closest('a', { scoreMode: 'max', matchMode: undefined });
+objectIndex.closest('a', { minScore: 0.5, matchMode: undefined });
 
 // ─── Anything else is rejected ──────────────────────────────────────────────
 
@@ -94,17 +90,17 @@ searchKeys('a', matrix, [1], { matchMode: 'cross' });
 // @ts-expect-error -- modes are camelCase
 keyed.search('a', { matchMode: 'CrossKey' });
 // @ts-expect-error -- not a match mode
-keyed.closest('a', 0.5, 'max', 'any');
+keyed.closest('a', { scoreMode: 'max', matchMode: 'any' });
 // @ts-expect-error -- not a string
-keyed.closest('a', 0.5, 'max', true);
+keyed.closest('a', { matchMode: true });
 // @ts-expect-error -- not a match mode
 searchObjects('a', residents, { keys: ['name'], matchMode: 'perkey' });
 // @ts-expect-error -- not a match mode
 objectIndex.search('a', { matchMode: '' });
 // @ts-expect-error -- not a match mode
-objectIndex.closest('a', undefined, undefined, 'terms');
-// @ts-expect-error -- a score mode is not a match mode
-objectIndex.closest('a', undefined, 'crossKey');
+objectIndex.closest('a', { matchMode: 'terms' });
+// @ts-expect-error -- a match mode is not a score mode
+objectIndex.closest('a', { scoreMode: 'crossKey' });
 const dynamicMode: string = 'crossKey';
 // @ts-expect-error -- a plain string is not a KeyMatchMode
 searchKeys('a', matrix, [1], { matchMode: dynamicMode });
@@ -123,11 +119,11 @@ declare const wasmSearchKeys: typeof Wasm.searchKeys;
 declare const wasmSearch: typeof Wasm.search;
 wasmSearchKeys('a', matrix, [1], { matchMode: 'crossKey' });
 wasmKeyed.search('a', { matchMode: 'crossKey', scoreMode: 'max', maxResults: 2 });
-wasmKeyed.closest('a', null, null, 'crossKey');
-wasmKeyed.closest('a', 0.5, 'matched', 'perKey');
+wasmKeyed.closest('a', { matchMode: 'crossKey' });
+wasmKeyed.closest('a', { minScore: 0.5, scoreMode: 'matched', matchMode: 'perKey' });
 // @ts-expect-error -- not a match mode
 wasmSearchKeys('a', matrix, [1], { matchMode: 'cross' });
 // @ts-expect-error -- not a match mode
-wasmKeyed.closest('a', null, null, 'cross');
+wasmKeyed.closest('a', { matchMode: 'cross' });
 // @ts-expect-error -- search() has no matchMode
 wasmSearch('a', words, { matchMode: 'crossKey' });

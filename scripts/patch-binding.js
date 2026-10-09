@@ -108,11 +108,12 @@ function optionalFieldsAcceptUndefined(dts, name) {
 }
 
 /**
- * The string-literal types of `KeySearchOptions.scoreMode` and `matchMode`,
- * which the Rust side types as `KeyScoreMode` / `KeyMatchMode`
- * (`#[napi(ts_type)]`): napi-rs declares string enums as TS enums, which do
- * not accept string literals. Keep in sync with `KeyScoreMode::from_name` and
- * `KeyMatchMode::from_name` in crates/core-lib/src/search/keys.rs.
+ * The string-literal types of the `scoreMode` and `matchMode` fields of
+ * `KeySearchOptions` and `KeyClosestOptions`, which the Rust side types as
+ * `KeyScoreMode` / `KeyMatchMode` (`#[napi(ts_type)]`): napi-rs declares
+ * string enums as TS enums, which do not accept string literals. Keep in sync
+ * with `KeyScoreMode::from_name` and `KeyMatchMode::from_name` in
+ * crates/core-lib/src/search/keys.rs.
  */
 const KEY_MODE_TYPES = [
   [
@@ -160,7 +161,7 @@ function declareKeyModeTypes(dts) {
 
 function refineDeclarations(dts) {
   let refined = readonlyArrayParams(dts);
-  for (const name of ['SearchOptions', 'KeySearchOptions']) {
+  for (const name of ['SearchOptions', 'KeySearchOptions', 'KeyClosestOptions']) {
     refined = optionalFieldsAcceptUndefined(refined, name);
   }
   refined = declareKeyModeTypes(refined);
@@ -171,6 +172,7 @@ function refineDeclarations(dts) {
     '  maxResults?: number | undefined',
     '  scoreMode?: KeyScoreMode | undefined',
     '  matchMode?: KeyMatchMode | undefined',
+    'closest(query: string, options?: number | KeyClosestOptions | undefined | null): number | null',
     "export type KeyScoreMode = 'weighted' | 'matched' | 'max'",
     "export type KeyMatchMode = 'perKey' | 'crossKey'",
   ]) {
