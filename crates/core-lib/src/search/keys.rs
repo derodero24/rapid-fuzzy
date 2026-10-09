@@ -10,7 +10,10 @@
 //! its terms, and `^`, `$`, `'`, `!` and `\` are query syntax. Only keys with a
 //! positive weight `w` take part in a search. Keys whose weight is zero are
 //! informational: the returned items get key scores for them, but they never
-//! change which items are returned, their scores or their order.
+//! change which items are returned, their scores or their order. Only the
+//! ratios between the weights matter: multiplying every weight by the same
+//! power of two changes no result, even when the weights are subnormal (by
+//! any other positive factor, results change by rounding only).
 //!
 //! The [`KeyMatchMode`] decides how the query is matched against the keys,
 //! which gives the key scores `s` (`key_scores`, one per key, the same in
@@ -439,10 +442,12 @@ impl From<SearchKeysOptions> for KeyedSearchParams {
 /// floating-point summation orders, which may differ by a few ULPs of that
 /// weight; this slack is orders of magnitude larger, so the early exit never
 /// rejects an item whose combined score reaches `min_score`. When that weight
-/// is so small (below ~2.5e-315) that the slack underflows to 0, every weight
-/// involved is subnormal: a product `w * s` rounds to at most `w` and
-/// sums are exact, so the bound still never rejects a qualifying item
-/// (`tests/keyed_search.rs` checks such weights).
+/// is so small (below ~2.5e-315) that the slack underflows to 0, which the
+/// scaling of [`scale_small_weights`] leaves to weights more than ~1e300
+/// times smaller than the largest one, every weight involved is subnormal: a
+/// product `w * s` rounds to at most `w` and sums are exact, so the bound
+/// still never rejects a qualifying item (`tests/keyed_search.rs` checks
+/// such weights).
 const EARLY_EXIT_SLACK: f64 = 1e-9;
 
 /// A matching item during pass 1.
@@ -767,6 +772,12 @@ pub(crate) fn keyed_search_core<C: KeyedCorpus>(
         return Vec::new();
     };
 
+    let scaled = scale_small_weights(weights);
+    let (weights, total_weight) = match &scaled {
+        Some((scaled, total)) => (scaled.as_slice(), *total),
+        None => (weights, total_weight),
+    };
+
     // Only keys with a positive weight can select an item; zero-weight keys
     // are scored for the returned items only.
     let active_keys: Vec<usize> = (0..num_keys).filter(|&k| weights[k] > 0.0).collect();
@@ -794,6 +805,52 @@ pub(crate) fn keyed_search_core<C: KeyedCorpus>(
             })
         }
     }
+}
+
+/// The weights a search computes with when the largest of `weights` is below
+/// 1: `weights` multiplied by the power of two that brings the largest into
+/// `[1, 2)`, with their sum. `None` when the largest weight is at least 1, in
+/// which case `weights` are used as they are.
+///
+/// Only the ratios between the weights matter, but a product `score * weight`
+/// loses precision once it is subnormal: with subnormal weights every product
+/// rounds to a multiple of 5e-324, so that a partial match could score 1 in
+/// `Matched` mode, like an exact one. Multiplying by a power of two is exact
+/// here (the scaled weights stay below 2) and changes neither the products
+/// that were normal (each is multiplied by the same power of two) nor any
+/// ratio or comparison of them, so the results of weights whose products were
+/// normal stay bit-identical.
+fn scale_small_weights(weights: &[f64]) -> Option<(Vec<f64>, f64)> {
+    let largest = weights.iter().copied().fold(0.0, f64::max);
+    // At least 1, or no positive weight (rejected by `validate_keyed_input`).
+    if !(largest > 0.0 && largest < 1.0) {
+        return None;
+    }
+    // largest = m * 2^-shift with 1 <= m < 2 and 1 <= shift <= 1074. The
+    // sign bit is clear, so the exponent field is `bits >> 52`.
+    let bits = largest.to_bits();
+    let shift = match bits >> 52 {
+        // Subnormal: largest = bits * 2^-1074, whose highest set bit is bit
+        // `63 - leading_zeros`.
+        0 => 1074 - (63 - bits.leading_zeros()),
+        biased => 1023 - biased as u32,
+    };
+    // 2^shift, in two exact factors (2^1074 is not a finite f64). Every
+    // weight is at most `largest`, so no product overflows.
+    let first = shift.min(1023);
+    let factors = [pow2(first), pow2(shift - first)];
+    let scaled: Vec<f64> = weights
+        .iter()
+        .map(|&w| w * factors[0] * factors[1])
+        .collect();
+    let total = scaled.iter().sum();
+    Some((scaled, total))
+}
+
+/// `2^exp` for `exp <= 1023`, exactly.
+fn pow2(exp: u32) -> f64 {
+    debug_assert!(exp <= 1023, "2^{exp}");
+    f64::from_bits(u64::from(exp + 1023) << 52)
 }
 
 /// The keys of a multi-key search, as pass 1 sees them.

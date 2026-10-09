@@ -124,6 +124,7 @@ fn reference(
     weights: &[f64],
     o: Opts,
 ) -> Vec<KeySearchResult> {
+    let weights = &normalized(weights);
     if o.match_mode == KeyMatchMode::CrossKey {
         return reference_cross_key(query, key_texts, weights, o);
     }
@@ -206,6 +207,22 @@ fn reference(
         }
     }
     ranked(rows, o.max_results)
+}
+
+/// The weights the searches compute with: only the ratios between the
+/// weights matter, so weights whose largest is below 1 are doubled until it
+/// is at least 1 (each doubling is exact), keeping the products
+/// `score * weight` out of the subnormal range.
+fn normalized(weights: &[f64]) -> Vec<f64> {
+    let mut weights = weights.to_vec();
+    let mut largest = weights.iter().copied().fold(0.0, f64::max);
+    while largest > 0.0 && largest < 1.0 {
+        largest *= 2.0;
+        for w in &mut weights {
+            *w *= 2.0;
+        }
+    }
+    weights
 }
 
 /// Sort `(index, score, tie length, key scores)` rows like every multi-key
@@ -513,6 +530,102 @@ fn extreme_weights_keep_both_paths_in_agreement() {
                 assert_boundary_thresholds_agree(query, &key_texts, &weights, o);
             }
         }
+    }
+}
+
+/// `2^exp`, exactly (`-1074 <= exp <= 1023`).
+fn pow2(exp: i32) -> f64 {
+    assert!((-1074..=1023).contains(&exp), "2^{exp}");
+    if exp >= -1022 {
+        f64::from_bits(((exp + 1023) as u64) << 52)
+    } else {
+        f64::from_bits(1 << (exp + 1074))
+    }
+}
+
+#[test]
+fn only_the_ratios_of_the_weights_matter() {
+    // Multiplying every weight by a power of two must not change any result.
+    // Subnormal weights used to round each `score * weight` to a multiple of
+    // 5e-324, so that a partial match could score like an exact one.
+    let key_texts = columns(&[
+        &[
+            "John Smith",
+            "S. Mitchell",
+            "xx_s_m_i_t_h",
+            "smith",
+            "Smithers",
+        ],
+        &[
+            "john@example.com",
+            "smitchell@example.com",
+            "zzz",
+            "qqq",
+            "msmith@example.org",
+        ],
+        &["Engineer", "Tokyo", "smith tokyo", "x", "engineer smith"],
+    ]);
+    let bases: [&[f64]; 5] = [
+        &[2.0, 1.0, 0.0],
+        &[1.0, 1.0, 1.0],
+        &[3.0, 0.5, 1.0],
+        &[0.75, 0.25, 0.5],
+        &[1.0, 0.0, 0.0],
+    ];
+    let exponents = [
+        -1074, -1073, -1070, -1060, -1050, -1030, -1022, -1000, -500, -3, -1, 1, 100, 900,
+    ];
+    let mut checked = 0;
+    for base in bases {
+        for exp in exponents {
+            let scaled: Vec<f64> = base.iter().map(|&w| w * pow2(exp)).collect();
+            // Only exact multiples keep the ratios of `base`.
+            if scaled.iter().zip(base).any(|(&s, &w)| s / pow2(exp) != w) {
+                continue;
+            }
+            for (match_mode, score_mode) in all_modes() {
+                for query in ["smith", "s m", "smith engineer", "smith tokyo", "smith !x"] {
+                    let o = Opts {
+                        match_mode,
+                        ..with_mode(score_mode)
+                    };
+                    let expected = summary(&via_search_keys(query, &key_texts, base, o));
+                    let context = format!("{query:?} {base:?} * 2^{exp} {o:?}");
+                    assert_eq!(
+                        summary(&via_search_keys(query, &key_texts, &scaled, o)),
+                        expected,
+                        "searchKeys {context}"
+                    );
+                    assert_eq!(
+                        summary(&via_index(query, &key_texts, &scaled, o)),
+                        expected,
+                        "KeyedFuzzyIndex {context}"
+                    );
+                    assert_all_agree(query, &key_texts, &scaled, o);
+                    assert_boundary_thresholds_agree(query, &key_texts, &scaled, o);
+                    checked += 1;
+                }
+            }
+        }
+    }
+    assert!(checked > 1000, "{checked}");
+
+    // The cases of the report: with subnormal weights, the partial match
+    // "xx_s_m_i_t_h" scored 1 in `Matched` mode, like the exact "smith".
+    let key_texts = columns(&[&["xx_s_m_i_t_h", "smith"], &["zzz", "qqq"]]);
+    for (match_mode, score_mode) in all_modes() {
+        let o = Opts {
+            match_mode,
+            ..with_mode(score_mode)
+        };
+        let results = via_search_keys("smith", &key_texts, &[5e-324, 5e-324], o);
+        assert_eq!(
+            summary(&results),
+            summary(&via_search_keys("smith", &key_texts, &[1.0, 1.0], o)),
+            "{o:?}"
+        );
+        assert_eq!(indices(&results), [1, 0], "{o:?}");
+        assert!(results[0].score > results[1].score, "{o:?}");
     }
 }
 
