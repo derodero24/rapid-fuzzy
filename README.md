@@ -840,7 +840,7 @@ The token-based ratios do not return the same scores as fuzzball's (see the [fuz
 
 - **Indexed search**: a `FuzzyIndex` was 10-14x faster per query than standalone `search()` on 1K-10K items, because `search()` converts every item on every call.
 - **vs fuse.js**: `FuzzyIndex` was about 150-200x faster on 1K-10K items, and standalone `search()` about 14-19x.
-- **vs fuzzysort**: fuzzysort was faster on 20 items (about 6x) and about as fast on 1K items. On 10K items `FuzzyIndex` was 1.6-2.1x faster, and on 50K-100K items 3-5x faster using 4 threads (about 1.6x on one thread).
+- **vs fuzzysort**: fuzzysort was faster on 20 items (about 6x) and about as fast on 1K items. On 10K items `FuzzyIndex` was 1.6-2.1x faster, and on 50K-100K items 3-5x faster using 4 threads (1.6-2.1x on one thread).
 - **vs uFuzzy**: uFuzzy was faster on 20 items; `FuzzyIndex` was about 3-4.5x faster on 1K-10K items.
 - **Distance functions**: for single pairs, fastest-levenshtein (pure JS) was about 1.2x faster than `levenshtein`, and about 2.8x faster than `levenshteinMany` over 1,000 short candidates, since each call crosses the JS/Rust boundary. rapid-fuzzy was about 2.5x faster than leven, 3x faster than string-similarity and 3-4x faster than fuzzball's ratios.
 
