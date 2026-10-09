@@ -869,7 +869,9 @@ Pure-JS libraries have no native addon or WebAssembly module to load, which matt
 
 ### "Cannot find native binding" error
 
-The native binary for your platform may not have been installed correctly. Run `npm rebuild rapid-fuzzy` or delete `node_modules` and reinstall. Ensure your platform and architecture are [supported by napi-rs](https://napi.rs/docs/cross-build/summary).
+The native binary comes in a platform package (such as `rapid-fuzzy-linux-x64-gnu`) that npm installs as an optional dependency; this error usually means that package was not installed. Remove both `node_modules` and `package-lock.json`, then install again: a known npm bug can leave the platform packages out of the lockfile ([npm/cli#4828](https://github.com/npm/cli/issues/4828)). Do not install with `--omit=optional` (or `--no-optional`), which skips them.
+
+Prebuilt binaries exist for macOS (x64, arm64), Linux (x64, arm64; glibc and musl) and Windows (x64, arm64). On other platforms, install the WebAssembly (WASI) build next to the package, `npm install rapid-fuzzy rapid-fuzzy-wasm32-wasi` (Node.js 22.13+ or 23.5+): the loader falls back to it when no native binary loads (see [Runtime-specific notes](#runtime-specific-notes)).
 
 ### WASM fails to load in the browser
 
