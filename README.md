@@ -322,7 +322,37 @@ searchObjects('john', users, {
 searchObjects('new york', items, { keys: ['address.city'] });
 ```
 
-The combined score is the weighted average of the per-key scores (`keyScores`, one per key, each computed like `search()` scores a string). A key with weight `0` is still scored in `keyScores` but never selects an item on its own. Ties are broken like `search()`: the item whose best-matching key text is shorter comes first, then the lower index.
+By default the combined score is the weighted average of the per-key scores (`keyScores`, one per key, each computed like `search()` scores a string) over all keys; the `scoreMode` option below changes that. A key with weight `0` is still scored in `keyScores` but never selects an item on its own. Ties are broken like `search()`: the item whose best-matching key text is shorter comes first, then the lower index.
+
+#### Combining key scores (`scoreMode`)
+
+In the default `'weighted'` mode a key that does not match counts as 0, so an item that matches one key exactly scores only that key's share of the total weight: it can rank below an item that matches several keys partially, and fall below `minScore`. `scoreMode` selects how the key scores are combined:
+
+| `scoreMode` | Score | Use it when |
+|---|---|---|
+| `'weighted'` (default) | `sum(weight × keyScore) / sum(weight)` over all keys | A good item matches on most keys |
+| `'matched'` | the same weighted average, over the keys that match (`keyScore > 0`) only: an item whose only match is exact scores 1 | A match on any one key should count fully |
+| `'max'` | the highest key score; weights only decide which keys take part (`weight > 0`) | Only the best-matching key matters |
+
+```typescript
+const people = [
+  { name: 'John Smith', email: 'john@example.com' },
+  { name: 'S. Mitchell', email: 'smitchell@example.com' },
+];
+const keys = ['name', 'email'];
+
+searchObjects('smith', people, { keys });
+// → S. Mitchell 0.89 (keyScores [0.88, 0.91]), John Smith 0.5 (keyScores [1, 0])
+searchObjects('smith', people, { keys, scoreMode: 'matched' });
+// → John Smith 1, S. Mitchell 0.89
+searchObjects('smith', people, { keys, scoreMode: 'max' });
+// → John Smith 1, S. Mitchell 0.91
+
+searchObjects('smith', people, { keys, minScore: 0.95 });                      // → []
+searchObjects('smith', people, { keys, minScore: 0.95, scoreMode: 'matched' }); // → [John Smith]
+```
+
+`scoreMode` is accepted by `searchObjects()`, `FuzzyObjectIndex.search()`, `searchKeys()` and `KeyedFuzzyIndex.search()`, and as the third argument of `closest(query, minScore?, scoreMode?)` on both indexes. In every mode `keyScores` are the same, `minScore` and `maxResults` apply to the combined score, keys with weight `0` never count, and `returnAllOnEmpty` gives every item a score of 1. For ties, the best-matching key is the one contributing most to the score (highest `weight × keyScore`, or highest `keyScore` in `'max'` mode). Any other value throws (an `InvalidArg` error in Node.js, a `TypeError` in the WebAssembly build).
 
 Key paths read own properties (`'address.city'`, array elements as `'tags.0'`). Strings are indexed as-is; numbers, booleans, bigints and objects with their own `toString()` (such as `Date`) via `String()`; arrays as their elements joined with spaces; missing values, `null` and plain objects as an empty string. In TypeScript, key names written as literals are checked against the item type. `includePositions` has no effect on object search.
 
@@ -342,6 +372,8 @@ searchKeys('jane', keyTexts, [2, 1]);
 const keyed = new KeyedFuzzyIndex(keyTexts, [2, 1]);
 keyed.search('jane', { maxResults: 10 }); // same results as searchKeys()
 keyed.closest('jane');                    // → 1 (an index, or null)
+keyed.search('jane', { scoreMode: 'matched' }); // see scoreMode above
+keyed.closest('jane', 0.9, 'max');        // minScore, scoreMode
 ```
 
 ### Persistent Index
@@ -389,7 +421,7 @@ index.destroy();
 userIndex.destroy();
 ```
 
-`FuzzyObjectIndex` (also exported from `rapid-fuzzy/objects`) has the same methods: `size`, `search(query, options | maxResults)`, `closest(query, minScore?)` (returns the object or `null`), `add`, `addMany`, `remove`, `destroy`, and in Node.js `serialize()` / `FuzzyObjectIndex.deserialize()` (items must be JSON-serializable).
+`FuzzyObjectIndex` (also exported from `rapid-fuzzy/objects`) has the same methods: `size`, `search(query, options | maxResults)`, `closest(query, minScore?, scoreMode?)` (returns the object or `null`), `add`, `addMany`, `remove`, `destroy`, and in Node.js `serialize()` / `FuzzyObjectIndex.deserialize()` (items must be JSON-serializable).
 
 After `destroy()`, an index releases its Rust-side memory but stays usable: it behaves as an empty index (searches return no results, `size` is 0), and `add()` / `addMany()` work as before.
 
@@ -694,7 +726,7 @@ Serialized indexes contain the item strings plus 4 bytes per item (see [Index Se
 - `*Batch` functions throw if a pair is not exactly two strings; `*Many` similarity functions throw on a `NaN` `minSimilarity`.
 - `FuzzyIndex.deserialize()` / `FuzzyObjectIndex.deserialize()` throw on corrupt data or data from another format version.
 - `searchObjects()` and `FuzzyObjectIndex` throw a `TypeError` if `options.keys` is missing or empty.
-- `searchKeys()`, `searchObjects()`, `KeyedFuzzyIndex` and `FuzzyObjectIndex` throw if a weight is negative, `NaN` or infinite, if the weights sum to 0 or overflow to `Infinity`, or (for the low-level APIs) if the key text arrays have different lengths or the number of weights differs from the number of keys.
+- `searchKeys()`, `searchObjects()`, `KeyedFuzzyIndex` and `FuzzyObjectIndex` throw if a weight is negative, `NaN` or infinite, if the weights sum to 0 or overflow to `Infinity`, or (for the low-level APIs) if the key text arrays have different lengths or the number of weights differs from the number of keys. Their `search()` and `closest()` also throw for a `scoreMode` other than `'weighted'`, `'matched'` or `'max'`.
 
 ## Benchmarks
 

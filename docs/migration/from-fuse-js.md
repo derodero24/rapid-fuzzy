@@ -131,7 +131,17 @@ searchObjects('john', users, {
 // ['John Smith', 'Bob Johnson'] — scores 1 and 0.67
 ```
 
-In rapid-fuzzy the combined score is the weighted average of the per-key scores (returned as `keyScores`), and an item must match at least one key with a positive weight.
+By default rapid-fuzzy's combined score is the weighted average of the per-key scores (returned as `keyScores`) over all keys, so a key that does not match lowers the score (Bob Johnson's email). fuse.js only combines the keys that match; the closest rapid-fuzzy equivalent is `scoreMode: 'matched'`, the weighted average over the matching keys only (`'max'` takes the best key score instead):
+
+```typescript
+searchObjects('john', users, {
+  keys: ['name', { name: 'email', weight: 0.5 }],
+  scoreMode: 'matched',
+}).map((r) => [r.item.name, r.score]);
+// [['John Smith', 1], ['Bob Johnson', 1]]
+```
+
+In every mode an item must match at least one key with a positive weight. See [Combining key scores](../../README.md#combining-key-scores-scoremode).
 
 ### Match highlighting
 
