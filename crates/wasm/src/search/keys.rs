@@ -14,8 +14,10 @@ pub struct KeySearchResult {
     /// The combined score (0.0-1.0) of the key scores, as set by
     /// `scoreMode` (by default the weighted mean over all keys).
     pub score: f64,
-    /// Per-key scores in the same order as the input keys.
-    /// A score of 0.0 means the item did not match on that key.
+    /// Per-key scores in the same order as the input keys: how well each
+    /// key matches the query (with `matchMode: "crossKey"`, the share of the
+    /// query it matches). A score of 0.0 means the item did not match on
+    /// that key.
     pub key_scores: Vec<f64>,
 }
 
@@ -34,7 +36,8 @@ impl From<rapid_fuzzy_core::search::KeySearchResult> for KeySearchResult {
 /// `keyTexts[k]` is an array of strings for key `k`, one per item.
 /// `weights` specifies the relative importance of each key.
 /// `options` is a `KeySearchOptions` object or a number (maxResults); its
-/// `scoreMode` selects how the per-key scores are combined.
+/// `matchMode` selects how the query is matched against the keys and its
+/// `scoreMode` how the per-key scores are combined.
 ///
 /// Returns results sorted by combined score (best match first), exactly like
 /// `KeyedFuzzyIndex.search` on the same key texts and weights.
@@ -42,7 +45,7 @@ impl From<rapid_fuzzy_core::search::KeySearchResult> for KeySearchResult {
 /// weight count that differs from the key count, negative, NaN or infinite
 /// weights, or weights summing to 0 or Infinity), like the `KeyedFuzzyIndex`
 /// constructor, and a `TypeError` for invalid options (such as an unknown
-/// `scoreMode`).
+/// `scoreMode` or `matchMode`).
 #[wasm_bindgen(js_name = "searchKeys", unchecked_return_type = "KeySearchResult[]")]
 pub fn search_keys(
     query: String,

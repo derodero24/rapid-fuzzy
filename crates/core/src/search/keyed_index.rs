@@ -1,12 +1,13 @@
 use napi::Env;
 use napi::bindgen_prelude::{Buffer, ObjectFinalize};
 use napi_derive::napi;
-use nucleo_matcher::pattern::CaseMatching;
 use rapid_fuzzy_core::search::serialization::{deserialize_keyed_index, serialize_keyed_index};
-use rapid_fuzzy_core::search::{KeyScoreMode, KeyedFuzzyIndexCore};
+use rapid_fuzzy_core::search::{
+    KeyMatchMode, KeyScoreMode, KeyedFuzzyIndexCore, SearchKeysOptions,
+};
 
 use super::keys::KeySearchResult;
-use super::{KeySearchOptionsArg, ScoreModeArg, resolve_case_matching};
+use super::{KeySearchOptionsArg, MatchModeArg, ScoreModeArg};
 
 /// A persistent multi-key fuzzy search index backed by Rust-side data.
 ///
@@ -94,9 +95,9 @@ impl KeyedFuzzyIndex {
     /// like `searchKeys()` on the same key texts and weights.
     ///
     /// The second argument accepts either a number (maxResults shorthand) or a
-    /// KeySearchOptions object, whose `scoreMode` selects how the per-key
-    /// scores are combined. `maxResults` must be a non-negative integer or
-    /// `Infinity`.
+    /// KeySearchOptions object, whose `matchMode` selects how the query is
+    /// matched against the keys and `scoreMode` how the per-key scores are
+    /// combined. `maxResults` must be a non-negative integer or `Infinity`.
     #[napi]
     pub fn search(
         &self,
@@ -105,16 +106,8 @@ impl KeyedFuzzyIndex {
             KeySearchOptionsArg,
         >,
     ) -> Vec<KeySearchResult> {
-        let options = KeySearchOptionsArg::resolve(options);
         self.core
-            .search(
-                &query,
-                options.max_results,
-                options.min_score,
-                resolve_case_matching(options.is_case_sensitive),
-                options.return_all_on_empty.unwrap_or(false),
-                options.score_mode.unwrap_or_default(),
-            )
+            .search_with_options(&query, KeySearchOptionsArg::resolve(options))
             .into_iter()
             .map(KeySearchResult::from)
             .collect()
@@ -124,9 +117,10 @@ impl KeyedFuzzyIndex {
     ///
     /// Returns the index of the best match, or null if no match is found.
     /// If `minScore` is provided, returns null when the best match scores below the threshold.
-    /// `scoreMode` combines the per-key scores like the `search()` option of
-    /// the same name (default `'weighted'`): the result is the first result of
-    /// `search(query, { maxResults: 1, minScore, scoreMode })`.
+    /// `scoreMode` and `matchMode` work like the `search()` options of the
+    /// same names (defaults `'weighted'` and `'perKey'`): the result is the
+    /// first result of
+    /// `search(query, { maxResults: 1, minScore, scoreMode, matchMode })`.
     ///
     /// Use the returned index to look up the item in your own data array.
     #[napi]
@@ -135,9 +129,11 @@ impl KeyedFuzzyIndex {
         query: String,
         min_score: Option<f64>,
         #[napi(ts_arg_type = "KeyScoreMode | undefined | null")] score_mode: Option<ScoreModeArg>,
+        #[napi(ts_arg_type = "KeyMatchMode | undefined | null")] match_mode: Option<MatchModeArg>,
     ) -> Option<u32> {
         let score_mode = score_mode.map_or(KeyScoreMode::Weighted, |arg| arg.0);
-        self.closest_impl(&query, min_score, score_mode)
+        let match_mode = match_mode.map_or(KeyMatchMode::PerKey, |arg| arg.0);
+        self.closest_impl(&query, min_score, score_mode, match_mode)
     }
 
     /// Add a single item to the index.
@@ -211,15 +207,16 @@ impl KeyedFuzzyIndex {
         query: &str,
         min_score: Option<f64>,
         score_mode: KeyScoreMode,
+        match_mode: KeyMatchMode,
     ) -> Option<u32> {
-        let results = self.core.search(
-            query,
-            Some(1),
+        let options = SearchKeysOptions {
+            max_results: Some(1),
             min_score,
-            CaseMatching::Smart,
-            false,
-            score_mode,
-        );
+            score_mode: Some(score_mode),
+            match_mode: Some(match_mode),
+            ..SearchKeysOptions::default()
+        };
+        let results = self.core.search_with_options(query, options);
         results.into_iter().next().map(|r| r.index)
     }
 
@@ -357,6 +354,7 @@ mod tests {
                 is_case_sensitive: None,
                 return_all_on_empty: None,
                 score_mode: None,
+                match_mode: None,
             })),
         );
         for r in &results {
@@ -376,6 +374,7 @@ mod tests {
                 is_case_sensitive: None,
                 return_all_on_empty: None,
                 score_mode: None,
+                match_mode: None,
             })),
         );
         assert!(results.len() <= 1);
@@ -506,6 +505,7 @@ mod tests {
                 is_case_sensitive: None,
                 return_all_on_empty: None,
                 score_mode: None,
+                match_mode: None,
             })),
         );
         // "xyz" should not appear since it can't reach 0.9 on any key
@@ -547,14 +547,19 @@ mod tests {
     #[test]
     fn test_closest_returns_correct_index() {
         let index = make_index();
-        let result = index.closest_impl("john", None, KeyScoreMode::Weighted);
+        let result = index.closest_impl("john", None, KeyScoreMode::Weighted, KeyMatchMode::PerKey);
         assert_eq!(result, Some(0)); // John Smith is at index 0
     }
 
     #[test]
     fn test_closest_returns_none_when_min_score_too_high() {
         let index = make_index();
-        let result = index.closest_impl("john", Some(1.1), KeyScoreMode::Weighted);
+        let result = index.closest_impl(
+            "john",
+            Some(1.1),
+            KeyScoreMode::Weighted,
+            KeyMatchMode::PerKey,
+        );
         assert_eq!(result, None);
     }
 
@@ -595,6 +600,7 @@ mod tests {
             is_case_sensitive: None,
             return_all_on_empty: None,
             score_mode: Some(score_mode),
+            match_mode: None,
         })
     }
 
@@ -643,9 +649,54 @@ mod tests {
             );
             assert_eq!(results.len(), expected, "{score_mode:?}");
             assert_eq!(
-                index.closest_impl("smith", Some(0.9), score_mode),
+                index.closest_impl("smith", Some(0.9), score_mode, KeyMatchMode::PerKey),
                 (expected == 1).then_some(0),
                 "{score_mode:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_match_modes() {
+        // name, city (#782): the terms of "john tokyo" are in different keys.
+        let index = KeyedFuzzyIndex::new_impl(
+            vec![
+                vec!["John Smith".to_string(), "John Doe".to_string()],
+                vec!["Tokyo".to_string(), "Osaka".to_string()],
+            ],
+            vec![1.0, 1.0],
+        )
+        .unwrap();
+        let search = |query: &str, match_mode: Option<KeyMatchMode>| {
+            let options = KeySearchOptionsArg::Options(KeySearchOptions {
+                max_results: None,
+                min_score: None,
+                include_positions: None,
+                is_case_sensitive: None,
+                return_all_on_empty: None,
+                score_mode: Some(KeyScoreMode::Max),
+                match_mode,
+            });
+            index
+                .search(query.to_string(), Some(options))
+                .iter()
+                .map(|r| (r.index, r.score))
+                .collect::<Vec<_>>()
+        };
+        for per_key in [None, Some(KeyMatchMode::PerKey)] {
+            assert_eq!(search("john tokyo", per_key), []);
+            assert_eq!(search("john !tokyo", per_key), [(1, 1.0), (0, 1.0)]);
+        }
+        let cross_key = Some(KeyMatchMode::CrossKey);
+        assert_eq!(search("john tokyo", cross_key), [(0, 1.0)]);
+        assert_eq!(search("john !tokyo", cross_key), [(1, 1.0)]);
+        for (match_mode, expected) in [
+            (KeyMatchMode::PerKey, None),
+            (KeyMatchMode::CrossKey, Some(0)),
+        ] {
+            assert_eq!(
+                index.closest_impl("john tokyo", None, KeyScoreMode::Weighted, match_mode),
+                expected
             );
         }
     }

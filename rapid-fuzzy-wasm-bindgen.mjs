@@ -272,20 +272,22 @@ export class KeyedFuzzyIndex {
      *
      * Returns the index of the best match, or null if no match is found.
      * If `minScore` is provided, returns null when the best match scores below the threshold.
-     * `scoreMode` combines the per-key scores like the `search()` option of
-     * the same name (default `"weighted"`): the result is the first result of
-     * `search(query, { maxResults: 1, minScore, scoreMode })`.
+     * `scoreMode` and `matchMode` work like the `search()` options of the
+     * same names (defaults `"weighted"` and `"perKey"`): the result is the
+     * first result of
+     * `search(query, { maxResults: 1, minScore, scoreMode, matchMode })`.
      * @param {string} query
      * @param {number | null} [minScore]
      * @param {KeyScoreMode | null} [scoreMode]
+     * @param {KeyMatchMode | null} [matchMode]
      * @returns {number | null}
      */
-    closest(query, minScore, scoreMode) {
+    closest(query, minScore, scoreMode, matchMode) {
         try {
             const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
             const ptr0 = passStringToWasm0(query, wasm.__wbindgen_export, wasm.__wbindgen_export2);
             const len0 = WASM_VECTOR_LEN;
-            wasm.keyedfuzzyindex_closest(retptr, this.__wbg_ptr, ptr0, len0, !isLikeNone(minScore), isLikeNone(minScore) ? 0 : minScore, isLikeNone(scoreMode) ? 0 : addHeapObject(scoreMode));
+            wasm.keyedfuzzyindex_closest(retptr, this.__wbg_ptr, ptr0, len0, !isLikeNone(minScore), isLikeNone(minScore) ? 0 : minScore, isLikeNone(scoreMode) ? 0 : addHeapObject(scoreMode), isLikeNone(matchMode) ? 0 : addHeapObject(matchMode));
             var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
             var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
             var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
@@ -373,7 +375,8 @@ export class KeyedFuzzyIndex {
      * Returns results sorted by combined score (best match first), exactly
      * like `searchKeys()` on the same key texts and weights. The second
      * argument accepts either a number (maxResults) or a KeySearchOptions
-     * object, whose `scoreMode` selects how the per-key scores are combined.
+     * object, whose `matchMode` selects how the query is matched against
+     * the keys and `scoreMode` how the per-key scores are combined.
      * @param {string} query
      * @param {number | KeySearchOptions | null} [options]
      * @returns {KeySearchResult[]}
@@ -1277,7 +1280,8 @@ export function search(query, items, options) {
  * `keyTexts[k]` is an array of strings for key `k`, one per item.
  * `weights` specifies the relative importance of each key.
  * `options` is a `KeySearchOptions` object or a number (maxResults); its
- * `scoreMode` selects how the per-key scores are combined.
+ * `matchMode` selects how the query is matched against the keys and its
+ * `scoreMode` how the per-key scores are combined.
  *
  * Returns results sorted by combined score (best match first), exactly like
  * `KeyedFuzzyIndex.search` on the same key texts and weights.
@@ -1285,7 +1289,7 @@ export function search(query, items, options) {
  * weight count that differs from the key count, negative, NaN or infinite
  * weights, or weights summing to 0 or Infinity), like the `KeyedFuzzyIndex`
  * constructor, and a `TypeError` for invalid options (such as an unknown
- * `scoreMode`).
+ * `scoreMode` or `matchMode`).
  * @param {string} query
  * @param {string[][]} keyTexts
  * @param {ArrayLike<number>} weights

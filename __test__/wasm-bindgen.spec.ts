@@ -413,6 +413,84 @@ describe.skipIf(!wasmAvailable)('wasm-bindgen runtime', () => {
         expect(literals).toEqual([...modes]);
       });
     });
+
+    describe('matchMode', () => {
+      const keyTexts = [items, items.map((s) => `${s.toLowerCase()} lang`), items.map(() => 'x')];
+      const weights = [2, 1, 0.5];
+      const matchModes = ['perKey', 'crossKey'] as const;
+      const scoreModes = ['weighted', 'matched', 'max'] as const;
+
+      /** Options with only the given fields set (the wasm declarations reject explicit undefined). */
+      function keyOptions(
+        matchMode: WasmBindgen.KeyMatchMode | undefined,
+        scoreMode: WasmBindgen.KeyScoreMode,
+        minScore: number | undefined,
+      ): WasmBindgen.KeySearchOptions {
+        const options: WasmBindgen.KeySearchOptions = { maxResults: 5, scoreMode };
+        if (matchMode !== undefined) options.matchMode = matchMode;
+        if (minScore !== undefined) options.minScore = minScore;
+        return options;
+      }
+
+      it('gives the same results in every mode', () => {
+        const w = new wasm.KeyedFuzzyIndex(keyTexts, weights);
+        const n = new napi.KeyedFuzzyIndex(keyTexts, weights);
+        const queries = ['type lang', 'script !java', 'rust x', 'py lang', 'lang !type', 'zzz'];
+        const cases = [...matchModes, undefined].flatMap((matchMode) =>
+          scoreModes.flatMap((scoreMode) =>
+            [undefined, 0.5, 0.9].flatMap((minScore) =>
+              queries.map((query) => ({ query, minScore, scoreMode, matchMode })),
+            ),
+          ),
+        );
+        let crossKeyMatches = 0;
+        for (const { query, minScore, scoreMode, matchMode } of cases) {
+          const options = keyOptions(matchMode, scoreMode, minScore);
+          const expected = napi.searchKeys(query, keyTexts, weights, options);
+          if (matchMode === 'crossKey') crossKeyMatches += expected.length;
+          expect(wasm.searchKeys(query, keyTexts, weights, options)).toEqual(expected);
+          expect(w.search(query, options)).toEqual(expected);
+          expect(n.search(query, options)).toEqual(expected);
+          expect(w.closest(query, minScore, scoreMode, matchMode)).toBe(
+            n.closest(query, minScore, scoreMode, matchMode),
+          );
+        }
+        expect(crossKeyMatches).toBeGreaterThan(20);
+        // No key of Rust contains both terms of 'rust x'; two of them do.
+        expect(napi.searchKeys('rust x', keyTexts, weights)).toEqual([]);
+        const [rust] = wasm.searchKeys('rust x', keyTexts, weights, { matchMode: 'crossKey' });
+        expect(rust?.index).toBe(items.indexOf('Rust'));
+        w.free();
+      });
+
+      it('rejects unknown modes with a TypeError carrying the Node.js message', () => {
+        const w = new wasm.KeyedFuzzyIndex(keyTexts, weights);
+        for (const bad of ['cross', 'CrossKey', '', 1, true, {}]) {
+          const options = { matchMode: bad };
+          const nodeError = thrown(() =>
+            callUnchecked(napi.searchKeys, 'type', keyTexts, weights, options),
+          );
+          const nodeMessage = nodeError instanceof Error ? nodeError.message : '';
+          expect(nodeMessage).toMatch(/^matchMode must be "perKey" or "crossKey", got /);
+          const errors = [
+            thrown(() => callUnchecked(wasm.searchKeys, 'type', keyTexts, weights, options)),
+            thrown(() => callUnchecked(w.search.bind(w), 'type', options)),
+            thrown(() => callUnchecked(w.closest.bind(w), 'type', null, null, bad)),
+          ];
+          for (const err of errors) {
+            expect(err).toBeInstanceOf(TypeError);
+            expect(err).toHaveProperty('message', expect.stringContaining(nodeMessage));
+          }
+        }
+        w.free();
+      });
+
+      it('declares exactly the accepted modes', () => {
+        const declared = /export type KeyMatchMode = (.+);/.exec(readFileSync(DTS_PATH, 'utf8'));
+        const literals = [...(declared?.[1] ?? '').matchAll(/"(\w+)"/g)].map((m) => m[1]);
+        expect(literals).toEqual([...matchModes]);
+      });
+    });
   });
 
   describe('API parity additions', () => {

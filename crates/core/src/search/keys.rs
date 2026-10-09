@@ -17,8 +17,10 @@ pub struct KeySearchResult {
     /// The combined score (0.0-1.0) of the key scores, as set by
     /// `scoreMode` (by default the weighted mean over all keys).
     pub score: f64,
-    /// Per-key scores in the same order as the input keys.
-    /// A score of 0.0 means the item did not match on that key.
+    /// Per-key scores in the same order as the input keys: how well each
+    /// key matches the query (with `matchMode: 'crossKey'`, the share of the
+    /// query it matches). A score of 0.0 means the item did not match on
+    /// that key.
     pub key_scores: Vec<f64>,
 }
 
@@ -38,9 +40,12 @@ impl From<rapid_fuzzy_core::search::KeySearchResult> for KeySearchResult {
 /// All inner arrays must have the same length (the number of items).
 /// `weights` specifies the relative importance of each key.
 ///
-/// Every key is scored like `search()` scores an item; `keyScores` holds
-/// these scores for every key, including keys whose weight is 0. By default
-/// the combined score is `sum(keyScore * weight) / sum(weights)`; the
+/// By default every key is scored like `search()` scores an item, against
+/// the whole query; with `matchMode: 'crossKey'` every term of the query is
+/// matched against the keys on its own, so the terms may match different
+/// keys (see `KeySearchOptions.matchMode`). `keyScores` holds the key
+/// scores for every key, including keys whose weight is 0. By default the
+/// combined score is `sum(keyScore * weight) / sum(weights)`; the
 /// `scoreMode` option selects another way to combine them (see
 /// `KeySearchOptions.scoreMode`). Items whose combined score is 0 (no match
 /// on a key with a positive weight) are not returned.
@@ -55,7 +60,7 @@ impl From<rapid_fuzzy_core::search::KeySearchResult> for KeySearchResult {
 /// when there is not exactly one weight per key, or when a weight is
 /// negative, NaN or infinite, or the weights sum to 0 or to Infinity (the
 /// same errors as the `KeyedFuzzyIndex` constructor), and for an unknown
-/// `scoreMode`.
+/// `scoreMode` or `matchMode`.
 #[napi]
 pub fn search_keys(
     query: String,

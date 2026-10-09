@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   KeyedFuzzyIndex,
+  type KeyMatchMode,
   type KeyScoreMode,
   type KeySearchOptions,
   type KeySearchResult,
@@ -594,5 +595,316 @@ describe('scoreMode', () => {
     // Unknown SearchOptions fields are ignored, as before.
     const options = { scoreMode: 'max' } as SearchOptions;
     expect(search('smith', items, options)).toEqual(search('smith', items));
+  });
+});
+
+// ─── matchMode (#782) ───────────────────────────────────────────────────────
+
+const MATCH_MODES: readonly KeyMatchMode[] = ['perKey', 'crossKey'];
+
+/** The error thrown for an invalid matchMode; `got` describes the value. */
+function invalidMatchMode(got: string): unknown {
+  return expect.objectContaining({
+    code: 'InvalidArg',
+    message: `matchMode must be "perKey" or "crossKey", got ${got}`,
+  });
+}
+
+/** A query of one to three terms, sometimes negated (`!term`). */
+function randomTerms(random: Random, texts: readonly string[]): string {
+  const terms = [randomQuery(random, texts)];
+  while (terms.length < 3 && random() < 0.4) {
+    terms.push((random() < 0.25 ? '!' : '') + randomQuery(random, texts));
+  }
+  return terms.join(' ');
+}
+
+/** The indices of the results, in ascending order. */
+function sortedIndices(results: readonly KeySearchResult[]): number[] {
+  return indices(results).sort((a, b) => a - b);
+}
+
+// name, city: the terms of 'john tokyo' are in different keys of John Smith.
+const RESIDENTS = [
+  { name: 'John Smith', city: 'Tokyo' },
+  { name: 'Jane Doe', city: 'Tokyo' },
+  { name: 'John Doe', city: 'Osaka' },
+  { name: 'Tokyo John', city: 'Kyoto' },
+];
+const RESIDENT_KEYS = [RESIDENTS.map((r) => r.name), RESIDENTS.map((r) => r.city)];
+
+describe('matchMode', () => {
+  it('matches the terms of the issue example in different keys (#782)', () => {
+    const items = [{ name: 'John Smith', city: 'Tokyo' }];
+    const keys = ['name', 'city'] as const;
+    expect(searchObjects('john tokyo', items, { keys })).toEqual([]);
+    expect(searchObjects('john tokyo', items, { keys, matchMode: 'perKey' })).toEqual([]);
+    const [found, ...rest] = searchObjects('john tokyo', items, { keys, matchMode: 'crossKey' });
+    expect(rest).toEqual([]);
+    expect(found?.item).toBe(items[0]);
+    // Each key matches one term perfectly: its key score is that term's
+    // share of the query, and the key scores add up to 1.
+    const [name = 0, city = 0] = found?.keyScores ?? [];
+    expect(name).toBeGreaterThan(0);
+    expect(city).toBeGreaterThan(0);
+    expect(name + city).toBeCloseTo(1, 12);
+    expect(found?.score).toBe((name * 1 + city * 1) / 2);
+    for (const scoreMode of ['matched', 'max'] as const) {
+      const [best] = searchObjects('john tokyo', items, { keys, matchMode: 'crossKey', scoreMode });
+      expect(best).toEqual({ item: items[0], index: 0, score: 1, keyScores: [name, city] });
+    }
+  });
+
+  it('keeps KeyedFuzzyIndex and searchKeys identical in every mode on random input', () => {
+    let nonEmpty = 0;
+    for (let seed = 0; seed < 300; seed++) {
+      const random = rng(5000 + seed);
+      const numKeys = 1 + below(random, 4);
+      const numItems = below(random, 12);
+      const keyTexts = Array.from({ length: numKeys }, () =>
+        Array.from({ length: numItems }, () => randomItem(random)),
+      );
+      const weights = Array.from({ length: numKeys }, () => randomWeight(random));
+      if (weights.reduce((a, b) => a + b, 0) <= 0) continue;
+      const index = new KeyedFuzzyIndex(keyTexts, weights);
+      for (let q = 0; q < 3; q++) {
+        const query = randomTerms(random, keyTexts.flat());
+        const base = randomOptions(random, numItems);
+        for (const scoreMode of MODES) {
+          const options: KeySearchOptions = { ...base, scoreMode, matchMode: 'crossKey' };
+          const found = expectIndexMatchesSearchKeys(index, query, keyTexts, weights, options);
+          nonEmpty += Math.min(found, 1);
+        }
+      }
+    }
+    expect(nonEmpty).toBeGreaterThan(300);
+  });
+
+  it("combines the key scores like 'weighted' in perKey mode", () => {
+    for (let seed = 0; seed < 200; seed++) {
+      const random = rng(7000 + seed);
+      const numKeys = 1 + below(random, 4);
+      const numItems = 1 + below(random, 10);
+      const keyTexts = Array.from({ length: numKeys }, () =>
+        Array.from({ length: numItems }, () => randomItem(random)),
+      );
+      const weights = Array.from({ length: numKeys }, () => randomWeight(random));
+      if (weights.reduce((a, b) => a + b, 0) <= 0) continue;
+      const query = randomTerms(random, keyTexts.flat());
+      const results = searchKeys(query, keyTexts, weights, { matchMode: 'crossKey' });
+      for (const r of results) {
+        expect(r.score).toBe(combine(r.keyScores, weights, 'weighted'));
+        for (const keyScore of r.keyScores) {
+          expect(keyScore).toBeGreaterThanOrEqual(0);
+          expect(keyScore).toBeLessThanOrEqual(1);
+        }
+      }
+    }
+  });
+
+  it('returns the same results for a single term in both modes', () => {
+    let compared = 0;
+    for (let seed = 0; seed < 400; seed++) {
+      const random = rng(9000 + seed);
+      const numKeys = 1 + below(random, 4);
+      const numItems = 1 + below(random, 10);
+      const keyTexts = Array.from({ length: numKeys }, () =>
+        Array.from({ length: numItems }, () =>
+          pick(random, ['foo', 'bar', 'foobar', 'f_o_o', 'x']),
+        ),
+      );
+      const weights = Array.from({ length: numKeys }, () => randomWeight(random));
+      if (weights.reduce((a, b) => a + b, 0) <= 0) continue;
+      const query = pick(random, ['foo', 'fo', 'bar', '^fo', 'oo$', "'ob", 'FOO', 'fb']);
+      for (const scoreMode of MODES) {
+        const options = { ...randomOptions(random, numItems), scoreMode };
+        const perKey = searchKeys(query, keyTexts, weights, options);
+        compared += perKey.length;
+        const cross = { ...options, matchMode: 'crossKey' as const };
+        expect(searchKeys(query, keyTexts, weights, cross)).toEqual(perKey);
+        expect(new KeyedFuzzyIndex(keyTexts, weights).search(query, cross)).toEqual(perKey);
+      }
+    }
+    expect(compared).toBeGreaterThan(300);
+  });
+
+  it('excludes an item when a !term matches any of its keys', () => {
+    const keys = ['name', 'city'] as const;
+    // Per-key matching only zeroes the key containing the excluded term.
+    expect(sortedIndices(searchObjects('john !tokyo', RESIDENTS, { keys }))).toEqual([0, 2]);
+    const index = new FuzzyObjectIndex(RESIDENTS, { keys });
+    for (const scoreMode of MODES) {
+      const options = { matchMode: 'crossKey', scoreMode } as const;
+      const results = searchObjects('john !tokyo', RESIDENTS, { keys, ...options });
+      expect(results.map((r) => r.item)).toEqual([RESIDENTS[2]]);
+      // Exclusions do not change key scores.
+      expect(results[0]?.keyScores).toEqual([1, 0]);
+      expect(index.search('john !tokyo', options)).toEqual(results);
+      expect(index.search('!tokyo john', options)).toEqual(results);
+    }
+    // A query without positive terms matches nothing in either mode.
+    for (const matchMode of MATCH_MODES) {
+      expect(searchObjects('!tokyo', RESIDENTS, { keys, matchMode })).toEqual([]);
+    }
+  });
+
+  it('ignores keys with weight 0 when selecting items', () => {
+    const keyTexts = [
+      ['John Smith', 'John Doe'],
+      ['tokyo office', 'archived'],
+    ];
+    const options = { matchMode: 'crossKey' } as const;
+    for (const { index, keys } of [
+      bothPaths('john tokyo', keyTexts, [1, 0], options),
+      bothPaths('john !archived', keyTexts, [1, 0], options),
+    ]) {
+      expect(index).toEqual(keys);
+    }
+    // A term matching only a zero-weight key does not count...
+    expect(searchKeys('john tokyo', keyTexts, [1, 0], options)).toEqual([]);
+    // ...nor does an exclusion matching only a zero-weight key.
+    expect(sortedIndices(searchKeys('john !archived', keyTexts, [1, 0], options))).toEqual([0, 1]);
+    // Zero-weight keys still get key scores: the share of the query they match.
+    const [both] = searchKeys('smith tokyo', keyTexts, [1, 1], options);
+    const [informational] = searchKeys('smith', keyTexts, [1, 0], options);
+    expect(both?.keyScores[1]).toBeGreaterThan(0);
+    expect(informational?.keyScores).toEqual([1, 0]);
+  });
+
+  it("defaults to 'perKey'", () => {
+    const weights = [1, 1];
+    const index = new KeyedFuzzyIndex(RESIDENT_KEYS, weights);
+    for (const query of ['john tokyo', 'john !tokyo', 'doe', 'tokyo']) {
+      const perKey = searchKeys(query, RESIDENT_KEYS, weights, { matchMode: 'perKey' });
+      for (const options of [undefined, null, {}, { matchMode: undefined }, Infinity]) {
+        expect(searchKeys(query, RESIDENT_KEYS, weights, options)).toEqual(perKey);
+        expect(index.search(query, options)).toEqual(perKey);
+      }
+    }
+  });
+
+  it('applies minScore and maxResults to the combined score of the mode', () => {
+    const weights = [1, 1];
+    const index = new KeyedFuzzyIndex(RESIDENT_KEYS, weights);
+    const options = { matchMode: 'crossKey', scoreMode: 'matched', minScore: 1 } as const;
+    // John Smith (Tokyo) and Tokyo John both match every term perfectly.
+    const expected = searchKeys('john tokyo', RESIDENT_KEYS, weights, options);
+    expect(sortedIndices(expected)).toEqual([0, 3]);
+    expect(index.search('john tokyo', options)).toEqual(expected);
+    expect(index.search('john tokyo', { ...options, maxResults: 1 })).toEqual(expected.slice(0, 1));
+  });
+
+  it('closest() returns the first result of search() in the given modes', () => {
+    const index = new KeyedFuzzyIndex(RESIDENT_KEYS, [2, 1]);
+    const objectIndex = new FuzzyObjectIndex(RESIDENTS, {
+      keys: [{ name: 'name', weight: 2 }, 'city'],
+    });
+    const cases = [...MATCH_MODES, undefined, null].flatMap((matchMode) =>
+      [...MODES, undefined].flatMap((scoreMode) =>
+        [undefined, 0.3, 0.6, 1].flatMap((minScore) =>
+          ['john tokyo', 'doe osaka', 'john !tokyo', 'zzz'].map((query) => ({
+            query,
+            minScore,
+            scoreMode,
+            matchMode,
+          })),
+        ),
+      ),
+    );
+    for (const { query, minScore, scoreMode, matchMode } of cases) {
+      const options = { maxResults: 1, minScore, scoreMode, matchMode: matchMode ?? undefined };
+      const [best] = index.search(query, options);
+      expect(index.closest(query, minScore, scoreMode, matchMode)).toBe(best?.index ?? null);
+      expect(objectIndex.closest(query, minScore, scoreMode, matchMode)).toBe(
+        best === undefined ? null : RESIDENTS[best.index],
+      );
+    }
+    // Per-key, only Tokyo John has both terms in one key; across keys, John
+    // Smith (Tokyo) matches every term perfectly too, and its best key text
+    // is shorter.
+    expect(index.closest('john tokyo', null, 'max')).toBe(3);
+    expect(index.closest('john tokyo', null, 'max', 'crossKey')).toBe(0);
+  });
+
+  it('is passed through by searchObjects() and FuzzyObjectIndex', () => {
+    const keys = [{ name: 'name', weight: 2 }, 'city'] as const;
+    const objectIndex = new FuzzyObjectIndex(RESIDENTS, { keys });
+    for (const matchMode of MATCH_MODES) {
+      for (const scoreMode of MODES) {
+        for (const query of ['john tokyo', 'doe', 'john !osaka', 'tokyo kyoto']) {
+          const options = { scoreMode, matchMode };
+          const expected = searchKeys(query, RESIDENT_KEYS, [2, 1], options).map((r) => ({
+            item: RESIDENTS[r.index],
+            ...r,
+          }));
+          expect(searchObjects(query, RESIDENTS, { keys, ...options })).toEqual(expected);
+          expect(objectIndex.search(query, options)).toEqual(expected);
+        }
+      }
+    }
+  });
+
+  it('returns every item with score 1 for an empty query with returnAllOnEmpty', () => {
+    for (const scoreMode of MODES) {
+      for (const query of ['', ' ', '^', '!']) {
+        const { index, keys } = bothPaths(query, RESIDENT_KEYS, [1, 0], {
+          returnAllOnEmpty: true,
+          scoreMode,
+          matchMode: 'crossKey',
+        });
+        expect(keys).toEqual(RESIDENTS.map((_, i) => ({ index: i, score: 1, keyScores: [1, 1] })));
+        expect(index).toEqual(keys);
+      }
+    }
+  });
+
+  it('separates the terms at any whitespace', () => {
+    const options = { matchMode: 'crossKey' } as const;
+    const expected = searchKeys('john tokyo', RESIDENT_KEYS, [1, 1], options);
+    expect(expected.length).toBeGreaterThan(0);
+    for (const space of [IDEOGRAPHIC_SPACE, NO_BREAK_SPACE, '\t', '\n', '  ']) {
+      expect(searchKeys(`john${space}tokyo`, RESIDENT_KEYS, [1, 1], options)).toEqual(expected);
+    }
+  });
+
+  it('rejects anything but the two modes with an InvalidArg error', () => {
+    const index = new KeyedFuzzyIndex(RESIDENT_KEYS, [1, 1]);
+    const objectIndex = new FuzzyObjectIndex(RESIDENTS, { keys: ['name', 'city'] });
+    const invalid: ReadonlyArray<[unknown, string]> = [
+      ['cross', '"cross"'],
+      ['CrossKey', '"CrossKey"'],
+      ['perkey', '"perkey"'],
+      ['', '""'],
+      [' crossKey', '" crossKey"'],
+      ['perKey\n', '"perKey\\n"'],
+      [1, 'number'],
+      [true, 'boolean'],
+      [{}, 'object'],
+      [['crossKey'], 'object'],
+    ];
+    for (const [value, got] of invalid) {
+      const matchMode = value as KeyMatchMode;
+      const error = invalidMatchMode(got);
+      expect(() => searchKeys('john', RESIDENT_KEYS, [1, 1], { matchMode })).toThrow(error);
+      expect(() => index.search('john', { matchMode })).toThrow(error);
+      expect(() => index.closest('john', undefined, undefined, matchMode)).toThrow(error);
+      expect(() => searchObjects('john', RESIDENTS, { keys: ['name'], matchMode })).toThrow(error);
+      expect(() => objectIndex.search('john', { matchMode })).toThrow(error);
+      expect(() => objectIndex.closest('john', undefined, undefined, matchMode)).toThrow(error);
+      // Also when there is nothing to search.
+      expect(() => searchKeys('', [[]], [1], { matchMode })).toThrow(error);
+    }
+    // In an options object, null is rejected like in the other fields.
+    const nullMode = { matchMode: null } as unknown as KeySearchOptions;
+    expect(() => searchKeys('john', RESIDENT_KEYS, [1, 1], nullMode)).toThrow(
+      invalidMatchMode('null'),
+    );
+  });
+
+  it('is not an option of search()', () => {
+    const items = RESIDENTS.map((r) => `${r.name} ${r.city}`);
+    // Unknown SearchOptions fields are ignored, as before.
+    const options = { matchMode: 'crossKey' } as SearchOptions;
+    expect(search('john tokyo', items, options)).toEqual(search('john tokyo', items));
   });
 });

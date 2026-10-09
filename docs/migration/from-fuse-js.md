@@ -143,6 +143,16 @@ searchObjects('john', users, {
 
 In every mode an item must match at least one key with a positive weight. See [Combining key scores](../../README.md#combining-key-scores-scoremode).
 
+By default every term of a multi-term query must match the same key: like fuse.js's extended search (`useExtendedSearch`), `john tokyo` finds nothing in `{ name: 'John Smith', city: 'Tokyo' }`. Where fuse.js needs a logical `$and` query that names the key of each term, rapid-fuzzy has `matchMode: 'crossKey'`, which matches every term against every key on its own (a `!term` then excludes items in which it matches any key):
+
+```typescript
+const people = [{ name: 'John Smith', city: 'Tokyo' }];
+searchObjects('john tokyo', people, { keys: ['name', 'city'], matchMode: 'crossKey' });
+// [{ item: { name: 'John Smith', city: 'Tokyo' }, score: 0.5, ... }]
+```
+
+See [Matching terms across keys](../../README.md#matching-terms-across-keys-matchmode).
+
 ### Match highlighting
 
 ```typescript

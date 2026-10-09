@@ -2,7 +2,8 @@ use nucleo_matcher::Utf32String;
 use nucleo_matcher::pattern::CaseMatching;
 
 use super::keys::{
-    IndexedKeys, KeyScoreMode, KeyedSearchParams, keyed_search_core, validate_keyed_input,
+    IndexedKeys, KeyMatchMode, KeyScoreMode, KeyedSearchParams, SearchKeysOptions,
+    keyed_search_core, validate_keyed_input,
 };
 use super::{KeySearchResult, compute_char_mask, with_matcher};
 
@@ -125,12 +126,15 @@ impl KeyedFuzzyIndexCore {
         columns + texts + haystacks + masks
     }
 
-    /// Search the index for items matching the query.
+    /// Search the index for items matching the query, matching every key
+    /// against the whole query ([`KeyMatchMode::PerKey`]).
     ///
     /// Returns results sorted by combined score (best match first), exactly
     /// like [`search_keys_impl`](super::search_keys_impl) on the same key
     /// texts and weights (see the `keys` module for the semantics, and
     /// [`KeyScoreMode`] for how `score_mode` combines the key scores).
+    /// [`search_with_options`](Self::search_with_options) also takes a
+    /// [`KeyMatchMode`].
     pub fn search(
         &self,
         query: &str,
@@ -140,6 +144,33 @@ impl KeyedFuzzyIndexCore {
         return_all_on_empty: bool,
         score_mode: KeyScoreMode,
     ) -> Vec<KeySearchResult> {
+        self.search_with_params(
+            query,
+            KeyedSearchParams {
+                max_results,
+                min_score,
+                case_matching,
+                return_all_on_empty,
+                score_mode,
+                match_mode: KeyMatchMode::PerKey,
+            },
+        )
+    }
+
+    /// Search the index for items matching the query.
+    ///
+    /// Returns exactly what [`search_keys_impl`](super::search_keys_impl)
+    /// returns for the same key texts, weights and options (see the `keys`
+    /// module for the semantics); unset options take the same defaults.
+    pub fn search_with_options(
+        &self,
+        query: &str,
+        options: SearchKeysOptions,
+    ) -> Vec<KeySearchResult> {
+        self.search_with_params(query, KeyedSearchParams::from(options))
+    }
+
+    fn search_with_params(&self, query: &str, params: KeyedSearchParams) -> Vec<KeySearchResult> {
         with_matcher(|matcher| {
             keyed_search_core(
                 query,
@@ -150,13 +181,7 @@ impl KeyedFuzzyIndexCore {
                 },
                 &self.weights,
                 self.total_weight,
-                KeyedSearchParams {
-                    max_results,
-                    min_score,
-                    case_matching,
-                    return_all_on_empty,
-                    score_mode,
-                },
+                params,
                 matcher,
             )
         })

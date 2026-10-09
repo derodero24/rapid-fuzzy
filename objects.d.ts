@@ -1,4 +1,4 @@
-import type { KeyScoreMode, KeySearchOptions } from './index';
+import type { KeyMatchMode, KeyScoreMode, KeySearchOptions } from './index';
 
 type Primitive = string | number | bigint | boolean | symbol | null | undefined;
 type AnyFunction = (...args: never) => unknown;
@@ -114,12 +114,13 @@ export interface KeyConfig<T = unknown> {
 
 /**
  * Options for searchObjects(). Extends {@link KeySearchOptions} (the
- * `SearchOptions` fields plus `scoreMode`) with key configuration.
+ * `SearchOptions` fields plus `scoreMode` and `matchMode`) with key
+ * configuration.
  *
  * Note: `includePositions` has no effect for multi-key search — match positions
  * are per-key and are not merged, so results have no `positions`/`matchType`.
  * All other fields (maxResults, minScore, isCaseSensitive, returnAllOnEmpty,
- * scoreMode) apply.
+ * scoreMode, matchMode) apply.
  */
 export interface ObjectSearchOptions<T = unknown> extends KeySearchOptions {
   keys: ReadonlyArray<KeyPath<T> | KeyConfig<T>>;
@@ -141,8 +142,10 @@ export interface ObjectSearchResult<T> {
    */
   score: number;
   /**
-   * Per-key scores in the same order as the configured keys.
-   * A score of 0.0 means the item did not match on that key.
+   * Per-key scores in the same order as the configured keys: how well each
+   * key matches the query (with `matchMode: 'crossKey'`, the share of the
+   * query it matches). A score of 0.0 means the item did not match on that
+   * key.
    */
   keyScores: Array<number>;
 }
@@ -236,6 +239,11 @@ type CheckedOptions<T, S extends string, C extends string, Options> = Options & 
  * // Rank an exact match on any one key first: 'matched' averages over the
  * // keys that match only (see KeySearchOptions.scoreMode).
  * searchObjects('smith', users, { keys: ['name', 'email'], scoreMode: 'matched' });
+ *
+ * // Let the terms of the query match different keys (see
+ * // KeySearchOptions.matchMode): 'smith example' finds John Smith, whose
+ * // name and email each contain one of the terms.
+ * searchObjects('smith example', users, { keys: ['name', 'email'], matchMode: 'crossKey' });
  * ```
  */
 export declare function searchObjects<T, S extends string = string, C extends string = string>(
@@ -258,6 +266,13 @@ export interface ObjectIndexSearchOptions {
    * (default), `'matched'` or `'max'`. See {@link KeySearchOptions.scoreMode}.
    */
   scoreMode?: KeyScoreMode | undefined;
+  /**
+   * How the query is matched against the keys: `'perKey'` (default: every
+   * key against the whole query) or `'crossKey'` (every term against the
+   * keys on its own, so the terms may match different keys). See
+   * {@link KeySearchOptions.matchMode}.
+   */
+  matchMode?: KeyMatchMode | undefined;
 }
 
 /**
@@ -308,16 +323,19 @@ export declare class FuzzyObjectIndex<T, S extends string = string, C extends st
 
   /**
    * Find the closest matching object, or null if no match: the item of the
-   * first result of `search(query, { maxResults: 1, minScore, scoreMode })`.
-   * `scoreMode` defaults to `'weighted'`.
+   * first result of
+   * `search(query, { maxResults: 1, minScore, scoreMode, matchMode })`.
+   * `scoreMode` defaults to `'weighted'` and `matchMode` to `'perKey'`.
    *
-   * @throws {Error} If `scoreMode` is not `'weighted'`, `'matched'` or `'max'`
-   *   (an `InvalidArg` error; a `TypeError` in the browser build).
+   * @throws {Error} If `scoreMode` is not `'weighted'`, `'matched'` or `'max'`,
+   *   or `matchMode` is not `'perKey'` or `'crossKey'` (an `InvalidArg` error;
+   *   a `TypeError` in the browser build).
    */
   closest(
     query: string,
     minScore?: number | undefined | null,
     scoreMode?: KeyScoreMode | undefined | null,
+    matchMode?: KeyMatchMode | undefined | null,
   ): T | null;
 
   /** Add a single item to the index. */
