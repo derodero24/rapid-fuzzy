@@ -1,6 +1,6 @@
 # Migrating from leven / fastest-levenshtein to rapid-fuzzy
 
-[leven](https://www.npmjs.com/package/leven) and [fastest-levenshtein](https://www.npmjs.com/package/fastest-levenshtein) are single-purpose Levenshtein distance libraries. rapid-fuzzy provides the same Levenshtein distance plus other distance metrics (Damerau-Levenshtein, Hamming, Indel, Jaro, Jaro-Winkler, Sorensen-Dice), token-based ratios, batch APIs, and fuzzy search — all from a single package.
+[leven](https://www.npmjs.com/package/leven) and [fastest-levenshtein](https://www.npmjs.com/package/fastest-levenshtein) are single-purpose Levenshtein distance libraries. rapid-fuzzy provides the same Levenshtein distance (for text in the Basic Multilingual Plane, see [Emoji and other non-BMP characters](#emoji-and-other-non-bmp-characters)) plus other distance metrics (Damerau-Levenshtein, Hamming, Indel, Jaro, Jaro-Winkler, Sorensen-Dice), token-based ratios, batch APIs, and fuzzy search — all from a single package.
 
 ## Installation
 
@@ -56,13 +56,25 @@ const best = targets[distances.indexOf(Math.min(...distances))]; // 'mitten'
 
 > **rapid-fuzzy's `closest()` is not an edit-distance search.** It returns the best *fuzzy search* match: an item that contains the query's characters in order, ranked by the nucleo matcher. `closest('kitten', ['sitting', 'mitten', 'kitchen'])` returns `null`, because no target contains `k`, `i`, `t`, `t`, `e`, `n` in that order. Use `levenshteinMany` as above to keep fastest-levenshtein's behaviour.
 
+### Emoji and other non-BMP characters
+
+rapid-fuzzy counts Unicode code points, while leven and fastest-levenshtein count UTF-16 code units. The two are the same for text in the Basic Multilingual Plane (Latin, Cyrillic, Greek, CJK, combining marks and so on), and the distances agreed on every pair in our differential tests of such text. An emoji or another character outside the BMP is one code point but two UTF-16 code units, so distances involving one can differ, and so can the best match:
+
+```typescript
+levenshtein('😀', 'a');        // 1 (leven and fastest-levenshtein's distance(): 2)
+levenshtein('café 😀', 'cafe'); // 3 (leven and distance(): 4)
+
+// fastest-levenshtein's closest('😀', ['ab', 'a']) returns 'ab' (distance 2 to both)
+levenshteinMany('😀', ['ab', 'a']); // [2, 1]: the recipe above picks 'a'
+```
+
 ## What You Gain
 
 ### Multiple algorithms
 
 ```typescript
 import {
-  levenshtein,           // Same as leven / fastest-levenshtein
+  levenshtein,           // Same as leven / fastest-levenshtein (for BMP text)
   normalizedLevenshtein, // 0.0-1.0 similarity (length-independent)
   damerauLevenshtein,    // Handles transpositions (ab → ba = 1 edit)
   hamming,               // Positional differences (equal-length strings)
