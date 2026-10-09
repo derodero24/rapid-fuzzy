@@ -314,7 +314,11 @@ export class FuzzyIndex {
     /**
      * Remove the item at the given index.
      *
-     * Uses swap-remove for O(1) performance. Returns false if out of bounds.
+     * Uses swap-remove for O(1) performance: the last item moves into the
+     * freed slot. Returns false, removing nothing, if `index` is out of
+     * range (negative, or not less than `size`). Throws a `TypeError` if
+     * `index` is not a number and a `RangeError` if it is not an integer
+     * (`NaN`, `±Infinity` or a fraction), like `FuzzyObjectIndex.remove()`.
      */
     remove(index: number): boolean;
     /**
@@ -398,7 +402,11 @@ export class KeyedFuzzyIndex {
     /**
      * Remove the item at the given index.
      *
-     * Uses swap-remove for O(1) performance. Returns false if out of bounds.
+     * Uses swap-remove for O(1) performance: the last item moves into the
+     * freed slot. Returns false, removing nothing, if `index` is out of
+     * range (negative, or not less than `size`). Throws a `TypeError` if
+     * `index` is not a number and a `RangeError` if it is not an integer
+     * (`NaN`, `±Infinity` or a fraction), like `FuzzyObjectIndex.remove()`.
      */
     remove(index: number): boolean;
     /**
@@ -878,7 +886,7 @@ export interface InitOutput {
     readonly fuzzyindex_destroy: (a: number) => void;
     readonly fuzzyindex_fromAsync: (a: number) => number;
     readonly fuzzyindex_new: (a: number, b: number) => number;
-    readonly fuzzyindex_remove: (a: number, b: number) => number;
+    readonly fuzzyindex_remove: (a: number, b: number, c: number) => void;
     readonly fuzzyindex_search: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly fuzzyindex_searchIndices: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly fuzzyindex_serialize: (a: number, b: number) => void;
@@ -901,7 +909,7 @@ export interface InitOutput {
     readonly keyedfuzzyindex_deserialize: (a: number, b: number, c: number) => void;
     readonly keyedfuzzyindex_destroy: (a: number) => void;
     readonly keyedfuzzyindex_new: (a: number, b: number, c: number, d: number) => void;
-    readonly keyedfuzzyindex_remove: (a: number, b: number) => number;
+    readonly keyedfuzzyindex_remove: (a: number, b: number, c: number) => void;
     readonly keyedfuzzyindex_search: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly keyedfuzzyindex_serialize: (a: number, b: number) => void;
     readonly keyedfuzzyindex_size: (a: number) => number;

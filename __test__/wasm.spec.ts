@@ -594,5 +594,47 @@ describe.skipIf(!wasmAvailable)('wasm', () => {
         'matchMode must be "perKey" or "crossKey", got "cross"',
       );
     });
+
+    describe('remove() validates its index like native (no modulo-2^32 wrapping)', () => {
+      const create = (m: typeof wasm) => [
+        new m.FuzzyIndex(['a', 'b', 'c']),
+        new m.KeyedFuzzyIndex([['a', 'b', 'c']], [1]),
+      ];
+      /** The class and message of the error `fn` throws. */
+      const errorOf = (fn: () => unknown): [unknown, string] => {
+        try {
+          fn();
+        } catch (err) {
+          return [(err as Error).constructor, (err as Error).message];
+        }
+        return [undefined, 'no error'];
+      };
+
+      it.each([
+        [Number.NaN, RangeError],
+        [1.5, RangeError],
+        [Number.POSITIVE_INFINITY, RangeError],
+        [undefined, TypeError],
+        [null, TypeError],
+        ['1', TypeError],
+      ])('throws for %s like native and removes nothing', (value, errorClass) => {
+        const nativeIndexes = create(native);
+        create(wasm).forEach((index, i) => {
+          const wasmError = errorOf(() => index.remove(value));
+          expect(wasmError[0]).toBe(errorClass);
+          expect(wasmError).toEqual(errorOf(() => nativeIndexes[i].remove(value)));
+          expect(index.size).toBe(3);
+        });
+      });
+
+      it('returns false for out-of-range integers', () => {
+        for (const index of create(wasm)) {
+          for (const value of [-1, 3, 2 ** 32, 2 ** 32 + 1]) {
+            expect(index.remove(value)).toBe(false);
+          }
+          expect(index.size).toBe(3);
+        }
+      });
+    });
   });
 });

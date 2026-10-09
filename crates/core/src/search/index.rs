@@ -1,11 +1,13 @@
-use napi::bindgen_prelude::{AsyncTask, Buffer, ObjectFinalize};
+use napi::bindgen_prelude::{AsyncTask, Buffer, ObjectFinalize, Unknown};
 use napi::{Env, Task};
 use napi_derive::napi;
 use nucleo_matcher::pattern::CaseMatching;
 use rapid_fuzzy_core::search::serialization::{deserialize_fuzzy_index, serialize_fuzzy_index};
 use rapid_fuzzy_core::search::{FuzzyIndexCore, is_empty_query};
 
-use super::{IndexSearchResult, ResolvedSearchOptions, SearchOptionsArg, SearchResult};
+use super::{
+    IndexSearchResult, ResolvedSearchOptions, SearchOptionsArg, SearchResult, read_remove_index,
+};
 
 pub struct BuildFuzzyIndexTask {
     /// The converted items, or the conversion error to reject the Promise with.
@@ -247,9 +249,20 @@ impl FuzzyIndex {
 
     /// Remove the item at the given index.
     ///
-    /// Uses swap-remove for O(1) performance. Returns false if out of bounds.
+    /// Uses swap-remove for O(1) performance: the last item moves into the
+    /// freed slot. Returns false, removing nothing, if `index` is out of
+    /// range (negative, or not less than `size`). Throws a `TypeError` if
+    /// `index` is not a number and a `RangeError` if it is not an integer
+    /// (`NaN`, `±Infinity` or a fraction), like `FuzzyObjectIndex.remove()`.
     #[napi]
-    pub fn remove(&mut self, env: Env, index: u32) -> napi::Result<bool> {
+    pub fn remove(
+        &mut self,
+        env: Env,
+        #[napi(ts_arg_type = "number")] index: Unknown<'_>,
+    ) -> napi::Result<bool> {
+        let Some(index) = read_remove_index(env, index)? else {
+            return Ok(false);
+        };
         let removed = self.core.remove(index);
         self.report_memory(env)?;
         Ok(removed)

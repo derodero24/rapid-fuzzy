@@ -118,13 +118,28 @@ export class FuzzyIndex {
     /**
      * Remove the item at the given index.
      *
-     * Uses swap-remove for O(1) performance. Returns false if out of bounds.
+     * Uses swap-remove for O(1) performance: the last item moves into the
+     * freed slot. Returns false, removing nothing, if `index` is out of
+     * range (negative, or not less than `size`). Throws a `TypeError` if
+     * `index` is not a number and a `RangeError` if it is not an integer
+     * (`NaN`, `±Infinity` or a fraction), like `FuzzyObjectIndex.remove()`.
      * @param {number} index
      * @returns {boolean}
      */
     remove(index) {
-        const ret = wasm.fuzzyindex_remove(this.__wbg_ptr, index);
-        return ret !== 0;
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.fuzzyindex_remove(retptr, this.__wbg_ptr, addHeapObject(index));
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+            if (r2) {
+                throw takeObject(r1);
+            }
+            return r0 !== 0;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
     }
     /**
      * Search the index, returning only indices and scores (no item strings).
@@ -362,13 +377,28 @@ export class KeyedFuzzyIndex {
     /**
      * Remove the item at the given index.
      *
-     * Uses swap-remove for O(1) performance. Returns false if out of bounds.
+     * Uses swap-remove for O(1) performance: the last item moves into the
+     * freed slot. Returns false, removing nothing, if `index` is out of
+     * range (negative, or not less than `size`). Throws a `TypeError` if
+     * `index` is not a number and a `RangeError` if it is not an integer
+     * (`NaN`, `±Infinity` or a fraction), like `FuzzyObjectIndex.remove()`.
      * @param {number} index
      * @returns {boolean}
      */
     remove(index) {
-        const ret = wasm.keyedfuzzyindex_remove(this.__wbg_ptr, index);
-        return ret !== 0;
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.keyedfuzzyindex_remove(retptr, this.__wbg_ptr, addHeapObject(index));
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+            if (r2) {
+                throw takeObject(r1);
+            }
+            return r0 !== 0;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
     }
     /**
      * Search the index for items matching the query.
@@ -1779,6 +1809,10 @@ function __wbg_get_imports() {
         __wbg_length_4e1adc0d42e23620: function(arg0) {
             const ret = getObject(arg0).length;
             return ret;
+        },
+        __wbg_new_1543621bea52a223: function(arg0, arg1) {
+            const ret = new RangeError(getStringFromWasm0(arg0, arg1));
+            return addHeapObject(ret);
         },
         __wbg_new_1da3429bc3c4541c: function(arg0) {
             const ret = new Uint8Array(getObject(arg0));

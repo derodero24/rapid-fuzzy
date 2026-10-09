@@ -1819,6 +1819,56 @@ describe('FuzzyIndex', () => {
     });
   });
 
+  // The index used to be read as a u32, wrapping it modulo 2^32: remove(NaN)
+  // and remove(2 ** 32) removed item 0 and returned true. Both index classes
+  // now validate it like FuzzyObjectIndex.remove().
+  describe.each([
+    ['FuzzyIndex', () => new FuzzyIndex(['a', 'b', 'c'])],
+    ['KeyedFuzzyIndex', () => new KeyedFuzzyIndex([['a', 'b', 'c']], [1])],
+  ])('%s.remove() argument validation', (_name, create) => {
+    it.each([
+      ['NaN', Number.NaN, 'NaN'],
+      ['a fraction', 1.5, '1.5'],
+      ['a negative fraction', -0.5, '-0.5'],
+      ['Infinity', Number.POSITIVE_INFINITY, 'Infinity'],
+      ['-Infinity', Number.NEGATIVE_INFINITY, '-Infinity'],
+    ])('throws a RangeError for %s and removes nothing', (_label, value, shown) => {
+      const index = create();
+      expect(() => index.remove(value)).toThrow(RangeError);
+      expect(() => index.remove(value)).toThrow(`index must be an integer, got ${shown}`);
+      expect(index.size).toBe(3);
+    });
+
+    it.each([
+      ['a string', '1', 'string'],
+      ['null', null, 'object'],
+      ['undefined', undefined, 'undefined'],
+      ['a boolean', true, 'boolean'],
+      ['an object', {}, 'object'],
+    ])('throws a TypeError for %s and removes nothing', (_label, value, type) => {
+      const index = create();
+      const remove = (): boolean => index.remove(value as unknown as number);
+      expect(remove).toThrow(TypeError);
+      expect(remove).toThrow(`index must be a number, got ${type}`);
+      expect(index.size).toBe(3);
+    });
+
+    it('returns false for out-of-range integers, including those beyond 2^32', () => {
+      const index = create();
+      for (const value of [-1, 3, 2 ** 32, 2 ** 32 + 1, -(2 ** 32) + 1, Number.MAX_SAFE_INTEGER]) {
+        expect(index.remove(value)).toBe(false);
+      }
+      expect(index.size).toBe(3);
+    });
+
+    it('removes the item at an integer index (-0 is index 0)', () => {
+      const index = create();
+      expect(index.remove(-0)).toBe(true);
+      expect(index.remove(1)).toBe(true);
+      expect(index.size).toBe(1);
+    });
+  });
+
   describe('destroy', () => {
     it('should clear all items', () => {
       const index = new FuzzyIndex(items);

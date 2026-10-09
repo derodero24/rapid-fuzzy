@@ -13,12 +13,12 @@ pub(crate) use rapid_fuzzy_core::search::resolve_case_matching;
 pub(crate) use rapid_fuzzy_core::search::compute_char_mask;
 
 use napi::bindgen_prelude::{FromNapiValue, Object, TypeName, Unknown, ValidateNapiValue, sys};
-use napi::{Status, ValueType};
+use napi::{Env, Status, ValueType};
 use napi_derive::napi;
 use nucleo_matcher::pattern::CaseMatching;
 use rapid_fuzzy_core::search::{
-    KeyMatchMode, KeyScoreMode, SearchKeysOptions, check_max_results, invalid_match_mode,
-    invalid_score_mode, is_empty_query,
+    KeyMatchMode, KeyScoreMode, SearchKeysOptions, check_max_results, check_remove_index,
+    invalid_index_type, invalid_match_mode, invalid_score_mode, is_empty_query,
 };
 
 // -------------------------
@@ -154,6 +154,61 @@ pub struct SearchOptions {
 /// binding.
 pub(crate) fn resolve_max_results(value: f64) -> napi::Result<Option<u32>> {
     check_max_results(value).map_err(|message| napi::Error::new(Status::InvalidArg, message))
+}
+
+/// The class of a JavaScript error thrown by [`throw_error`].
+#[derive(Clone, Copy)]
+pub(crate) enum ErrorClass {
+    TypeError,
+    RangeError,
+}
+
+/// Throw a `TypeError` or `RangeError` with the code `InvalidArg` (the code
+/// of the binding's other argument errors), returning the error that tells
+/// napi-rs the exception is already pending. A plain `napi::Error` always
+/// becomes an `Error`.
+pub(crate) fn throw_error<T>(env: Env, class: ErrorClass, message: &str) -> napi::Result<T> {
+    let code = Some(Status::InvalidArg.as_ref());
+    match class {
+        ErrorClass::TypeError => env.throw_type_error(message, code)?,
+        ErrorClass::RangeError => env.throw_range_error(message, code)?,
+    }
+    Err(napi::Error::new(Status::PendingException, message))
+}
+
+/// The `typeof` of a JavaScript value of type `value_type`.
+fn type_of(value_type: ValueType) -> &'static str {
+    match value_type {
+        ValueType::Undefined => "undefined",
+        ValueType::Boolean => "boolean",
+        ValueType::Number => "number",
+        ValueType::String => "string",
+        ValueType::Symbol => "symbol",
+        ValueType::Function => "function",
+        ValueType::BigInt => "bigint",
+        // `typeof null` is "object", as are externals.
+        _ => "object",
+    }
+}
+
+/// Read the `index` argument of `FuzzyIndex.remove()` and
+/// `KeyedFuzzyIndex.remove()` exactly like `FuzzyObjectIndex.remove()` reads
+/// its own (see [`check_remove_index`]): a `TypeError` for a value that is
+/// not a number, a `RangeError` for a number that is not an integer, and
+/// `None` (nothing to remove) for an integer out of range.
+pub(crate) fn read_remove_index(env: Env, index: Unknown<'_>) -> napi::Result<Option<u32>> {
+    let value_type = index.get_type()?;
+    if value_type != ValueType::Number {
+        return throw_error(
+            env,
+            ErrorClass::TypeError,
+            &invalid_index_type(type_of(value_type)),
+        );
+    }
+    match check_remove_index(f64::from_unknown(index)?) {
+        Ok(index) => Ok(index),
+        Err(message) => throw_error(env, ErrorClass::RangeError, &message),
+    }
 }
 
 /// Read an optional property of the options object `type_name`, treating

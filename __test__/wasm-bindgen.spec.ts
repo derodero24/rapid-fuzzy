@@ -912,4 +912,76 @@ describe.skipIf(!wasmAvailable)('wasm-bindgen runtime', () => {
       }
     });
   });
+
+  // The index used to be a u32 parameter, which wraps numbers modulo 2^32 and
+  // converts anything else to a number: remove(NaN), remove(2 ** 32) and
+  // remove(undefined) (a missed Map lookup) removed item 0 and returned true.
+  describe('remove() argument validation (like FuzzyObjectIndex.remove)', () => {
+    interface Removable {
+      remove(index: number): boolean;
+      readonly size: number;
+      free(): void;
+    }
+    const indexes = (): Removable[] => [
+      new wasm.FuzzyIndex(['a', 'b', 'c']),
+      new wasm.KeyedFuzzyIndex([['a', 'b', 'c']], [1]),
+    ];
+
+    it.each([
+      [Number.NaN, 'NaN'],
+      [1.5, '1.5'],
+      [-0.5, '-0.5'],
+      [Number.POSITIVE_INFINITY, 'Infinity'],
+      [Number.NEGATIVE_INFINITY, '-Infinity'],
+    ])('throws a RangeError for %s and removes nothing', (value, shown) => {
+      for (const index of indexes()) {
+        const err = thrown(() => index.remove(value));
+        expect(err).toBeInstanceOf(RangeError);
+        expect(err).toHaveProperty('message', `index must be an integer, got ${shown}`);
+        expect(index.size).toBe(3);
+        index.free();
+      }
+    });
+
+    it.each([
+      ['1', 'string'],
+      [null, 'object'],
+      [undefined, 'undefined'],
+      [true, 'boolean'],
+      [{}, 'object'],
+      [1n, 'bigint'],
+    ])('throws a TypeError for %s and removes nothing', (value, type) => {
+      for (const index of indexes()) {
+        const err = thrown(() => callUnchecked(index.remove.bind(index), value));
+        expect(err).toBeInstanceOf(TypeError);
+        expect(err).toHaveProperty('message', `index must be a number, got ${type}`);
+        expect(index.size).toBe(3);
+        index.free();
+      }
+    });
+
+    it('returns false for out-of-range integers, including those beyond 2^32', () => {
+      for (const index of indexes()) {
+        for (const value of [-1, 3, 2 ** 32, 2 ** 32 + 1, -(2 ** 32) + 1]) {
+          expect(index.remove(value)).toBe(false);
+        }
+        expect(index.size).toBe(3);
+        expect(index.remove(-0)).toBe(true);
+        expect(index.size).toBe(2);
+        index.free();
+      }
+    });
+
+    it('throws the same errors as the Node.js binding', () => {
+      const native = new napi.FuzzyIndex(['a', 'b', 'c']);
+      for (const value of [Number.NaN, 1.5, undefined, '1']) {
+        const wasmIndex = new wasm.FuzzyIndex(['a', 'b', 'c']);
+        const wasmErr = thrown(() => callUnchecked(wasmIndex.remove.bind(wasmIndex), value));
+        const nodeErr = thrown(() => callUnchecked(native.remove.bind(native), value));
+        expect((wasmErr as Error).constructor).toBe((nodeErr as Error).constructor);
+        expect(wasmErr).toHaveProperty('message', (nodeErr as Error).message);
+        wasmIndex.free();
+      }
+    });
+  });
 });

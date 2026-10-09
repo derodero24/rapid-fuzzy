@@ -4,7 +4,7 @@ use rapid_fuzzy_core::search::{FuzzyIndexCore, is_empty_query};
 use wasm_bindgen::prelude::*;
 
 use super::{IndexSearchResult, SearchOptions, SearchResult, resolve_case_matching};
-use crate::convert::{error, or_null, strings_from_js, to_js};
+use crate::convert::{error, or_null, remove_index_from_js, strings_from_js, to_js};
 
 /// A persistent fuzzy search index backed by Rust-side data.
 ///
@@ -183,9 +183,16 @@ impl FuzzyIndex {
 
     /// Remove the item at the given index.
     ///
-    /// Uses swap-remove for O(1) performance. Returns false if out of bounds.
-    pub fn remove(&mut self, index: u32) -> bool {
-        self.core.remove(index)
+    /// Uses swap-remove for O(1) performance: the last item moves into the
+    /// freed slot. Returns false, removing nothing, if `index` is out of
+    /// range (negative, or not less than `size`). Throws a `TypeError` if
+    /// `index` is not a number and a `RangeError` if it is not an integer
+    /// (`NaN`, `±Infinity` or a fraction), like `FuzzyObjectIndex.remove()`.
+    pub fn remove(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "number")] index: JsValue,
+    ) -> Result<bool, JsValue> {
+        Ok(remove_index_from_js(&index)?.is_some_and(|index| self.core.remove(index)))
     }
 
     /// Free the internal data. After calling this, the index is empty.

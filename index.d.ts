@@ -75,7 +75,11 @@ export declare class FuzzyIndex {
   /**
    * Remove the item at the given index.
    *
-   * Uses swap-remove for O(1) performance. Returns false if out of bounds.
+   * Uses swap-remove for O(1) performance: the last item moves into the
+   * freed slot. Returns false, removing nothing, if `index` is out of
+   * range (negative, or not less than `size`). Throws a `TypeError` if
+   * `index` is not a number and a `RangeError` if it is not an integer
+   * (`NaN`, `±Infinity` or a fraction), like `FuzzyObjectIndex.remove()`.
    */
   remove(index: number): boolean
   /**
@@ -178,7 +182,11 @@ export declare class KeyedFuzzyIndex {
   /**
    * Remove the item at the given index.
    *
-   * Uses swap-remove for O(1) performance. Returns false if out of bounds.
+   * Uses swap-remove for O(1) performance: the last item moves into the
+   * freed slot. Returns false, removing nothing, if `index` is out of
+   * range (negative, or not less than `size`). Throws a `TypeError` if
+   * `index` is not a number and a `RangeError` if it is not an integer
+   * (`NaN`, `±Infinity` or a fraction), like `FuzzyObjectIndex.remove()`.
    */
   remove(index: number): boolean
   /**
