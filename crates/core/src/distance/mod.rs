@@ -121,7 +121,7 @@ pub fn hamming(a: String, b: String) -> Option<u32> {
 /// Each pair must be an array of exactly two strings `[a, b]`; otherwise an
 /// `InvalidArg` error is thrown.
 /// Returns `null` for pairs with different lengths.
-#[napi]
+#[napi(ts_return_type = "Array<number | null>")]
 pub fn hamming_batch(pairs: Vec<Vec<String>>) -> napi::Result<Vec<Option<u32>>> {
     core_dist::hamming_batch(&pairs).map_err(invalid_arg)
 }
@@ -134,7 +134,7 @@ pub fn hamming_batch(pairs: Vec<Vec<String>>) -> napi::Result<Vec<Option<u32>>> 
 /// will also return `null` (enabling early termination for better performance).
 /// `maxDistance` must be a non-negative integer or `Infinity` (no limit); NaN,
 /// negative and fractional values throw an `InvalidArg` error.
-#[napi]
+#[napi(ts_return_type = "Array<number | null>")]
 pub fn hamming_many(
     reference: String,
     candidates: Vec<String>,
@@ -166,7 +166,7 @@ pub fn normalized_hamming(a: String, b: String) -> Option<f64> {
 /// Each pair must be an array of exactly two strings `[a, b]`; otherwise an
 /// `InvalidArg` error is thrown.
 /// Returns `null` for pairs with different lengths.
-#[napi]
+#[napi(ts_return_type = "Array<number | null>")]
 pub fn normalized_hamming_batch(pairs: Vec<Vec<String>>) -> napi::Result<Vec<Option<f64>>> {
     core_dist::normalized_hamming_batch(&pairs).map_err(invalid_arg)
 }
@@ -178,7 +178,7 @@ pub fn normalized_hamming_batch(pairs: Vec<Vec<String>>) -> napi::Result<Vec<Opt
 /// If `minSimilarity` is provided, candidates with similarity below the threshold
 /// will also return `null`; a score equal to it is kept. Throws an `InvalidArg`
 /// error if `minSimilarity` is `NaN`.
-#[napi]
+#[napi(ts_return_type = "Array<number | null>")]
 pub fn normalized_hamming_many(
     reference: String,
     candidates: Vec<String>,

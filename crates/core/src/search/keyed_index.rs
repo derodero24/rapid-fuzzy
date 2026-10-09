@@ -201,9 +201,15 @@ impl KeyedFuzzyIndex {
         self.serialize_impl().into()
     }
 
-    /// Reconstruct a KeyedFuzzyIndex from a previously serialized Buffer.
+    /// Reconstruct a KeyedFuzzyIndex from a previously serialized Buffer, or
+    /// any other Uint8Array holding the same bytes (such as the output of the
+    /// browser build's `serialize()`).
     #[napi(factory)]
-    pub fn deserialize(env: Env, data: Buffer) -> napi::Result<Self> {
+    pub fn deserialize(
+        env: Env,
+        // Read as a Buffer, which napi-rs accepts any Uint8Array for.
+        #[napi(ts_arg_type = "Uint8Array")] data: Buffer,
+    ) -> napi::Result<Self> {
         Self::deserialize_impl(&data)
             .map_err(napi::Error::from_reason)?
             .with_reported_memory(env)

@@ -105,12 +105,14 @@ export declare class FuzzyIndex {
    */
   serialize(): Buffer
   /**
-   * Reconstruct a FuzzyIndex from a previously serialized Buffer.
+   * Reconstruct a FuzzyIndex from a previously serialized Buffer, or any
+   * other Uint8Array holding the same bytes (such as the output of the
+   * browser build's `serialize()`).
    *
    * Pre-computes the search representation of the stored items,
    * so the returned index is immediately ready for searching.
    */
-  static deserialize(data: Buffer): FuzzyIndex
+  static deserialize(data: Uint8Array): FuzzyIndex
 }
 
 /**
@@ -205,8 +207,12 @@ export declare class KeyedFuzzyIndex {
    * reconstruct the index.
    */
   serialize(): Buffer
-  /** Reconstruct a KeyedFuzzyIndex from a previously serialized Buffer. */
-  static deserialize(data: Buffer): KeyedFuzzyIndex
+  /**
+   * Reconstruct a KeyedFuzzyIndex from a previously serialized Buffer, or
+   * any other Uint8Array holding the same bytes (such as the output of the
+   * browser build's `serialize()`).
+   */
+  static deserialize(data: Uint8Array): KeyedFuzzyIndex
 }
 
 /**
@@ -275,7 +281,7 @@ export declare function hamming(a: string, b: string): number | null
  * `InvalidArg` error is thrown.
  * Returns `null` for pairs with different lengths.
  */
-export declare function hammingBatch(pairs: ReadonlyArray<ReadonlyArray<string>>): Array<number | undefined | null>
+export declare function hammingBatch(pairs: ReadonlyArray<ReadonlyArray<string>>): Array<number | null>
 
 /**
  * Compute the Hamming distance from one reference string to many candidates.
@@ -287,7 +293,7 @@ export declare function hammingBatch(pairs: ReadonlyArray<ReadonlyArray<string>>
  * `maxDistance` must be a non-negative integer or `Infinity` (no limit); NaN,
  * negative and fractional values throw an `InvalidArg` error.
  */
-export declare function hammingMany(reference: string, candidates: ReadonlyArray<string>, maxDistance?: number | undefined | null): Array<number | undefined | null>
+export declare function hammingMany(reference: string, candidates: ReadonlyArray<string>, maxDistance?: number | undefined | null): Array<number | null>
 
 /**
  * Like `hammingMany`, but returns the distances in a `Uint32Array`.
@@ -661,7 +667,7 @@ export declare function normalizedHamming(a: string, b: string): number | null
  * `InvalidArg` error is thrown.
  * Returns `null` for pairs with different lengths.
  */
-export declare function normalizedHammingBatch(pairs: ReadonlyArray<ReadonlyArray<string>>): Array<number | undefined | null>
+export declare function normalizedHammingBatch(pairs: ReadonlyArray<ReadonlyArray<string>>): Array<number | null>
 
 /**
  * Compute the normalized Hamming similarity from one reference string to many candidates.
@@ -672,7 +678,7 @@ export declare function normalizedHammingBatch(pairs: ReadonlyArray<ReadonlyArra
  * will also return `null`; a score equal to it is kept. Throws an `InvalidArg`
  * error if `minSimilarity` is `NaN`.
  */
-export declare function normalizedHammingMany(reference: string, candidates: ReadonlyArray<string>, minSimilarity?: number | undefined | null): Array<number | undefined | null>
+export declare function normalizedHammingMany(reference: string, candidates: ReadonlyArray<string>, minSimilarity?: number | undefined | null): Array<number | null>
 
 /**
  * Like `normalizedHammingMany`, but returns the scores in a `Float64Array`.

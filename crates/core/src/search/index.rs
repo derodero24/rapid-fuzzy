@@ -297,12 +297,18 @@ impl FuzzyIndex {
         self.serialize_impl().into()
     }
 
-    /// Reconstruct a FuzzyIndex from a previously serialized Buffer.
+    /// Reconstruct a FuzzyIndex from a previously serialized Buffer, or any
+    /// other Uint8Array holding the same bytes (such as the output of the
+    /// browser build's `serialize()`).
     ///
     /// Pre-computes the search representation of the stored items,
     /// so the returned index is immediately ready for searching.
     #[napi(factory)]
-    pub fn deserialize(env: Env, data: Buffer) -> napi::Result<Self> {
+    pub fn deserialize(
+        env: Env,
+        // Read as a Buffer, which napi-rs accepts any Uint8Array for.
+        #[napi(ts_arg_type = "Uint8Array")] data: Buffer,
+    ) -> napi::Result<Self> {
         Self::deserialize_impl(&data)
             .map_err(napi::Error::from_reason)?
             .with_reported_memory(env)

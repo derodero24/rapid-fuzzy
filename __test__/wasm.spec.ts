@@ -618,6 +618,15 @@ describe.skipIf(!wasmAvailable)('wasm', () => {
       }
     });
 
+    it('deserialize() accepts a plain Uint8Array like native', () => {
+      const bytes = new Uint8Array(new wasm.FuzzyIndex(['apple', 'banana']).serialize());
+      expect(wasm.FuzzyIndex.deserialize(bytes).size).toBe(2);
+      const keyed = new wasm.KeyedFuzzyIndex([['a', 'b']], [1]);
+      expect(wasm.KeyedFuzzyIndex.deserialize(new Uint8Array(keyed.serialize())).size).toBe(2);
+      // Hamming results hold numbers and null only, as declared.
+      expect(wasm.hammingMany('abc', ['abd', 'ab'])).toEqual([1, null]);
+    });
+
     it('rejects a NaN minScore like native', () => {
       const items = ['a', 'ab'];
       const message = 'minScore must be a number, got NaN';
