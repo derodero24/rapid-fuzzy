@@ -466,6 +466,10 @@ jobs:
         run: pnpm exec vitest run
         env:
           RAPID_FUZZY_REQUIRE_WASM_BINDGEN: '1'
+      # Runs the Cloudflare Workers entry (workerd.mjs) and the example worker
+      # in Node.js, loading the .wasm?module import as Wrangler does.
+      - name: Test Cloudflare Workers entry
+        run: pnpm run test:workerd
       - name: Upload wasm-bindgen artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
