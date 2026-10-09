@@ -1,14 +1,25 @@
-// Competitor comparison benchmarks (local use only, excluded from CodSpeed CI)
+// Competitor comparison benchmarks (local use only, not run in CI)
 import uFuzzy from '@leeoniya/ufuzzy';
 import { closest as fastestLevenshteinClosest } from 'fastest-levenshtein';
 import { Index as FlexSearchIndex } from 'flexsearch';
 import Fuse from 'fuse.js';
 import fuzzysort from 'fuzzysort';
 import MiniSearch from 'minisearch';
-import { bench, describe } from 'vitest';
+import { test, vi } from 'vitest';
 
 import { closest, FuzzyIndex, search } from '../index.js';
-import {
+import * as fixtures from './bench-fixtures.js';
+
+// Vitest gives each benchmark test 60 s. The type-ahead group takes about 30 s
+// on a shared 4-CPU VM (tinybench takes at least 64 samples, and fuse.js runs
+// the 12 searches 4 times a second), so leave room for slower machines.
+vi.setConfig({ testTimeout: 300_000 });
+
+// Vitest's module runner turns imported bindings into getters: copy the
+// fixtures into local constants so the measured functions don't call a getter
+// on every iteration.
+const {
+  cycle,
   hugeItems,
   largeClosestQuery,
   largeItems,
@@ -19,7 +30,7 @@ import {
   smallItems,
   typeAheadQueries,
   xlargeItems,
-} from './bench-fixtures.js';
+} = fixtures;
 
 // Every query matches items in rapid-fuzzy: a query that matches nothing
 // measures an early exit, not a search. Result counts differ between libraries
@@ -43,19 +54,19 @@ const fuzzysortHugePrepared = hugeItems.map((item) => fuzzysort.prepare(item));
 const uf = new uFuzzy();
 
 // FlexSearch
-const flexSmall = new FlexSearchIndex();
-for (let i = 0; i < smallItems.length; i++) flexSmall.add(i, smallItems[i]);
-const flexMedium = new FlexSearchIndex();
-for (let i = 0; i < mediumItems.length; i++) flexMedium.add(i, mediumItems[i]);
-const flexLarge = new FlexSearchIndex();
-for (let i = 0; i < largeItems.length; i++) flexLarge.add(i, largeItems[i]);
-const flexXlarge = new FlexSearchIndex();
-for (let i = 0; i < xlargeItems.length; i++) flexXlarge.add(i, xlargeItems[i]);
-const flexHuge = new FlexSearchIndex();
-for (let i = 0; i < hugeItems.length; i++) flexHuge.add(i, hugeItems[i]);
+function createFlexSearch(items: readonly string[]) {
+  const idx = new FlexSearchIndex();
+  for (const [i, item] of items.entries()) idx.add(i, item);
+  return idx;
+}
+const flexSmall = createFlexSearch(smallItems);
+const flexMedium = createFlexSearch(mediumItems);
+const flexLarge = createFlexSearch(largeItems);
+const flexXlarge = createFlexSearch(xlargeItems);
+const flexHuge = createFlexSearch(hugeItems);
 
 // MiniSearch
-function createMiniSearch(items: string[]) {
+function createMiniSearch(items: readonly string[]) {
   const ms = new MiniSearch({ fields: ['text'], storeFields: ['text'] });
   ms.addAll(items.map((text, id) => ({ id, text })));
   return ms;
@@ -77,267 +88,240 @@ const fuzzyIndexLargeTypeAhead = new FuzzyIndex(largeItems);
 const fuzzyIndexClosestMedium = new FuzzyIndex(mediumItems);
 const fuzzyIndexClosestLarge = new FuzzyIndex(largeItems);
 
-describe('Fuzzy Search — Small 20 (vs competitors)', () => {
-  bench('rapid-fuzzy', () => {
-    search('aple', smallItems, 5);
-  });
-
-  bench('rapid-fuzzy (FuzzyIndex)', () => {
-    fuzzyIndexSmall.search('aple', { maxResults: 5 });
-  });
-
-  bench('fuse.js', () => {
-    fuseSmall.search('aple', { limit: 5 });
-  });
-
-  bench('fuzzysort', () => {
-    fuzzysort.go('aple', smallItems, { limit: 5, threshold: 0 });
-  });
-
-  bench('uFuzzy', () => {
-    uf.search(smallItems, 'aple');
-  });
-
-  bench('FlexSearch', () => {
-    flexSmall.search('aple', { limit: 5 });
-  });
-
-  bench('MiniSearch', () => {
-    miniSmall.search('aple', { fuzzy: 0.2, prefix: true });
-  });
+test('Fuzzy Search — Small 20 (vs competitors)', async ({ bench }) => {
+  await bench.compare(
+    bench('rapid-fuzzy', () => {
+      search('aple', smallItems, 5);
+    }),
+    bench('rapid-fuzzy (FuzzyIndex)', () => {
+      fuzzyIndexSmall.search('aple', { maxResults: 5 });
+    }),
+    bench('fuse.js', () => {
+      fuseSmall.search('aple', { limit: 5 });
+    }),
+    bench('fuzzysort', () => {
+      fuzzysort.go('aple', smallItems, { limit: 5, threshold: 0 });
+    }),
+    bench('uFuzzy', () => {
+      uf.search(smallItems, 'aple');
+    }),
+    bench('FlexSearch', () => {
+      flexSmall.search('aple', { limit: 5 });
+    }),
+    bench('MiniSearch', () => {
+      miniSmall.search('aple', { fuzzy: 0.2, prefix: true });
+    }),
+  );
 });
 
-describe('Fuzzy Search — Medium 1K (vs competitors)', () => {
-  bench('rapid-fuzzy', () => {
-    search('utils config', mediumItems, 10);
-  });
-
-  bench('rapid-fuzzy (FuzzyIndex)', () => {
-    fuzzyIndexMedium.search('utils config', { maxResults: 10 });
-  });
-
-  bench('fuse.js', () => {
-    fuseMedium.search('utils config', { limit: 10 });
-  });
-
-  bench('fuzzysort', () => {
-    fuzzysort.go('utils config', fuzzysortMediumPrepared, { limit: 10, threshold: 0 });
-  });
-
-  bench('uFuzzy', () => {
-    uf.search(mediumItems, 'utils config');
-  });
-
-  bench('FlexSearch', () => {
-    flexMedium.search('utils config', { limit: 10 });
-  });
-
-  bench('MiniSearch', () => {
-    miniMedium.search('utils config', { fuzzy: 0.2, prefix: true });
-  });
+test('Fuzzy Search — Medium 1K (vs competitors)', async ({ bench }) => {
+  await bench.compare(
+    bench('rapid-fuzzy', () => {
+      search('utils config', mediumItems, 10);
+    }),
+    bench('rapid-fuzzy (FuzzyIndex)', () => {
+      fuzzyIndexMedium.search('utils config', { maxResults: 10 });
+    }),
+    bench('fuse.js', () => {
+      fuseMedium.search('utils config', { limit: 10 });
+    }),
+    bench('fuzzysort', () => {
+      fuzzysort.go('utils config', fuzzysortMediumPrepared, { limit: 10, threshold: 0 });
+    }),
+    bench('uFuzzy', () => {
+      uf.search(mediumItems, 'utils config');
+    }),
+    bench('FlexSearch', () => {
+      flexMedium.search('utils config', { limit: 10 });
+    }),
+    bench('MiniSearch', () => {
+      miniMedium.search('utils config', { fuzzy: 0.2, prefix: true });
+    }),
+  );
 });
 
-describe('Fuzzy Search — Large 10K (vs competitors)', () => {
-  bench('rapid-fuzzy', () => {
-    search(largeQuery, largeItems, 10);
-  });
-
-  bench('rapid-fuzzy (FuzzyIndex)', () => {
-    fuzzyIndexLarge.search(largeQuery, { maxResults: 10 });
-  });
-
-  bench('fuse.js', () => {
-    fuseLarge.search(largeQuery, { limit: 10 });
-  });
-
-  bench('fuzzysort', () => {
-    fuzzysort.go(largeQuery, fuzzysortLargePrepared, { limit: 10, threshold: 0 });
-  });
-
-  bench('uFuzzy', () => {
-    uf.search(largeItems, largeQuery);
-  });
-
-  bench('FlexSearch', () => {
-    flexLarge.search(largeQuery, { limit: 10 });
-  });
-
-  bench('MiniSearch', () => {
-    miniLarge.search(largeQuery, { fuzzy: 0.2, prefix: true });
-  });
+test('Fuzzy Search — Large 10K (vs competitors)', async ({ bench }) => {
+  await bench.compare(
+    bench('rapid-fuzzy', () => {
+      search(largeQuery, largeItems, 10);
+    }),
+    bench('rapid-fuzzy (FuzzyIndex)', () => {
+      fuzzyIndexLarge.search(largeQuery, { maxResults: 10 });
+    }),
+    bench('fuse.js', () => {
+      fuseLarge.search(largeQuery, { limit: 10 });
+    }),
+    bench('fuzzysort', () => {
+      fuzzysort.go(largeQuery, fuzzysortLargePrepared, { limit: 10, threshold: 0 });
+    }),
+    bench('uFuzzy', () => {
+      uf.search(largeItems, largeQuery);
+    }),
+    bench('FlexSearch', () => {
+      flexLarge.search(largeQuery, { limit: 10 });
+    }),
+    bench('MiniSearch', () => {
+      miniLarge.search(largeQuery, { fuzzy: 0.2, prefix: true });
+    }),
+  );
 });
 
-describe('Fuzzy Search — Large 10K, rotating queries (vs competitors)', () => {
-  const next = (() => {
-    const counters = new Map<string, number>();
-    return (name: string): string => {
-      const n = counters.get(name) ?? 0;
-      counters.set(name, n + 1);
-      return rotatingQueries[n % rotatingQueries.length];
-    };
-  })();
-
-  bench('rapid-fuzzy', () => {
-    search(next('rapid-fuzzy'), largeItems, 10);
-  });
-
-  bench('rapid-fuzzy (FuzzyIndex)', () => {
-    fuzzyIndexLargeRotating.search(next('FuzzyIndex'), { maxResults: 10 });
-  });
-
-  bench('fuse.js', () => {
-    fuseLarge.search(next('fuse.js'), { limit: 10 });
-  });
-
-  bench('fuzzysort', () => {
-    fuzzysort.go(next('fuzzysort'), fuzzysortLargePrepared, { limit: 10, threshold: 0 });
-  });
-
-  bench('uFuzzy', () => {
-    uf.search(largeItems, next('uFuzzy'));
-  });
+test('Fuzzy Search — Large 10K, rotating queries (vs competitors)', async ({ bench }) => {
+  // One cycle per benchmark, so each one searches the same sequence of queries.
+  const nextQuery = {
+    rapidFuzzy: cycle(rotatingQueries),
+    fuzzyIndex: cycle(rotatingQueries),
+    fuse: cycle(rotatingQueries),
+    fuzzysort: cycle(rotatingQueries),
+    uFuzzy: cycle(rotatingQueries),
+  };
+  await bench.compare(
+    bench('rapid-fuzzy', () => {
+      search(nextQuery.rapidFuzzy(), largeItems, 10);
+    }),
+    bench('rapid-fuzzy (FuzzyIndex)', () => {
+      fuzzyIndexLargeRotating.search(nextQuery.fuzzyIndex(), { maxResults: 10 });
+    }),
+    bench('fuse.js', () => {
+      fuseLarge.search(nextQuery.fuse(), { limit: 10 });
+    }),
+    bench('fuzzysort', () => {
+      fuzzysort.go(nextQuery.fuzzysort(), fuzzysortLargePrepared, { limit: 10, threshold: 0 });
+    }),
+    bench('uFuzzy', () => {
+      uf.search(largeItems, nextQuery.uFuzzy());
+    }),
+  );
 });
 
-describe('Fuzzy Search — Large 10K, type-ahead (vs competitors)', () => {
-  bench('rapid-fuzzy', () => {
-    for (const query of typeAheadQueries) search(query, largeItems, 10);
-  });
-
-  bench('rapid-fuzzy (FuzzyIndex)', () => {
-    for (const query of typeAheadQueries) {
-      fuzzyIndexLargeTypeAhead.search(query, { maxResults: 10 });
-    }
-  });
-
-  bench('fuse.js', () => {
-    for (const query of typeAheadQueries) fuseLarge.search(query, { limit: 10 });
-  });
-
-  bench('fuzzysort', () => {
-    for (const query of typeAheadQueries) {
-      fuzzysort.go(query, fuzzysortLargePrepared, { limit: 10, threshold: 0 });
-    }
-  });
-
-  bench('uFuzzy', () => {
-    for (const query of typeAheadQueries) uf.search(largeItems, query);
-  });
+test('Fuzzy Search — Large 10K, type-ahead (vs competitors)', async ({ bench }) => {
+  await bench.compare(
+    bench('rapid-fuzzy', () => {
+      for (const query of typeAheadQueries) search(query, largeItems, 10);
+    }),
+    bench('rapid-fuzzy (FuzzyIndex)', () => {
+      for (const query of typeAheadQueries) {
+        fuzzyIndexLargeTypeAhead.search(query, { maxResults: 10 });
+      }
+    }),
+    bench('fuse.js', () => {
+      for (const query of typeAheadQueries) fuseLarge.search(query, { limit: 10 });
+    }),
+    bench('fuzzysort', () => {
+      for (const query of typeAheadQueries) {
+        fuzzysort.go(query, fuzzysortLargePrepared, { limit: 10, threshold: 0 });
+      }
+    }),
+    bench('uFuzzy', () => {
+      for (const query of typeAheadQueries) uf.search(largeItems, query);
+    }),
+  );
 });
 
-describe('Fuzzy Search — Extra Large 50K (vs competitors)', () => {
-  bench('rapid-fuzzy (FuzzyIndex)', () => {
-    fuzzyIndexXlarge.search(largeQuery, { maxResults: 10 });
-  });
-
-  bench('fuzzysort', () => {
-    fuzzysort.go(largeQuery, fuzzysortXlargePrepared, { limit: 10, threshold: 0 });
-  });
-
-  bench('uFuzzy', () => {
-    uf.search(xlargeItems, largeQuery);
-  });
-
-  bench('FlexSearch', () => {
-    flexXlarge.search(largeQuery, { limit: 10 });
-  });
-
-  bench('MiniSearch', () => {
-    miniXlarge.search(largeQuery, { fuzzy: 0.2, prefix: true });
-  });
+test('Fuzzy Search — Extra Large 50K (vs competitors)', async ({ bench }) => {
+  await bench.compare(
+    bench('rapid-fuzzy (FuzzyIndex)', () => {
+      fuzzyIndexXlarge.search(largeQuery, { maxResults: 10 });
+    }),
+    bench('fuzzysort', () => {
+      fuzzysort.go(largeQuery, fuzzysortXlargePrepared, { limit: 10, threshold: 0 });
+    }),
+    bench('uFuzzy', () => {
+      uf.search(xlargeItems, largeQuery);
+    }),
+    bench('FlexSearch', () => {
+      flexXlarge.search(largeQuery, { limit: 10 });
+    }),
+    bench('MiniSearch', () => {
+      miniXlarge.search(largeQuery, { fuzzy: 0.2, prefix: true });
+    }),
+  );
 });
 
-describe('Fuzzy Search — Huge 100K (vs competitors)', () => {
-  bench('rapid-fuzzy (FuzzyIndex)', () => {
-    fuzzyIndexHuge.search(largeQuery, { maxResults: 10 });
-  });
-
-  bench('fuzzysort', () => {
-    fuzzysort.go(largeQuery, fuzzysortHugePrepared, { limit: 10, threshold: 0 });
-  });
-
-  bench('uFuzzy', () => {
-    uf.search(hugeItems, largeQuery);
-  });
-
-  bench('FlexSearch', () => {
-    flexHuge.search(largeQuery, { limit: 10 });
-  });
-
-  bench('MiniSearch', () => {
-    miniHuge.search(largeQuery, { fuzzy: 0.2, prefix: true });
-  });
+test('Fuzzy Search — Huge 100K (vs competitors)', async ({ bench }) => {
+  await bench.compare(
+    bench('rapid-fuzzy (FuzzyIndex)', () => {
+      fuzzyIndexHuge.search(largeQuery, { maxResults: 10 });
+    }),
+    bench('fuzzysort', () => {
+      fuzzysort.go(largeQuery, fuzzysortHugePrepared, { limit: 10, threshold: 0 });
+    }),
+    bench('uFuzzy', () => {
+      uf.search(hugeItems, largeQuery);
+    }),
+    bench('FlexSearch', () => {
+      flexHuge.search(largeQuery, { limit: 10 });
+    }),
+    bench('MiniSearch', () => {
+      miniHuge.search(largeQuery, { fuzzy: 0.2, prefix: true });
+    }),
+  );
 });
 
-describe('Index Construction — Medium 1K (vs competitors)', () => {
-  bench('rapid-fuzzy (FuzzyIndex)', () => {
-    new FuzzyIndex(mediumItems);
-  });
-
-  bench('fuse.js', () => {
-    new Fuse(mediumItems, { threshold: 0.4 });
-  });
-
-  bench('fuzzysort (prepare)', () => {
-    mediumItems.map((item) => fuzzysort.prepare(item));
-  });
-
-  bench('FlexSearch', () => {
-    const idx = new FlexSearchIndex();
-    for (let i = 0; i < mediumItems.length; i++) idx.add(i, mediumItems[i]);
-  });
-
-  bench('MiniSearch', () => {
-    createMiniSearch(mediumItems);
-  });
+test('Index Construction — Medium 1K (vs competitors)', async ({ bench }) => {
+  await bench.compare(
+    bench('rapid-fuzzy (FuzzyIndex)', () => {
+      new FuzzyIndex(mediumItems);
+    }),
+    bench('fuse.js', () => {
+      new Fuse(mediumItems, { threshold: 0.4 });
+    }),
+    bench('fuzzysort (prepare)', () => {
+      mediumItems.map((item) => fuzzysort.prepare(item));
+    }),
+    bench('FlexSearch', () => {
+      createFlexSearch(mediumItems);
+    }),
+    bench('MiniSearch', () => {
+      createMiniSearch(mediumItems);
+    }),
+  );
 });
 
-describe('Index Construction — Large 10K (vs competitors)', () => {
-  bench('rapid-fuzzy (FuzzyIndex)', () => {
-    new FuzzyIndex(largeItems);
-  });
-
-  bench('fuse.js', () => {
-    new Fuse(largeItems, { threshold: 0.4 });
-  });
-
-  bench('fuzzysort (prepare)', () => {
-    largeItems.map((item) => fuzzysort.prepare(item));
-  });
-
-  bench('FlexSearch', () => {
-    const idx = new FlexSearchIndex();
-    for (let i = 0; i < largeItems.length; i++) idx.add(i, largeItems[i]);
-  });
-
-  bench('MiniSearch', () => {
-    createMiniSearch(largeItems);
-  });
+test('Index Construction — Large 10K (vs competitors)', async ({ bench }) => {
+  await bench.compare(
+    bench('rapid-fuzzy (FuzzyIndex)', () => {
+      new FuzzyIndex(largeItems);
+    }),
+    bench('fuse.js', () => {
+      new Fuse(largeItems, { threshold: 0.4 });
+    }),
+    bench('fuzzysort (prepare)', () => {
+      largeItems.map((item) => fuzzysort.prepare(item));
+    }),
+    bench('FlexSearch', () => {
+      createFlexSearch(largeItems);
+    }),
+    bench('MiniSearch', () => {
+      createMiniSearch(largeItems);
+    }),
+  );
 });
 
-describe('Closest Match — Medium 1K (vs competitors)', () => {
-  bench('rapid-fuzzy', () => {
-    closest(mediumClosestQuery, mediumItems);
-  });
-
-  bench('rapid-fuzzy (FuzzyIndex)', () => {
-    fuzzyIndexClosestMedium.closest(mediumClosestQuery);
-  });
-
-  bench('fastest-levenshtein', () => {
-    fastestLevenshteinClosest(mediumClosestQuery, mediumItems);
-  });
+test('Closest Match — Medium 1K (vs competitors)', async ({ bench }) => {
+  await bench.compare(
+    bench('rapid-fuzzy', () => {
+      closest(mediumClosestQuery, mediumItems);
+    }),
+    bench('rapid-fuzzy (FuzzyIndex)', () => {
+      fuzzyIndexClosestMedium.closest(mediumClosestQuery);
+    }),
+    bench('fastest-levenshtein', () => {
+      fastestLevenshteinClosest(mediumClosestQuery, mediumItems);
+    }),
+  );
 });
 
-describe('Closest Match — Large 10K (vs competitors)', () => {
-  bench('rapid-fuzzy', () => {
-    closest(largeClosestQuery, largeItems);
-  });
-
-  bench('rapid-fuzzy (FuzzyIndex)', () => {
-    fuzzyIndexClosestLarge.closest(largeClosestQuery);
-  });
-
-  bench('fastest-levenshtein', () => {
-    fastestLevenshteinClosest(largeClosestQuery, largeItems);
-  });
+test('Closest Match — Large 10K (vs competitors)', async ({ bench }) => {
+  await bench.compare(
+    bench('rapid-fuzzy', () => {
+      closest(largeClosestQuery, largeItems);
+    }),
+    bench('rapid-fuzzy (FuzzyIndex)', () => {
+      fuzzyIndexClosestLarge.closest(largeClosestQuery);
+    }),
+    bench('fastest-levenshtein', () => {
+      fastestLevenshteinClosest(largeClosestQuery, largeItems);
+    }),
+  );
 });

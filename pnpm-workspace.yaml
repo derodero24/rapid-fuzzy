@@ -10,13 +10,6 @@ allowBuilds:
 # fast-uri 4 and cosmiconfig (js-yaml ^4) on js-yaml 5. CI runs
 # `pnpm audit --audit-level=high` over all dependencies.
 overrides:
-  axios: ^1.20.0
   fast-uri: ^3.1.2
-  form-data: ^4.0.6
   js-yaml@4: ^4.2.0
   js-yaml@5: ^5.4.1
-
-# @codspeed/vitest-plugin has not declared vite 8 support yet.
-peerDependencyRules:
-  allowedVersions:
-    '@codspeed/vitest-plugin>vite': '8'
