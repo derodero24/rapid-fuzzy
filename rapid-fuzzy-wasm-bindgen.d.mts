@@ -116,19 +116,19 @@ export interface KeyClosestOptions {
      * Minimum combined score (0.0-1.0, see `scoreMode`): `closest()`
      * returns null when the best match scores below it.
      */
-    minScore?: number;
+    minScore?: number | undefined;
     /**
      * How the per-key scores of an item are combined into its score:
      * `"weighted"` (default), `"matched"` or `"max"`, as in
      * `KeySearchOptions.scoreMode`. Any other value throws a `TypeError`.
      */
-    scoreMode?: KeyScoreMode;
+    scoreMode?: KeyScoreMode | undefined;
     /**
      * How the query is matched against the keys of an item: `"perKey"`
      * (default) or `"crossKey"`, as in `KeySearchOptions.matchMode`. Any
      * other value throws a `TypeError`.
      */
-    matchMode?: KeyMatchMode;
+    matchMode?: KeyMatchMode | undefined;
 }
 
 /**
@@ -142,30 +142,30 @@ export interface KeySearchOptions {
      * Maximum number of results to return: a non-negative integer, or
      * `Infinity` for no limit. NaN, negative and fractional values throw.
      */
-    maxResults?: number;
+    maxResults?: number | undefined;
     /**
      * Minimum combined score (0.0-1.0, see `scoreMode`) to include in
      * results.
      */
-    minScore?: number;
+    minScore?: number | undefined;
     /**
      * Accepted for compatibility with `SearchOptions`, but has no effect:
      * multi-key results have no match positions.
      */
-    includePositions?: boolean;
+    includePositions?: boolean | undefined;
     /**
      * If true, matching is case-sensitive. When false or omitted, matching
      * is smart case: case-insensitive while the query is all lower-case, and
      * case-sensitive once it contains an upper-case letter. `false` does not
      * force case-insensitive matching; lower-case the query for that.
      */
-    isCaseSensitive?: boolean;
+    isCaseSensitive?: boolean | undefined;
     /**
      * If true, return all items when the query has no search term: empty,
      * whitespace-only, or only query syntax such as `^` or `!`. Every item
      * then scores 1, in every `scoreMode`. Default is false.
      */
-    returnAllOnEmpty?: boolean;
+    returnAllOnEmpty?: boolean | undefined;
     /**
      * How the per-key scores (`keyScores`) of an item are combined into its
      * `score`. Only keys with a positive weight take part:
@@ -191,7 +191,7 @@ export interface KeySearchOptions {
      * key in proportion to the share of the query it matches, and `"max"`
      * scores each term by the key it matches best (see `matchMode`).
      */
-    scoreMode?: KeyScoreMode;
+    scoreMode?: KeyScoreMode | undefined;
     /**
      * How the query is matched against the keys of an item:
      *
@@ -225,7 +225,7 @@ export interface KeySearchOptions {
      * without exclusions, both modes return the same results. Any other
      * value throws a `TypeError`.
      */
-    matchMode?: KeyMatchMode;
+    matchMode?: KeyMatchMode | undefined;
 }
 
 /**
@@ -236,28 +236,28 @@ export interface SearchOptions {
      * Maximum number of results to return: a non-negative integer, or
      * `Infinity` for no limit. NaN, negative and fractional values throw.
      */
-    maxResults?: number;
+    maxResults?: number | undefined;
     /**
      * Minimum normalized score (0.0-1.0) to include in results.
      */
-    minScore?: number;
+    minScore?: number | undefined;
     /**
      * If true, include matched character positions in results.
      */
-    includePositions?: boolean;
+    includePositions?: boolean | undefined;
     /**
      * If true, matching is case-sensitive. When false or omitted, matching
      * is smart case: case-insensitive while the query is all lower-case, and
      * case-sensitive once it contains an upper-case letter. `false` does not
      * force case-insensitive matching; lower-case the query for that.
      */
-    isCaseSensitive?: boolean;
+    isCaseSensitive?: boolean | undefined;
     /**
      * If true, return all items when the query is empty (or whitespace-only).
      * Useful for filter-as-you-type UIs where the full list should appear
      * before the user starts typing. Default is false.
      */
-    returnAllOnEmpty?: boolean;
+    returnAllOnEmpty?: boolean | undefined;
 }
 
 

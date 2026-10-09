@@ -26,6 +26,7 @@ const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
+const { inputFieldsAcceptUndefined } = require('./declarations.js');
 
 const ROOT = path.resolve(__dirname, '..');
 const CRATE_DIR = path.join(ROOT, 'crates', 'wasm');
@@ -57,15 +58,20 @@ function rewriteGlue(source) {
 }
 
 /**
- * Let array parameters accept readonly arrays, as the Node.js declarations do
- * (scripts/patch-binding.js): `string[]` parameters become
- * `ReadonlyArray<string>` and `string[][]` ones
- * `ReadonlyArray<ReadonlyArray<string>>`. The bindings never modify their
- * arguments. Return types are left as generated.
+ * Refine the declarations like scripts/patch-binding.js refines the Node.js
+ * ones:
+ *
+ * - Array parameters accept readonly arrays: `string[]` parameters become
+ *   `ReadonlyArray<string>` and `string[][]` ones
+ *   `ReadonlyArray<ReadonlyArray<string>>`. The bindings never modify their
+ *   arguments. Return types are left as generated.
+ * - The optional fields of the options objects accept an explicit `undefined`
+ *   (`field?: T | undefined`, see scripts/declarations.js): tsify declares an
+ *   optional `Option<T>` field as `field?: T`.
  */
 function rewriteDeclarations(dts) {
   const declaration = /^(\s*(?:export function \w+|(?:static )?\w+|constructor))\(/;
-  const rewritten = dts
+  const arraysRewritten = dts
     .split('\n')
     .map((line) => {
       const match = declaration.exec(line);
@@ -86,11 +92,15 @@ function rewriteDeclarations(dts) {
       return line;
     })
     .join('\n');
+  const rewritten = inputFieldsAcceptUndefined(arraysRewritten, `${OUT_NAME}.d.mts`);
   // Fail loudly if wasm-bindgen changes its output format and the rewrite stops applying.
   for (const expected of [
     'export function levenshteinBatch(pairs: ReadonlyArray<ReadonlyArray<string>>)',
     'export function search(query: string, items: ReadonlyArray<string>,',
     '    constructor(items: ReadonlyArray<string>);',
+    '    maxResults?: number | undefined;',
+    '    scoreMode?: KeyScoreMode | undefined;',
+    '    matchMode?: KeyMatchMode | undefined;',
   ]) {
     if (!rewritten.includes(expected)) {
       throw new Error(`build-wasm-bindgen: expected \`${expected}\` in the declarations`);

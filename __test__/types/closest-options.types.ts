@@ -57,11 +57,8 @@ export type ClosestOptionsChecks = [
   Expect<Equal<ReturnType<KeyedFuzzyIndex['closest']>, number | null>>,
   Expect<Equal<ReturnType<FuzzyObjectIndex<User>['closest']>, User | null>>,
   // The wasm-bindgen glue and the browser entries declare the same API.
-  Expect<Equal<keyof Wasm.KeyClosestOptions, keyof KeyClosestOptions>>,
-  Expect<Equal<NonNullable<Wasm.KeyClosestOptions['minScore']>, number>>,
-  Expect<Equal<NonNullable<Wasm.KeyClosestOptions['scoreMode']>, KeyScoreMode>>,
-  Expect<Equal<NonNullable<Wasm.KeyClosestOptions['matchMode']>, KeyMatchMode>>,
-  Expect<Equal<Browser.KeyClosestOptions, Wasm.KeyClosestOptions>>,
+  Expect<Equal<Wasm.KeyClosestOptions, KeyClosestOptions>>,
+  Expect<Equal<Browser.KeyClosestOptions, KeyClosestOptions>>,
   Expect<
     Equal<
       NonNullable<Parameters<Wasm.KeyedFuzzyIndex['closest']>[1]>,
@@ -121,6 +118,7 @@ export const keyedResults: Array<number | null> = [
   wasmKeyed.closest('a', 0.5),
   wasmKeyed.closest('a', {}),
   wasmKeyed.closest('a', { minScore: 0.5, scoreMode: 'max', matchMode: 'crossKey' }),
+  wasmKeyed.closest('a', { minScore: undefined, scoreMode: undefined, matchMode: undefined }),
 ];
 
 export const objectResults: Array<User | null> = [

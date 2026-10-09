@@ -121,17 +121,30 @@ function expectModeRejected(c: BadModeCase): void {
   }
 }
 
-/** `closest()` options with only the given fields set (the wasm declarations reject explicit undefined). */
-function keyClosestOptions(
-  scoreMode: WasmBindgen.KeyScoreMode | undefined,
-  matchMode: WasmBindgen.KeyMatchMode | undefined,
-  minScore: number | undefined,
-): WasmBindgen.KeyClosestOptions {
-  const options: WasmBindgen.KeyClosestOptions = {};
-  if (scoreMode !== undefined) options.scoreMode = scoreMode;
-  if (matchMode !== undefined) options.matchMode = matchMode;
-  if (minScore !== undefined) options.minScore = minScore;
-  return options;
+/**
+ * The fields of `export interface name` in the wasm-bindgen declarations, as
+ * `[field, type]` pairs (`field` keeps its `?`).
+ */
+function declaredFields(name: string): Array<[field: string, type: string]> {
+  const code = readFileSync(DTS_PATH, 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/.*$/gm, '');
+  const body = new RegExp(`export interface ${name} \\{([^}]*)\\}`).exec(code)?.[1] ?? '';
+  return body
+    .split(';')
+    .map((field) => field.trim())
+    .filter(Boolean)
+    .map((field): [string, string] => {
+      const colon = field.indexOf(':');
+      return [field.slice(0, colon), field.slice(colon + 1).trim()];
+    });
+}
+
+/** The options object `name` with every declared field set to undefined. */
+function unsetOptions(name: string): Record<string, undefined> {
+  return Object.fromEntries(
+    declaredFields(name).map(([field]) => [field.replace('?', ''), undefined]),
+  );
 }
 
 describe('wasm-bindgen TypeScript declarations', () => {
@@ -154,6 +167,21 @@ describe('wasm-bindgen TypeScript declarations', () => {
     expect(fields.length).toBe(5);
     for (const field of fields) {
       expect(field).toMatch(/^\w+\?: /);
+    }
+  });
+
+  it('lets every field of the options interfaces be set to undefined, like index.d.ts', () => {
+    for (const name of ['SearchOptions', 'KeySearchOptions', 'KeyClosestOptions']) {
+      const fields = declaredFields(name);
+      expect(fields.length, name).toBeGreaterThan(2);
+      for (const [field, type] of fields) {
+        expect(field, name).toMatch(/^\w+\?$/);
+        expect(type, `${name}.${field}`).toMatch(/ \| undefined$/);
+      }
+    }
+    // Result fields are omitted when unset, never undefined.
+    for (const name of ['SearchResult', 'IndexSearchResult']) {
+      expect(declaredFields(name), name).toContainEqual(['matchType?', 'MatchType']);
     }
   });
 
@@ -180,6 +208,46 @@ describe.skipIf(!wasmAvailable)('wasm-bindgen runtime', () => {
       expect(index.search('a', 2)).toHaveLength(2);
       expect(index.searchIndices('a', 2)).toHaveLength(2);
       index.free();
+    });
+
+    it('treats an options field set to undefined as unset, as declared', () => {
+      const searchUnset = unsetOptions('SearchOptions');
+      const keyUnset = unsetOptions('KeySearchOptions');
+      const closestUnset = unsetOptions('KeyClosestOptions');
+      expect(Object.keys(searchUnset)).toHaveLength(5);
+      expect(Object.keys(keyUnset)).toHaveLength(7);
+      expect(Object.keys(closestUnset)).toEqual(['minScore', 'scoreMode', 'matchMode']);
+      const keyTexts = [FRUITS, FRUITS.map((f) => f.toUpperCase())];
+      const index = new wasm.FuzzyIndex(FRUITS);
+      const keyed = new wasm.KeyedFuzzyIndex(keyTexts, [2, 1]);
+      const n = new napi.KeyedFuzzyIndex(keyTexts, [2, 1]);
+      for (const query of ['a', 'ap', 'zzz', '']) {
+        expect(callUnchecked(wasm.search, query, FRUITS, searchUnset)).toEqual(
+          wasm.search(query, FRUITS),
+        );
+        expect(callUnchecked(index.search.bind(index), query, searchUnset)).toEqual(
+          index.search(query),
+        );
+        expect(callUnchecked(index.searchIndices.bind(index), query, searchUnset)).toEqual(
+          index.searchIndices(query),
+        );
+        const keyedResults = wasm.searchKeys(query, keyTexts, [2, 1]);
+        expect(callUnchecked(wasm.searchKeys, query, keyTexts, [2, 1], keyUnset)).toEqual(
+          keyedResults,
+        );
+        expect(callUnchecked(keyed.search.bind(keyed), query, keyUnset)).toEqual(keyedResults);
+        expect(callUnchecked(keyed.closest.bind(keyed), query, closestUnset)).toBe(
+          keyed.closest(query),
+        );
+        // The Node.js binding reads the same objects the same way.
+        expect(callUnchecked(napi.search, query, FRUITS, searchUnset)).toEqual(
+          wasm.search(query, FRUITS),
+        );
+        expect(callUnchecked(n.search.bind(n), query, keyUnset)).toEqual(keyedResults);
+        expect(callUnchecked(n.closest.bind(n), query, closestUnset)).toBe(keyed.closest(query));
+      }
+      index.free();
+      keyed.free();
     });
 
     it('treats null, undefined and {} as default options', () => {
@@ -380,17 +448,6 @@ describe.skipIf(!wasmAvailable)('wasm-bindgen runtime', () => {
       const weights = [2, 1, 0.5];
       const modes = ['weighted', 'matched', 'max'] as const;
 
-      /** Options with only the given fields set (the wasm declarations reject explicit undefined). */
-      function keyOptions(
-        scoreMode: WasmBindgen.KeyScoreMode | undefined,
-        minScore: number | undefined,
-      ): WasmBindgen.KeySearchOptions {
-        const options: WasmBindgen.KeySearchOptions = { maxResults: 4 };
-        if (scoreMode !== undefined) options.scoreMode = scoreMode;
-        if (minScore !== undefined) options.minScore = minScore;
-        return options;
-      }
-
       it('gives the same results in every mode', () => {
         const w = new wasm.KeyedFuzzyIndex(keyTexts, weights);
         const n = new napi.KeyedFuzzyIndex(keyTexts, weights);
@@ -404,12 +461,12 @@ describe.skipIf(!wasmAvailable)('wasm-bindgen runtime', () => {
           ),
         );
         for (const { query, minScore, scoreMode } of cases) {
-          const options = keyOptions(scoreMode, minScore);
+          const options: WasmBindgen.KeySearchOptions = { maxResults: 4, scoreMode, minScore };
           const expected = napi.searchKeys(query, keyTexts, weights, options);
           expect(wasm.searchKeys(query, keyTexts, weights, options)).toEqual(expected);
           expect(w.search(query, options)).toEqual(expected);
           expect(n.search(query, options)).toEqual(expected);
-          const closestOptions = keyClosestOptions(scoreMode, undefined, minScore);
+          const closestOptions: WasmBindgen.KeyClosestOptions = { scoreMode, minScore };
           expect(w.closest(query, closestOptions)).toBe(n.closest(query, closestOptions));
         }
         w.free();
@@ -490,18 +547,6 @@ describe.skipIf(!wasmAvailable)('wasm-bindgen runtime', () => {
       const matchModes = ['perKey', 'crossKey'] as const;
       const scoreModes = ['weighted', 'matched', 'max'] as const;
 
-      /** Options with only the given fields set (the wasm declarations reject explicit undefined). */
-      function keyOptions(
-        matchMode: WasmBindgen.KeyMatchMode | undefined,
-        scoreMode: WasmBindgen.KeyScoreMode,
-        minScore: number | undefined,
-      ): WasmBindgen.KeySearchOptions {
-        const options: WasmBindgen.KeySearchOptions = { maxResults: 5, scoreMode };
-        if (matchMode !== undefined) options.matchMode = matchMode;
-        if (minScore !== undefined) options.minScore = minScore;
-        return options;
-      }
-
       it('gives the same results in every mode', () => {
         const w = new wasm.KeyedFuzzyIndex(keyTexts, weights);
         const n = new napi.KeyedFuzzyIndex(keyTexts, weights);
@@ -515,13 +560,13 @@ describe.skipIf(!wasmAvailable)('wasm-bindgen runtime', () => {
         );
         let crossKeyMatches = 0;
         for (const { query, minScore, scoreMode, matchMode } of cases) {
-          const options = keyOptions(matchMode, scoreMode, minScore);
+          const closestOptions: WasmBindgen.KeyClosestOptions = { scoreMode, matchMode, minScore };
+          const options: WasmBindgen.KeySearchOptions = { ...closestOptions, maxResults: 5 };
           const expected = napi.searchKeys(query, keyTexts, weights, options);
           if (matchMode === 'crossKey') crossKeyMatches += expected.length;
           expect(wasm.searchKeys(query, keyTexts, weights, options)).toEqual(expected);
           expect(w.search(query, options)).toEqual(expected);
           expect(n.search(query, options)).toEqual(expected);
-          const closestOptions = keyClosestOptions(scoreMode, matchMode, minScore);
           expect(w.closest(query, closestOptions)).toBe(n.closest(query, closestOptions));
         }
         expect(crossKeyMatches).toBeGreaterThan(20);
@@ -637,9 +682,7 @@ describe.skipIf(!wasmAvailable)('wasm-bindgen runtime', () => {
       function allOptions(): WasmBindgen.KeyClosestOptions[] {
         return scoreModes.flatMap((scoreMode) =>
           matchModes.flatMap((matchMode) =>
-            [undefined, 0, 0.5, 0.9, 1].map((minScore) =>
-              keyClosestOptions(scoreMode, matchMode, minScore),
-            ),
+            [undefined, 0, 0.5, 0.9, 1].map((minScore) => ({ scoreMode, matchMode, minScore })),
           ),
         );
       }
@@ -714,9 +757,7 @@ describe.skipIf(!wasmAvailable)('wasm-bindgen runtime', () => {
         const w = new wasm.KeyedFuzzyIndex(keyTexts, weights);
         const n = new napi.KeyedFuzzyIndex(keyTexts, weights);
         const cases = scoreModes
-          .flatMap((scoreMode) =>
-            matchModes.map((matchMode) => keyClosestOptions(scoreMode, matchMode, undefined)),
-          )
+          .flatMap((scoreMode) => matchModes.map((matchMode) => ({ scoreMode, matchMode })))
           .flatMap((modes) =>
             queries.flatMap((query) => {
               const [best] = n.search(query, { ...modes, maxResults: 1 });
@@ -737,10 +778,11 @@ describe.skipIf(!wasmAvailable)('wasm-bindgen runtime', () => {
           }
         }
         // The number shorthand with the default modes.
-        for (const { modes, query, best } of cases.filter(
-          (c) => Object.keys(c.modes).length === 0,
-        )) {
-          expect(modes).toEqual({});
+        const defaults = cases.filter(
+          ({ modes }) => modes.scoreMode === undefined && modes.matchMode === undefined,
+        );
+        expect(defaults.length).toBeGreaterThan(0);
+        for (const { query, best } of defaults) {
           expect(w.closest(query, best.score)).toBe(best.index);
           expect(n.closest(query, best.score)).toBe(best.index);
           expect(w.closest(query, nextUp(best.score))).toBeNull();

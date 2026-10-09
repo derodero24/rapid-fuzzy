@@ -11,6 +11,7 @@
 'use strict';
 
 const fs = require('node:fs');
+const { inputFieldsAcceptUndefined } = require('./declarations.js');
 
 const MARKER = '// --- JS utilities (appended by scripts/patch-binding.js) ---';
 
@@ -89,25 +90,6 @@ function readonlyArrayParams(dts) {
 }
 
 /**
- * Let the optional fields of an input interface accept an explicit `undefined`
- * (`field?: T | undefined`), as required under `exactOptionalPropertyTypes`.
- * The native conversion treats `undefined` as "not set". Idempotent.
- */
-function optionalFieldsAcceptUndefined(dts, name) {
-  const start = dts.indexOf(`export interface ${name} {`);
-  const end = start === -1 ? -1 : dts.indexOf('\n}', start);
-  if (end === -1) {
-    throw new Error(`patch-binding: interface ${name} not found in index.d.ts`);
-  }
-  const body = dts
-    .slice(start, end)
-    .replace(/^(\s+\w+\?: )(.+)$/gm, (field, head, type) =>
-      /\bundefined\b/.test(type) ? field : `${head}${type} | undefined`,
-    );
-  return dts.slice(0, start) + body + dts.slice(end);
-}
-
-/**
  * The string-literal types of the `scoreMode` and `matchMode` fields of
  * `KeySearchOptions` and `KeyClosestOptions`, which the Rust side types as
  * `KeyScoreMode` / `KeyMatchMode` (`#[napi(ts_type)]`): napi-rs declares
@@ -161,9 +143,7 @@ function declareKeyModeTypes(dts) {
 
 function refineDeclarations(dts) {
   let refined = readonlyArrayParams(dts);
-  for (const name of ['SearchOptions', 'KeySearchOptions', 'KeyClosestOptions']) {
-    refined = optionalFieldsAcceptUndefined(refined, name);
-  }
+  refined = inputFieldsAcceptUndefined(refined, 'index.d.ts');
   refined = declareKeyModeTypes(refined);
   // Fail loudly if napi-rs changes its output format and the refinements stop applying.
   for (const expected of [
