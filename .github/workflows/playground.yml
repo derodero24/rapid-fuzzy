@@ -8,22 +8,20 @@ on:
       - '.github/workflows/playground.yml'
   workflow_dispatch:
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
+# Nothing by default: the build job only reads the repository, and only the
+# deploy job, which runs no repository code, can deploy to GitHub Pages.
+permissions: {}
 
 concurrency:
   group: pages
   cancel-in-progress: true
 
 jobs:
-  deploy:
-    name: Deploy Playground
+  build:
+    name: Build Playground
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      contents: read # actions/checkout
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -46,13 +44,29 @@ jobs:
       - name: Build WASM
         run: pnpm run build:wasm
 
+      # The playground is a separate npm project, not a pnpm workspace member:
+      # install exactly what its committed package-lock.json pins, without
+      # lifecycle scripts. Its vite.config.js then resolves rapid-fuzzy to the
+      # WASI build made above.
       - name: Build playground
         working-directory: playground
-        run: npm install && npm run build
+        run: npm ci --ignore-scripts && npm run build
 
-      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:
           path: playground/dist
+
+  deploy:
+    name: Deploy Playground
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write # configure-pages and deploy-pages publish the site
+      id-token: write # deploy-pages authenticates the deployment with OIDC
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
       - id: deployment
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5
