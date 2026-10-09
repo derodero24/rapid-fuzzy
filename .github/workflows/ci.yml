@@ -284,7 +284,7 @@ jobs:
         run: pnpm run optimize:wasm
 
       - name: Upload artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: bindings-${{ matrix.settings.target }}
           path: |
@@ -296,7 +296,7 @@ jobs:
 
       - name: Upload WASM artifact
         if: matrix.settings.target == 'wasm32-wasip1-threads'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: bindings-wasm32
           path: |
@@ -445,7 +445,7 @@ jobs:
         env:
           RAPID_FUZZY_REQUIRE_WASM_BINDGEN: '1'
       - name: Upload wasm-bindgen artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: bindings-wasm-bindgen
           path: rapid-fuzzy-wasm-bindgen_bg.wasm
