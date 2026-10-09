@@ -196,7 +196,7 @@ The Rust benchmarks use [codspeed-criterion-compat](https://crates.io/crates/cod
 
 Releases are automated by `.github/workflows/release.yml`:
 
-1. On every push to `develop` that brings changesets, the workflow opens or updates the "chore(release): version packages" PR, which bumps the version in `package.json`, the Cargo manifests and the `npm/*` platform manifests and writes the changelog.
+1. On every push to `develop` that brings changesets, the workflow opens or updates the "chore(release): version packages" PR, which bumps the version in `package.json`, the Cargo manifests and the `npm/*` platform manifests and writes the changelog. `github-actions[bot]` pushes that PR's branch, so its CI runs wait for a maintainer's approval instead of starting: approve them on the PR page (**Approve and run**) before merging, again after every update of the PR. Without that, the version commit is first tested by the `develop` CI run after the merge.
 2. Once that PR is merged and the version is not on npm yet, the workflow opens or updates the "chore(release): release vX.Y.Z" PR from `develop` to `main`.
 3. Merging the release PR builds the binaries for every target and the wasm-bindgen browser build, loads each binary on its own platform, publishes the nine platform packages and then `rapid-fuzzy` to npm with provenance, and finally tags the released commit and creates the GitHub release.
 
