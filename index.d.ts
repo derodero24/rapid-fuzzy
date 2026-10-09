@@ -53,7 +53,8 @@ export declare class FuzzyIndex {
    * Find the closest matching string in the index.
    *
    * Returns the best match, or null if no match is found.
-   * If minScore is provided, returns null when the best match scores below the threshold.
+   * If minScore is provided, returns null when the best match scores below
+   * the threshold. A NaN minScore throws an `InvalidArg` error.
    */
   closest(query: string, minScore?: number | undefined | null): string | null
   /**
@@ -212,7 +213,8 @@ export declare class KeyedFuzzyIndex {
  * Find the closest matching string from a list.
  *
  * Returns the best match, or null if no match is found.
- * If minScore is provided, returns null when the best match scores below the threshold.
+ * If minScore is provided, returns null when the best match scores below the
+ * threshold. A NaN minScore throws an `InvalidArg` error.
  */
 export declare function closest(query: string, items: ReadonlyArray<string>, minScore?: number | undefined | null): string | null
 
@@ -438,7 +440,7 @@ export declare function jaroWinklerManyF64(reference: string, candidates: Readon
 export interface KeyClosestOptions {
   /**
    * Minimum combined score (0.0-1.0, see `scoreMode`): `closest()`
-   * returns null when the best match scores below it.
+   * returns null when the best match scores below it. NaN throws.
    */
   minScore?: number | undefined
   /**
@@ -470,7 +472,7 @@ export interface KeySearchOptions {
   maxResults?: number | undefined
   /**
    * Minimum combined score (0.0-1.0, see `scoreMode`) to include in
-   * results.
+   * results. NaN throws.
    */
   minScore?: number | undefined
   /**
@@ -850,7 +852,7 @@ export interface SearchOptions {
    * `Infinity` for no limit. NaN, negative and fractional values throw.
    */
   maxResults?: number | undefined
-  /** Minimum normalized score (0.0-1.0) to include in results. */
+  /** Minimum normalized score (0.0-1.0) to include in results. NaN throws. */
   minScore?: number | undefined
   /** If true, include matched character positions in results. */
   includePositions?: boolean | undefined

@@ -7,6 +7,7 @@ use rapid_fuzzy_core::search::{FuzzyIndexCore, is_empty_query};
 
 use super::{
     IndexSearchResult, ResolvedSearchOptions, SearchOptionsArg, SearchResult, read_remove_index,
+    resolve_min_score,
 };
 
 pub struct BuildFuzzyIndexTask {
@@ -178,11 +179,13 @@ impl FuzzyIndex {
     /// Find the closest matching string in the index.
     ///
     /// Returns the best match, or null if no match is found.
-    /// If minScore is provided, returns null when the best match scores below the threshold.
+    /// If minScore is provided, returns null when the best match scores below
+    /// the threshold. A NaN minScore throws an `InvalidArg` error.
     #[napi]
-    pub fn closest(&self, query: String, min_score: Option<f64>) -> Option<String> {
+    pub fn closest(&self, query: String, min_score: Option<f64>) -> napi::Result<Option<String>> {
+        let min_score = resolve_min_score(min_score)?;
         let results = self.search_impl(&query, Some(1), min_score, false, CaseMatching::Smart);
-        results.into_iter().next().map(|r| r.item)
+        Ok(results.into_iter().next().map(|r| r.item))
     }
 
     /// Search the index, returning only indices and scores (no item strings).
@@ -417,14 +420,14 @@ mod tests {
     #[test]
     fn test_closest() {
         let index = FuzzyIndex::new(vec!["apple".into(), "banana".into()]);
-        let result = index.closest("app".into(), None);
+        let result = index.closest("app".into(), None).unwrap();
         assert_eq!(result, Some("apple".into()));
     }
 
     #[test]
     fn test_closest_with_min_score() {
         let index = FuzzyIndex::new(vec!["xyz".into()]);
-        let result = index.closest("hello".into(), Some(0.99));
+        let result = index.closest("hello".into(), Some(0.99)).unwrap();
         assert!(result.is_none());
     }
 
@@ -434,7 +437,7 @@ mod tests {
         assert_eq!(index.size(), 1);
         index.core.add("banana".into());
         assert_eq!(index.size(), 2);
-        let result = index.closest("banana".into(), None);
+        let result = index.closest("banana".into(), None).unwrap();
         assert_eq!(result, Some("banana".into()));
     }
 

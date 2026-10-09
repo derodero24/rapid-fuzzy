@@ -114,7 +114,7 @@ export type KeyMatchMode = "perKey" | "crossKey";
 export interface KeyClosestOptions {
     /**
      * Minimum combined score (0.0-1.0, see `scoreMode`): `closest()`
-     * returns null when the best match scores below it.
+     * returns null when the best match scores below it. NaN throws.
      */
     minScore?: number | undefined;
     /**
@@ -145,7 +145,7 @@ export interface KeySearchOptions {
     maxResults?: number | undefined;
     /**
      * Minimum combined score (0.0-1.0, see `scoreMode`) to include in
-     * results.
+     * results. NaN throws.
      */
     minScore?: number | undefined;
     /**
@@ -238,7 +238,7 @@ export interface SearchOptions {
      */
     maxResults?: number | undefined;
     /**
-     * Minimum normalized score (0.0-1.0) to include in results.
+     * Minimum normalized score (0.0-1.0) to include in results. NaN throws.
      */
     minScore?: number | undefined;
     /**
@@ -282,7 +282,8 @@ export class FuzzyIndex {
      * Find the closest matching string in the index.
      *
      * Returns the best match, or null if no match is found.
-     * If `minScore` is provided, returns null when the best match scores below the threshold.
+     * If `minScore` is provided, returns null when the best match scores below
+     * the threshold. A NaN `minScore` throws a `TypeError`.
      */
     closest(query: string, minScore?: number | null): string | null;
     /**
@@ -433,7 +434,8 @@ export class KeyedFuzzyIndex {
  * Find the closest matching string from a list.
  *
  * Returns the best match, or null if no match is found.
- * If `minScore` is provided, returns null when the best match scores below the threshold.
+ * If `minScore` is provided, returns null when the best match scores below
+ * the threshold. A NaN `minScore` throws a `TypeError`.
  */
 export function closest(query: string, items: ReadonlyArray<string>, minScore?: number | null): string | null;
 
@@ -883,13 +885,13 @@ export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_fuzzyindex_free: (a: number, b: number) => void;
     readonly __wbg_keyedfuzzyindex_free: (a: number, b: number) => void;
-    readonly closest: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
+    readonly closest: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
     readonly damerauLevenshtein: (a: number, b: number, c: number, d: number) => number;
     readonly damerauLevenshteinBatch: (a: number, b: number) => void;
     readonly damerauLevenshteinMany: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
     readonly fuzzyindex_add: (a: number, b: number, c: number) => void;
     readonly fuzzyindex_addMany: (a: number, b: number, c: number) => void;
-    readonly fuzzyindex_closest: (a: number, b: number, c: number, d: number, e: number) => number;
+    readonly fuzzyindex_closest: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
     readonly fuzzyindex_deserialize: (a: number, b: number, c: number) => void;
     readonly fuzzyindex_destroy: (a: number) => void;
     readonly fuzzyindex_fromAsync: (a: number) => number;

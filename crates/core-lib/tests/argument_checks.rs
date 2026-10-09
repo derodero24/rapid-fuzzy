@@ -3,7 +3,9 @@
 //! 2^32 (or compare against silently).
 
 use rapid_fuzzy_core::distance::{self as d, DistanceError, check_max_distance};
-use rapid_fuzzy_core::search::{FuzzyIndexCore, KeyedFuzzyIndexCore, check_remove_index};
+use rapid_fuzzy_core::search::{
+    FuzzyIndexCore, KeyedFuzzyIndexCore, check_min_score, check_remove_index,
+};
 
 #[test]
 fn remove_index_accepts_integers_in_range() {
@@ -128,5 +130,24 @@ fn unlimited_max_distances_give_the_unfiltered_distances() {
             d::hamming_many("kitten", &candidates, max),
             d::hamming_many("kitten", &candidates, None)
         );
+    }
+}
+
+#[test]
+fn min_score_rejects_only_nan() {
+    assert_eq!(
+        check_min_score(Some(f64::NAN)),
+        Err("minScore must be a number, got NaN".to_string())
+    );
+    for value in [
+        None,
+        Some(f64::NEG_INFINITY),
+        Some(-1.0),
+        Some(0.0),
+        Some(0.5),
+        Some(2.0),
+        Some(f64::INFINITY),
+    ] {
+        assert_eq!(check_min_score(value), Ok(value));
     }
 }

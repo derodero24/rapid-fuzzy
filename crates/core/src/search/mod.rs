@@ -17,8 +17,8 @@ use napi::{Env, Status, ValueType};
 use napi_derive::napi;
 use nucleo_matcher::pattern::CaseMatching;
 use rapid_fuzzy_core::search::{
-    KeyMatchMode, KeyScoreMode, SearchKeysOptions, check_max_results, check_remove_index,
-    invalid_index_type, invalid_match_mode, invalid_score_mode, is_empty_query,
+    KeyMatchMode, KeyScoreMode, SearchKeysOptions, check_max_results, check_min_score,
+    check_remove_index, invalid_index_type, invalid_match_mode, invalid_score_mode, is_empty_query,
 };
 
 // -------------------------
@@ -126,7 +126,7 @@ pub struct SearchOptions {
     /// Maximum number of results to return: a non-negative integer, or
     /// `Infinity` for no limit. NaN, negative and fractional values throw.
     pub max_results: Option<u32>,
-    /// Minimum normalized score (0.0-1.0) to include in results.
+    /// Minimum normalized score (0.0-1.0) to include in results. NaN throws.
     pub min_score: Option<f64>,
     /// If true, include matched character positions in results.
     pub include_positions: Option<bool>,
@@ -154,6 +154,14 @@ pub struct SearchOptions {
 /// binding.
 pub(crate) fn resolve_max_results(value: f64) -> napi::Result<Option<u32>> {
     check_max_results(value).map_err(|message| napi::Error::new(Status::InvalidArg, message))
+}
+
+/// Validate a `minScore` value coming from JavaScript (see
+/// [`check_min_score`], shared with the WebAssembly binding): NaN, which
+/// used to filter out every match silently, is rejected with an `InvalidArg`
+/// error.
+pub(crate) fn resolve_min_score(value: Option<f64>) -> napi::Result<Option<f64>> {
+    check_min_score(value).map_err(|message| napi::Error::new(Status::InvalidArg, message))
 }
 
 /// The class of a JavaScript error thrown by [`throw_error`].
@@ -273,7 +281,7 @@ fn read_search_options(obj: &Object<'_>, type_name: &str) -> napi::Result<Search
     };
     Ok(SearchOptions {
         max_results,
-        min_score: optional_field(obj, type_name, "minScore")?,
+        min_score: resolve_min_score(optional_field(obj, type_name, "minScore")?)?,
         include_positions: optional_field(obj, type_name, "includePositions")?,
         is_case_sensitive: optional_field(obj, type_name, "isCaseSensitive")?,
         return_all_on_empty: optional_field(obj, type_name, "returnAllOnEmpty")?,
@@ -307,7 +315,7 @@ pub struct KeySearchOptions {
     /// `Infinity` for no limit. NaN, negative and fractional values throw.
     pub max_results: Option<u32>,
     /// Minimum combined score (0.0-1.0, see `scoreMode`) to include in
-    /// results.
+    /// results. NaN throws.
     pub min_score: Option<f64>,
     /// Accepted for compatibility with `SearchOptions`, but has no effect:
     /// multi-key results have no match positions.
@@ -413,7 +421,7 @@ fn read_match_mode(obj: &Object<'_>) -> napi::Result<Option<KeyMatchMode>> {
 #[derive(Default)]
 pub struct KeyClosestOptions {
     /// Minimum combined score (0.0-1.0, see `scoreMode`): `closest()`
-    /// returns null when the best match scores below it.
+    /// returns null when the best match scores below it. NaN throws.
     pub min_score: Option<f64>,
     /// How the per-key scores of an item are combined into its score:
     /// `'weighted'` (default), `'matched'` or `'max'`, as in
@@ -435,7 +443,7 @@ impl OptionsObject for KeyClosestOptions {
     /// Read the fields like [`KeySearchOptions`] reads them, in the same order.
     fn read(obj: &Object<'_>) -> napi::Result<Self> {
         Ok(Self {
-            min_score: optional_field(obj, Self::NAME, "minScore")?,
+            min_score: resolve_min_score(optional_field(obj, Self::NAME, "minScore")?)?,
             score_mode: read_score_mode(obj)?,
             match_mode: read_match_mode(obj)?,
         })
@@ -478,7 +486,7 @@ impl FromNapiValue for KeyClosestOptionsArg {
                 "minScore",
                 |min_score| {
                     Ok(KeyClosestOptions {
-                        min_score: Some(min_score),
+                        min_score: resolve_min_score(Some(min_score))?,
                         ..KeyClosestOptions::default()
                     })
                 },
@@ -739,11 +747,17 @@ pub fn search(
 /// Find the closest matching string from a list.
 ///
 /// Returns the best match, or null if no match is found.
-/// If minScore is provided, returns null when the best match scores below the threshold.
+/// If minScore is provided, returns null when the best match scores below the
+/// threshold. A NaN minScore throws an `InvalidArg` error.
 #[napi]
-pub fn closest(query: String, items: Vec<String>, min_score: Option<f64>) -> Option<String> {
+pub fn closest(
+    query: String,
+    items: Vec<String>,
+    min_score: Option<f64>,
+) -> napi::Result<Option<String>> {
+    let min_score = resolve_min_score(min_score)?;
     let results = search_impl(query, items, Some(1), min_score, false, CaseMatching::Smart);
-    results.into_iter().next().map(|r| r.item)
+    Ok(results.into_iter().next().map(|r| r.item))
 }
 
 #[cfg(test)]
@@ -825,7 +839,7 @@ mod tests {
             "application".to_string(),
             "banana".to_string(),
         ];
-        let result = closest("app".to_string(), items, None);
+        let result = closest("app".to_string(), items, None).unwrap();
         assert!(result.is_some());
     }
 
@@ -996,7 +1010,7 @@ mod tests {
     fn test_closest_with_min_score() {
         let items = vec!["xyz".to_string(), "abc".to_string()];
         // With a very high threshold, closest should return None
-        let result = closest("hello".to_string(), items, Some(0.99));
+        let result = closest("hello".to_string(), items, Some(0.99)).unwrap();
         assert!(result.is_none());
     }
 
@@ -1081,7 +1095,7 @@ mod tests {
     #[test]
     fn test_closest_without_min_score() {
         let items = vec!["apple".to_string(), "banana".to_string()];
-        let result = closest("app".to_string(), items, None);
+        let result = closest("app".to_string(), items, None).unwrap();
         assert!(result.is_some());
     }
 
@@ -1373,7 +1387,7 @@ mod tests {
                 query in "[a-z]{1,5}",
                 items in prop::collection::vec("[a-z]{1,10}", 1..20),
             ) {
-                let closest_result = closest(query.clone(), items.clone(), None);
+                let closest_result = closest(query.clone(), items.clone(), None).unwrap();
                 let search_results = search_impl(query, items, None, None, false, CaseMatching::Smart);
 
                 match (closest_result, search_results.first()) {
@@ -1502,7 +1516,7 @@ mod tests {
         #[test]
         fn test_closest_cjk() {
             let items = vec!["大阪".to_string(), "京都".to_string(), "東京都".to_string()];
-            let result = closest("東京".to_string(), items, None);
+            let result = closest("東京".to_string(), items, None).unwrap();
             assert!(result.is_some());
         }
 

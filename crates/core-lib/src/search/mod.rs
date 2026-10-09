@@ -167,6 +167,19 @@ pub fn invalid_index_type(type_of: &str) -> String {
     format!("index must be a number, got {type_of}")
 }
 
+/// Validate a `minScore` option coming from JavaScript: NaN is rejected with
+/// the message both bindings report, and any other value (including
+/// `±Infinity` and values above 1) is accepted.
+///
+/// No score compares as at least NaN, so a NaN threshold used to filter out
+/// every match silently, while a NaN `maxResults` or `minSimilarity` throws.
+pub fn check_min_score(min_score: Option<f64>) -> Result<Option<f64>, String> {
+    match min_score {
+        Some(score) if score.is_nan() => Err("minScore must be a number, got NaN".to_string()),
+        other => Ok(other),
+    }
+}
+
 thread_local! {
     /// The nucleo `Matcher` of this thread, shared by every search running on
     /// it: standalone `search`/`closest`/`searchKeys` and every `FuzzyIndex`

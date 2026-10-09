@@ -340,7 +340,7 @@ export declare class FuzzyObjectIndex<T, S extends string = string, C extends st
    * @throws {TypeError} If `options` is neither a number nor an object.
    * @throws {Error} If `scoreMode` is not `'weighted'`, `'matched'` or `'max'`,
    *   `matchMode` is not `'perKey'` or `'crossKey'`, or `minScore` is not a
-   *   number (a `TypeError` in the browser build).
+   *   number or is `NaN` (a `TypeError` in the browser build).
    */
   closest(query: string, options?: number | KeyClosestOptions | undefined | null): T | null;
 

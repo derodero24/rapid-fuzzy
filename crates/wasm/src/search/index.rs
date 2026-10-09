@@ -3,7 +3,7 @@ use rapid_fuzzy_core::search::serialization::{deserialize_fuzzy_index, serialize
 use rapid_fuzzy_core::search::{FuzzyIndexCore, is_empty_query};
 use wasm_bindgen::prelude::*;
 
-use super::{IndexSearchResult, SearchOptions, SearchResult, resolve_case_matching};
+use super::{IndexSearchResult, SearchOptions, SearchResult, min_score_arg, resolve_case_matching};
 use crate::convert::{error, or_null, remove_index_from_js, strings_from_js, to_js};
 
 /// A persistent fuzzy search index backed by Rust-side data.
@@ -105,17 +105,19 @@ impl FuzzyIndex {
     /// Find the closest matching string in the index.
     ///
     /// Returns the best match, or null if no match is found.
-    /// If `minScore` is provided, returns null when the best match scores below the threshold.
+    /// If `minScore` is provided, returns null when the best match scores below
+    /// the threshold. A NaN `minScore` throws a `TypeError`.
     #[wasm_bindgen(unchecked_return_type = "string | null")]
     pub fn closest(
         &self,
         query: String,
         #[wasm_bindgen(js_name = "minScore")] min_score: Option<f64>,
-    ) -> JsValue {
+    ) -> Result<JsValue, JsValue> {
+        let min_score = min_score_arg(min_score)?;
         let results = self
             .core
             .search_impl(&query, Some(1), min_score, false, CaseMatching::Smart);
-        or_null(results.into_iter().next().map(|r| r.item))
+        Ok(or_null(results.into_iter().next().map(|r| r.item)))
     }
 
     /// Search the index, returning only indices and scores (no item strings).

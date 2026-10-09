@@ -728,7 +728,7 @@ describe.skipIf(!wasmAvailable)('wasm-bindgen runtime', () => {
       it('takes a number as a shorthand for minScore', () => {
         const w = new wasm.KeyedFuzzyIndex(keyTexts, weights);
         const n = new napi.KeyedFuzzyIndex(keyTexts, weights);
-        for (const minScore of [0, 0.5, 0.9, 1, 2, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+        for (const minScore of [0, 0.5, 0.9, 1, 2, -1, Number.POSITIVE_INFINITY]) {
           for (const query of queries) {
             const expected = n.closest(query, { minScore });
             expect(n.closest(query, minScore)).toBe(expected);
@@ -910,6 +910,38 @@ describe.skipIf(!wasmAvailable)('wasm-bindgen runtime', () => {
         const descriptor = Object.getOwnPropertyDescriptor(cls.prototype, 'size');
         expect(typeof descriptor?.get).toBe('function');
       }
+    });
+  });
+
+  // A NaN minScore used to filter out every match silently.
+  describe('minScore validation (like the Node.js binding)', () => {
+    it('throws a TypeError for NaN in every API and accepts other numbers', () => {
+      const items = ['a', 'ab', 'abc'];
+      const index = new wasm.FuzzyIndex(items);
+      const keyed = new wasm.KeyedFuzzyIndex([items], [1]);
+      const calls = (minScore: number): Array<[string, () => unknown]> => [
+        ['search', () => wasm.search('a', items, { minScore })],
+        ['closest', () => wasm.closest('a', items, minScore)],
+        ['FuzzyIndex.search', () => index.search('a', { minScore })],
+        ['FuzzyIndex.searchIndices', () => index.searchIndices('a', { minScore })],
+        ['FuzzyIndex.closest', () => index.closest('a', minScore)],
+        ['searchKeys', () => wasm.searchKeys('a', [items], [1], { minScore })],
+        ['KeyedFuzzyIndex.search', () => keyed.search('a', { minScore })],
+        ['KeyedFuzzyIndex.closest(number)', () => keyed.closest('a', minScore)],
+        ['KeyedFuzzyIndex.closest(options)', () => keyed.closest('a', { minScore })],
+      ];
+      for (const [name, call] of calls(Number.NaN)) {
+        const err = thrown(call);
+        expect(err, name).toBeInstanceOf(TypeError);
+        expect((err as Error).message, name).toContain('minScore must be a number, got NaN');
+      }
+      for (const minScore of [Number.NEGATIVE_INFINITY, 0, 2, Number.POSITIVE_INFINITY]) {
+        for (const [name, call] of calls(minScore)) {
+          expect(call, `${name} minScore=${minScore}`).not.toThrow();
+        }
+      }
+      index.free();
+      keyed.free();
     });
   });
 

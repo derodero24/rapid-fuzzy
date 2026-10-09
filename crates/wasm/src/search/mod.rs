@@ -119,9 +119,9 @@ pub struct SearchOptions {
     #[tsify(optional)]
     #[serde(default, deserialize_with = "deserialize_max_results")]
     pub max_results: Option<u32>,
-    /// Minimum normalized score (0.0-1.0) to include in results.
+    /// Minimum normalized score (0.0-1.0) to include in results. NaN throws.
     #[tsify(optional)]
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_min_score")]
     pub min_score: Option<f64>,
     /// If true, include matched character positions in results.
     #[tsify(optional)]
@@ -328,9 +328,9 @@ pub struct KeySearchOptions {
     #[serde(default, deserialize_with = "deserialize_max_results")]
     pub max_results: Option<u32>,
     /// Minimum combined score (0.0-1.0, see `scoreMode`) to include in
-    /// results.
+    /// results. NaN throws.
     #[tsify(optional)]
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_min_score")]
     pub min_score: Option<f64>,
     /// Accepted for compatibility with `SearchOptions`, but has no effect:
     /// multi-key results have no match positions.
@@ -448,9 +448,9 @@ pub struct KeyClosestOptions {
     // Each field is read exactly like the `KeySearchOptions` field of the same
     // name (the same serde attributes and deserializers).
     /// Minimum combined score (0.0-1.0, see `scoreMode`): `closest()`
-    /// returns null when the best match scores below it.
+    /// returns null when the best match scores below it. NaN throws.
     #[tsify(optional)]
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_min_score")]
     pub min_score: Option<f64>,
     /// How the per-key scores of an item are combined into its score:
     /// `"weighted"` (default), `"matched"` or `"max"`, as in
@@ -473,7 +473,7 @@ impl KeyClosestOptions {
     pub(crate) fn from_js_or_min_score(options: Option<JsValue>) -> Result<Self, JsValue> {
         options_from_js(options, "KeyClosestOptions", |min_score| {
             Ok(Self {
-                min_score: Some(min_score),
+                min_score: core::check_min_score(Some(min_score))?,
                 ..Self::default()
             })
         })
@@ -501,6 +501,22 @@ fn deserialize_max_results<'de, D: Deserializer<'de>>(
         Some(value) => core::check_max_results(value).map_err(serde::de::Error::custom),
         None => Ok(None),
     }
+}
+
+/// Read a `minScore` option like the Node.js binding does (see
+/// [`core::check_min_score`]): NaN, which used to filter out every match
+/// silently, is rejected.
+fn deserialize_min_score<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<f64>, D::Error> {
+    core::check_min_score(Option::<f64>::deserialize(deserializer)?)
+        .map_err(serde::de::Error::custom)
+}
+
+/// Validate the `minScore` argument of `closest()` and `FuzzyIndex.closest()`
+/// (see [`core::check_min_score`]), throwing a `TypeError` for NaN.
+pub(crate) fn min_score_arg(min_score: Option<f64>) -> Result<Option<f64>, JsValue> {
+    core::check_min_score(min_score).map_err(|message| type_error(&message))
 }
 
 pub(crate) use rapid_fuzzy_core::search::resolve_case_matching;
@@ -582,13 +598,15 @@ pub fn search(
 /// Find the closest matching string from a list.
 ///
 /// Returns the best match, or null if no match is found.
-/// If `minScore` is provided, returns null when the best match scores below the threshold.
+/// If `minScore` is provided, returns null when the best match scores below
+/// the threshold. A NaN `minScore` throws a `TypeError`.
 #[wasm_bindgen(unchecked_return_type = "string | null")]
 pub fn closest(
     query: String,
     items: Vec<String>,
     #[wasm_bindgen(js_name = "minScore")] min_score: Option<f64>,
-) -> JsValue {
+) -> Result<JsValue, JsValue> {
+    let min_score = min_score_arg(min_score)?;
     let results = search_impl(query, items, Some(1), min_score, false, CaseMatching::Smart);
-    or_null(results.into_iter().next().map(|r| r.item))
+    Ok(or_null(results.into_iter().next().map(|r| r.item)))
 }

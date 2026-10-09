@@ -45,16 +45,28 @@ export class FuzzyIndex {
      * Find the closest matching string in the index.
      *
      * Returns the best match, or null if no match is found.
-     * If `minScore` is provided, returns null when the best match scores below the threshold.
+     * If `minScore` is provided, returns null when the best match scores below
+     * the threshold. A NaN `minScore` throws a `TypeError`.
      * @param {string} query
      * @param {number | null} [minScore]
      * @returns {string | null}
      */
     closest(query, minScore) {
-        const ptr0 = passStringToWasm0(query, wasm.__wbindgen_export, wasm.__wbindgen_export2);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.fuzzyindex_closest(this.__wbg_ptr, ptr0, len0, !isLikeNone(minScore), isLikeNone(minScore) ? 0 : minScore);
-        return takeObject(ret);
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            const ptr0 = passStringToWasm0(query, wasm.__wbindgen_export, wasm.__wbindgen_export2);
+            const len0 = WASM_VECTOR_LEN;
+            wasm.fuzzyindex_closest(retptr, this.__wbg_ptr, ptr0, len0, !isLikeNone(minScore), isLikeNone(minScore) ? 0 : minScore);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+            if (r2) {
+                throw takeObject(r1);
+            }
+            return takeObject(r0);
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
     }
     /**
      * Reconstruct a FuzzyIndex from a previously serialized Uint8Array.
@@ -461,19 +473,31 @@ if (Symbol.dispose) KeyedFuzzyIndex.prototype[Symbol.dispose] = KeyedFuzzyIndex.
  * Find the closest matching string from a list.
  *
  * Returns the best match, or null if no match is found.
- * If `minScore` is provided, returns null when the best match scores below the threshold.
+ * If `minScore` is provided, returns null when the best match scores below
+ * the threshold. A NaN `minScore` throws a `TypeError`.
  * @param {string} query
  * @param {string[]} items
  * @param {number | null} [minScore]
  * @returns {string | null}
  */
 export function closest(query, items, minScore) {
-    const ptr0 = passStringToWasm0(query, wasm.__wbindgen_export, wasm.__wbindgen_export2);
-    const len0 = WASM_VECTOR_LEN;
-    const ptr1 = passArrayJsValueToWasm0(items, wasm.__wbindgen_export);
-    const len1 = WASM_VECTOR_LEN;
-    const ret = wasm.closest(ptr0, len0, ptr1, len1, !isLikeNone(minScore), isLikeNone(minScore) ? 0 : minScore);
-    return takeObject(ret);
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passStringToWasm0(query, wasm.__wbindgen_export, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArrayJsValueToWasm0(items, wasm.__wbindgen_export);
+        const len1 = WASM_VECTOR_LEN;
+        wasm.closest(retptr, ptr0, len0, ptr1, len1, !isLikeNone(minScore), isLikeNone(minScore) ? 0 : minScore);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        if (r2) {
+            throw takeObject(r1);
+        }
+        return takeObject(r0);
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
 }
 
 /**

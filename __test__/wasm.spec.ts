@@ -618,6 +618,19 @@ describe.skipIf(!wasmAvailable)('wasm', () => {
       }
     });
 
+    it('rejects a NaN minScore like native', () => {
+      const items = ['a', 'ab'];
+      const message = 'minScore must be a number, got NaN';
+      const nan = Number.NaN;
+      expect(() => wasm.search('a', items, { minScore: nan })).toThrow(message);
+      expect(() => wasm.closest('a', items, nan)).toThrow(message);
+      expect(() => new wasm.FuzzyIndex(items).closest('a', nan)).toThrow(message);
+      expect(() => new wasm.FuzzyIndex(items).search('a', { minScore: nan })).toThrow(message);
+      expect(() => wasm.searchKeys('a', [items], [1], { minScore: nan })).toThrow(message);
+      expect(() => new wasm.KeyedFuzzyIndex([items], [1]).closest('a', nan)).toThrow(message);
+      expect(wasm.closest('a', items, 0)).toBe(native.closest('a', items, 0));
+    });
+
     describe('remove() validates its index like native (no modulo-2^32 wrapping)', () => {
       const create = (m: typeof wasm) => [
         new m.FuzzyIndex(['a', 'b', 'c']),
