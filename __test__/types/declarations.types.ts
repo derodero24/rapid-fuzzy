@@ -29,7 +29,8 @@ export function hammingResults(n: typeof Node, b: typeof Browser): Array<number 
 
 // ─── serialize() returns exactly Node.js's Buffer when @types/node is loaded ─
 // (`NodeBuffer` falls back to `Uint8Array` in programs without the Node.js
-// types; __test__/types-browser checks that case.)
+// types; __test__/types-browser checks that case, and
+// __test__/types-node-legacy older @types/node releases.)
 
 export type SerializeReturnsBuffer = [
   Expect<Equal<Node.NodeBuffer, Buffer>>,

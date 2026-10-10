@@ -44,6 +44,11 @@
       "enabled": false
     },
     {
+      "description": "@types-node-20.11/node and @types-node-22.10/node are older @types/node releases that __test__/types-node-legacy type-checks the declarations against (see main.mts there): an update would test the current release instead",
+      "matchDepNames": ["@types-node-20.11/node", "@types-node-22.10/node"],
+      "enabled": false
+    },
+    {
       "description": "Group Rust crate updates",
       "matchManagers": ["cargo"],
       "groupName": "rust-dependencies"

@@ -132,6 +132,12 @@ const KEY_MODE_TYPES = [
  * compile in programs without `@types/node`, such as a browser project whose
  * declarations of the browser build import the shared object-search types
  * from objects.d.ts, which imports this file.
+ *
+ * The type is read from the type predicate of `Buffer.isBuffer()`, which
+ * every @types/node release declares as `obj is Buffer`. The instance type of
+ * the `Buffer` constructor is that of its last overload, which is
+ * `Buffer<ArrayBuffer>` rather than `Buffer` in some 20.x and 22.x releases
+ * (such as 20.17.0 and 22.10.7, which __test__/types-node-legacy checks).
  */
 const NODE_BUFFER_TYPE = [
   '/**',
@@ -140,9 +146,9 @@ const NODE_BUFFER_TYPE = [
   ' * otherwise, so that these declarations compile without them.',
   ' */',
   'export type NodeBuffer = typeof globalThis extends {',
-  '  Buffer: infer B extends abstract new (...args: never) => unknown',
+  '  Buffer: { isBuffer(obj: unknown): obj is infer B }',
   '}',
-  '  ? InstanceType<B>',
+  '  ? B',
   '  : Uint8Array',
 ];
 
@@ -179,8 +185,11 @@ function refineDeclarations(dts) {
   refined = declareNodeBuffer(refined);
   // Node.js's global `Buffer` is only named by the NodeBuffer alias: a
   // reference anywhere else breaks programs without @types/node.
-  const code = refined.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
-  if (/\bBuffer\b/.test(code.replace(/\bBuffer: infer B\b/, ''))) {
+  const code = refined
+    .replace(NODE_BUFFER_TYPE.join('\n'), '')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/.*$/gm, '');
+  if (/\bBuffer\b/.test(code)) {
     throw new Error(
       "patch-binding: index.d.ts names Node.js's Buffer type; declare it as NodeBuffer (ts_return_type) or Uint8Array (ts_arg_type)",
     );
@@ -188,8 +197,8 @@ function refineDeclarations(dts) {
   // Fail loudly if napi-rs changes its output format and the refinements stop applying.
   for (const expected of [
     '  serialize(): NodeBuffer',
-    '  static deserialize(data: Uint8Array): FuzzyIndex',
-    '  static deserialize(data: Uint8Array): KeyedFuzzyIndex',
+    '  static deserialize(data: Uint8Array | NodeBuffer): FuzzyIndex',
+    '  static deserialize(data: Uint8Array | NodeBuffer): KeyedFuzzyIndex',
     'export declare function search(query: string, items: ReadonlyArray<string>,',
     '  constructor(items: ReadonlyArray<string>)',
     '  maxResults?: number | undefined',

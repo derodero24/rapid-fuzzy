@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2023"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    // @types/node 22.10.7 under its own name: a typeRoots entry also wins for
+    // the `/// <reference types="node" />` of undici-types, which would
+    // otherwise find the repo's current @types/node.
+    "typeRoots": ["../../node_modules/@types-node-22.10"],
+    "types": ["node"],
+    "strict": true,
+    "exactOptionalPropertyTypes": true,
+    "noUncheckedIndexedAccess": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "files": ["main.mts"]
+}

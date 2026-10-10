@@ -308,7 +308,9 @@ impl FuzzyIndex {
     pub fn deserialize(
         env: Env,
         // Read as a Buffer, which napi-rs accepts any Uint8Array for.
-        #[napi(ts_arg_type = "Uint8Array")] data: Buffer,
+        // `NodeBuffer` keeps a Buffer valid where it is not a `Uint8Array` to
+        // TypeScript 5.7+ (the non-generic Buffer of older @types/node).
+        #[napi(ts_arg_type = "Uint8Array | NodeBuffer")] data: Buffer,
     ) -> napi::Result<Self> {
         Self::deserialize_impl(&data)
             .map_err(napi::Error::from_reason)?

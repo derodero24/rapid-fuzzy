@@ -6,9 +6,9 @@
  * otherwise, so that these declarations compile without them.
  */
 export type NodeBuffer = typeof globalThis extends {
-  Buffer: infer B extends abstract new (...args: never) => unknown
+  Buffer: { isBuffer(obj: unknown): obj is infer B }
 }
-  ? InstanceType<B>
+  ? B
   : Uint8Array
 
 /**
@@ -123,7 +123,7 @@ export declare class FuzzyIndex {
    * Pre-computes the search representation of the stored items,
    * so the returned index is immediately ready for searching.
    */
-  static deserialize(data: Uint8Array): FuzzyIndex
+  static deserialize(data: Uint8Array | NodeBuffer): FuzzyIndex
 }
 
 /**
@@ -223,7 +223,7 @@ export declare class KeyedFuzzyIndex {
    * any other Uint8Array holding the same bytes (such as the output of the
    * browser build's `serialize()`).
    */
-  static deserialize(data: Uint8Array): KeyedFuzzyIndex
+  static deserialize(data: Uint8Array | NodeBuffer): KeyedFuzzyIndex
 }
 
 /**
