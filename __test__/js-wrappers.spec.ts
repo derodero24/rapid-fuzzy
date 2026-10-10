@@ -57,6 +57,29 @@ describe('FuzzyObjectIndex.remove() argument validation', () => {
     expectConsistent(index, fruits);
   });
 
+  it('throws the same errors as FuzzyIndex.remove() and KeyedFuzzyIndex.remove()', () => {
+    const thrown = (remove: () => unknown): unknown => {
+      try {
+        remove();
+      } catch (error) {
+        return error;
+      }
+      throw new Error('expected remove() to throw');
+    };
+    const objects = new FuzzyObjectIndex(fruits, { keys: ['n'] });
+    const strings = new FuzzyIndex(['apple', 'banana', 'cherry']);
+    const keyed = new KeyedFuzzyIndex([['apple', 'banana', 'cherry']], [1]);
+    for (const value of [Number.NaN, 1.5, -0.5, 1e-7, -1.5e-7, 5e-324, '1', null, true]) {
+      const expected = thrown(() => objects.remove(unsafe<number>(value)));
+      for (const index of [strings, keyed]) {
+        const error = thrown(() => index.remove(unsafe<number>(value)));
+        expect(error).toBeInstanceOf((expected as Error).constructor);
+        expect(error).toHaveProperty('message', (expected as Error).message);
+      }
+    }
+    expect([objects.size, strings.size, keyed.size]).toEqual([3, 3, 3]);
+  });
+
   it('returns false for out-of-range integers', () => {
     const index = new FuzzyObjectIndex(fruits, { keys: ['n'] });
     expect(index.remove(-1)).toBe(false);

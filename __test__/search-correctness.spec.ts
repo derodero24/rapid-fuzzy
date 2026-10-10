@@ -10,6 +10,7 @@ import {
   search,
   searchKeys,
 } from '../index.js';
+import { FuzzyObjectIndex, searchObjects } from '../objects.js';
 
 // FuzzyIndex must return exactly what search() returns over the same items:
 // same items, indices, scores, order, positions and match types, at any size,
@@ -388,6 +389,12 @@ describe('maxResults validation', () => {
       expect(() => keyed.search('a', { maxResults })).toThrow(error);
       expect(() => searchKeys('a', [items], [1], { maxResults })).toThrow(error);
     }
+    // Numbers are shown as JavaScript shows them.
+    for (const maxResults of [1e-7, -1e21]) {
+      expect(() => search('a', items, { maxResults })).toThrow(
+        `maxResults must be a non-negative integer or Infinity, got ${maxResults}`,
+      );
+    }
   });
 
   it('still accepts omitted, undefined and null options', () => {
@@ -397,5 +404,54 @@ describe('maxResults validation', () => {
     expect(search('a', items, {})).toHaveLength(4);
     expect(index.search('a', null)).toHaveLength(4);
     expect(index.searchIndices('a', undefined)).toHaveLength(4);
+  });
+});
+
+// No score compares as at least NaN, so a NaN minScore used to filter out
+// every match silently, while a NaN maxResults or minSimilarity throws.
+describe('minScore validation', () => {
+  const items = ['a', 'ab', 'abc', 'abcd'];
+  const index = new FuzzyIndex(items);
+  const keyed = new KeyedFuzzyIndex([items], [1]);
+  const objects = items.map((name) => ({ name }));
+  const objectIndex = new FuzzyObjectIndex(objects, { keys: ['name'] });
+  const NAN = Number.NaN;
+
+  /** Every API taking a minScore, called with `minScore`. */
+  const calls = (minScore: number): Array<[string, () => unknown]> => [
+    ['search', () => search('a', items, { minScore })],
+    ['closest', () => closest('a', items, minScore)],
+    ['FuzzyIndex.search', () => index.search('a', { minScore })],
+    ['FuzzyIndex.searchIndices', () => index.searchIndices('a', { minScore })],
+    ['FuzzyIndex.closest', () => index.closest('a', minScore)],
+    ['searchKeys', () => searchKeys('a', [items], [1], { minScore })],
+    ['KeyedFuzzyIndex.search', () => keyed.search('a', { minScore })],
+    ['KeyedFuzzyIndex.closest(number)', () => keyed.closest('a', minScore)],
+    ['KeyedFuzzyIndex.closest(options)', () => keyed.closest('a', { minScore })],
+    ['searchObjects', () => searchObjects('a', objects, { keys: ['name'], minScore })],
+    ['FuzzyObjectIndex.search', () => objectIndex.search('a', { minScore })],
+    ['FuzzyObjectIndex.closest(number)', () => objectIndex.closest('a', minScore)],
+    ['FuzzyObjectIndex.closest(options)', () => objectIndex.closest('a', { minScore })],
+  ];
+
+  it('throws an InvalidArg error for NaN in every API', () => {
+    const error = expect.objectContaining({
+      code: 'InvalidArg',
+      message: 'minScore must be a number, got NaN',
+    });
+    for (const [name, call] of calls(NAN)) {
+      expect(call, name).toThrow(error);
+    }
+  });
+
+  it('still accepts -Infinity, values above 1 and Infinity', () => {
+    for (const minScore of [Number.NEGATIVE_INFINITY, -1, 0, 2, Number.POSITIVE_INFINITY]) {
+      for (const [name, call] of calls(minScore)) {
+        expect(call, `${name} minScore=${minScore}`).not.toThrow();
+      }
+    }
+    expect(search('a', items, { minScore: Number.NEGATIVE_INFINITY })).toHaveLength(4);
+    expect(search('a', items, { minScore: 2 })).toEqual([]);
+    expect(closest('a', items, 2)).toBeNull();
   });
 });

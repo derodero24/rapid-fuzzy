@@ -1,0 +1,7 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // @types/node 20.11.30 (see tsconfig.json).
+    "typeRoots": ["../../node_modules/@types-node-20.11"]
+  }
+}

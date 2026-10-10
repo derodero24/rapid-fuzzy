@@ -11,7 +11,22 @@ const wasmUrl = new URL('./rapid-fuzzy-wasm-bindgen_bg.wasm', import.meta.url);
 // fetch() cannot read file: URLs in Node.js (e.g. under --conditions=browser);
 // read the file directly where the runtime provides process.getBuiltinModule().
 const fs = wasmUrl.protocol === 'file:' ? globalThis.process?.getBuiltinModule?.('node:fs') : undefined;
-await init({ module_or_path: fs === undefined ? wasmUrl : fs.readFileSync(wasmUrl) });
+try {
+  await init({ module_or_path: fs === undefined ? wasmUrl : fs.readFileSync(wasmUrl) });
+} catch (error) {
+  // Node.js before 22.3 has no process.getBuiltinModule() and cannot fetch() a
+  // file: URL (Deno and Bun can): say so instead of "fetch failed".
+  const nodeWithoutFs =
+    fs === undefined && wasmUrl.protocol === 'file:' && typeof globalThis.process?.versions?.node === 'string' &&
+    !('Deno' in globalThis) && !('Bun' in globalThis);
+  if (!nodeWithoutFs) throw error;
+  throw new Error(
+    'rapid-fuzzy: the WebAssembly build needs Node.js 22.3 or later (process.getBuiltinModule()) to load ' +
+      wasmUrl.href +
+      '; without the "browser" export condition, Node.js uses the native addon instead',
+    { cause: error },
+  );
+}
 
 export {
   FuzzyIndex,

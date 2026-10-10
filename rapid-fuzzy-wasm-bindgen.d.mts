@@ -33,7 +33,10 @@ export interface IndexSearchResult {
  */
 export interface SearchResult {
     /**
-     * The original string that matched.
+     * The matched item. Strings are converted to UTF-8 on the way into
+     * Rust, so this is the same string as `items[index]` unless that one
+     * contains a lone UTF-16 surrogate (for example from slicing an emoji in
+     * half), which becomes U+FFFD; `index` always identifies your string.
      */
     item: string;
     /**
@@ -114,7 +117,7 @@ export type KeyMatchMode = "perKey" | "crossKey";
 export interface KeyClosestOptions {
     /**
      * Minimum combined score (0.0-1.0, see `scoreMode`): `closest()`
-     * returns null when the best match scores below it.
+     * returns null when the best match scores below it. NaN throws.
      */
     minScore?: number | undefined;
     /**
@@ -145,7 +148,7 @@ export interface KeySearchOptions {
     maxResults?: number | undefined;
     /**
      * Minimum combined score (0.0-1.0, see `scoreMode`) to include in
-     * results.
+     * results. NaN throws.
      */
     minScore?: number | undefined;
     /**
@@ -181,11 +184,11 @@ export interface KeySearchOptions {
      *   keys that take part (weight > 0).
      *
      * `keyScores` are the same in every mode; `minScore` and `maxResults`
-     * apply to the combined score. Equal scores are ordered by the length of
-     * the best-matching key's text (the key contributing most to the score:
-     * highest `weight * keyScore`, or highest `keyScore` in `"max"` mode;
-     * the first one on a tie), then by index. Any other value throws a
-     * `TypeError`.
+     * apply to the combined score. Equal scores are ordered by the UTF-8
+     * byte length of the best-matching key's text (the key contributing
+     * most to the score: highest `weight * keyScore`, or highest `keyScore`
+     * in `"max"` mode; the first one on a tie), then by index. Any other
+     * value throws a `TypeError`.
      *
      * With `matchMode: "crossKey"`, `"matched"` counts the weight of each
      * key in proportion to the share of the query it matches, and `"max"`
@@ -238,7 +241,7 @@ export interface SearchOptions {
      */
     maxResults?: number | undefined;
     /**
-     * Minimum normalized score (0.0-1.0) to include in results.
+     * Minimum normalized score (0.0-1.0) to include in results. NaN throws.
      */
     minScore?: number | undefined;
     /**
@@ -272,6 +275,9 @@ export class FuzzyIndex {
     [Symbol.dispose](): void;
     /**
      * Add multiple items to the index at once.
+     *
+     * Throws a `TypeError`, adding nothing, for anything but an array of
+     * strings.
      */
     addMany(items: ReadonlyArray<string>): void;
     /**
@@ -281,8 +287,11 @@ export class FuzzyIndex {
     /**
      * Find the closest matching string in the index.
      *
-     * Returns the best match, or null if no match is found.
-     * If `minScore` is provided, returns null when the best match scores below the threshold.
+     * Returns the best match, or null if no match is found: the index's
+     * copy of the item, converted to UTF-8 like `SearchResult.item`.
+     * If `minScore` is provided, returns null when the best match scores below
+     * the threshold. A NaN `minScore`, or one that is not a number, throws a
+     * `TypeError`.
      */
     closest(query: string, minScore?: number | null): string | null;
     /**
@@ -309,12 +318,18 @@ export class FuzzyIndex {
     static fromAsync(items: ReadonlyArray<string>): Promise<FuzzyIndex>;
     /**
      * Create a new FuzzyIndex from an array of strings.
+     *
+     * Throws a `TypeError` for anything but an array of strings.
      */
     constructor(items: ReadonlyArray<string>);
     /**
      * Remove the item at the given index.
      *
-     * Uses swap-remove for O(1) performance. Returns false if out of bounds.
+     * Uses swap-remove for O(1) performance: the last item moves into the
+     * freed slot. Returns false, removing nothing, if `index` is out of
+     * range (negative, or not less than `size`). Throws a `TypeError` if
+     * `index` is not a number and a `RangeError` if it is not an integer
+     * (`NaN`, `±Infinity` or a fraction), like `FuzzyObjectIndex.remove()`.
      */
     remove(index: number): boolean;
     /**
@@ -398,7 +413,11 @@ export class KeyedFuzzyIndex {
     /**
      * Remove the item at the given index.
      *
-     * Uses swap-remove for O(1) performance. Returns false if out of bounds.
+     * Uses swap-remove for O(1) performance: the last item moves into the
+     * freed slot. Returns false, removing nothing, if `index` is out of
+     * range (negative, or not less than `size`). Throws a `TypeError` if
+     * `index` is not a number and a `RangeError` if it is not an integer
+     * (`NaN`, `±Infinity` or a fraction), like `FuzzyObjectIndex.remove()`.
      */
     remove(index: number): boolean;
     /**
@@ -424,8 +443,12 @@ export class KeyedFuzzyIndex {
 /**
  * Find the closest matching string from a list.
  *
- * Returns the best match, or null if no match is found.
- * If `minScore` is provided, returns null when the best match scores below the threshold.
+ * Returns the best match, or null if no match is found. Like
+ * `SearchResult.item`, the returned string is converted to UTF-8: a lone
+ * UTF-16 surrogate in it becomes U+FFFD.
+ * If `minScore` is provided, returns null when the best match scores below
+ * the threshold. A NaN `minScore`, or one that is not a number, throws a
+ * `TypeError`.
  */
 export function closest(query: string, items: ReadonlyArray<string>, minScore?: number | null): string | null;
 
@@ -454,7 +477,10 @@ export function damerauLevenshteinBatch(pairs: ReadonlyArray<ReadonlyArray<strin
  *
  * Returns an array of distances, one per candidate, in the same order as the input.
  * If `maxDistance` is provided, candidates with distance exceeding the threshold
- * will return `maxDistance + 1` (enabling early termination for better performance).
+ * will return `maxDistance + 1`, at most 4294967295 (enabling early termination
+ * for better performance). `maxDistance` must be a non-negative integer or
+ * `Infinity` (no limit); NaN, negative and fractional values throw an `Error`,
+ * and a value that is not a number a `TypeError`.
  */
 export function damerauLevenshteinMany(reference: string, candidates: ReadonlyArray<string>, maxDistance?: number | null): Uint32Array;
 
@@ -486,6 +512,9 @@ export function hammingBatch(pairs: ReadonlyArray<ReadonlyArray<string>>): (numb
  * Returns `null` for candidates with a different length than the reference.
  * If `maxDistance` is provided, candidates with distance exceeding the threshold
  * will also return `null` (enabling early termination for better performance).
+ * `maxDistance` must be a non-negative integer or `Infinity` (no limit); NaN,
+ * negative and fractional values throw an `Error`, and a value that is not a
+ * number a `TypeError`.
  */
 export function hammingMany(reference: string, candidates: ReadonlyArray<string>, maxDistance?: number | null): (number | null)[];
 
@@ -517,7 +546,10 @@ export function indelBatch(pairs: ReadonlyArray<ReadonlyArray<string>>): Uint32A
  *
  * Returns an array of distances, one per candidate, in the same order as the input.
  * If `maxDistance` is provided, candidates with distance exceeding the threshold
- * will return `maxDistance + 1` (enabling early termination for better performance).
+ * will return `maxDistance + 1`, at most 4294967295 (enabling early termination
+ * for better performance). `maxDistance` must be a non-negative integer or
+ * `Infinity` (no limit); NaN, negative and fractional values throw an `Error`,
+ * and a value that is not a number a `TypeError`.
  */
 export function indelMany(reference: string, candidates: ReadonlyArray<string>, maxDistance?: number | null): Uint32Array;
 
@@ -599,7 +631,10 @@ export function levenshteinBatch(pairs: ReadonlyArray<ReadonlyArray<string>>): U
  *
  * Returns an array of distances, one per candidate, in the same order as the input.
  * If `maxDistance` is provided, candidates with distance exceeding the threshold
- * will return `maxDistance + 1` (enabling early termination for better performance).
+ * will return `maxDistance + 1`, at most 4294967295 (enabling early termination
+ * for better performance). `maxDistance` must be a non-negative integer or
+ * `Infinity` (no limit); NaN, negative and fractional values throw an `Error`,
+ * and a value that is not a number a `TypeError`.
  */
 export function levenshteinMany(reference: string, candidates: ReadonlyArray<string>, maxDistance?: number | null): Uint32Array;
 
@@ -867,73 +902,73 @@ export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_fuzzyindex_free: (a: number, b: number) => void;
     readonly __wbg_keyedfuzzyindex_free: (a: number, b: number) => void;
-    readonly closest: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
+    readonly closest: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly damerauLevenshtein: (a: number, b: number, c: number, d: number) => number;
     readonly damerauLevenshteinBatch: (a: number, b: number) => void;
-    readonly damerauLevenshteinMany: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+    readonly damerauLevenshteinMany: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly fuzzyindex_add: (a: number, b: number, c: number) => void;
     readonly fuzzyindex_addMany: (a: number, b: number, c: number) => void;
-    readonly fuzzyindex_closest: (a: number, b: number, c: number, d: number, e: number) => number;
+    readonly fuzzyindex_closest: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly fuzzyindex_deserialize: (a: number, b: number, c: number) => void;
     readonly fuzzyindex_destroy: (a: number) => void;
     readonly fuzzyindex_fromAsync: (a: number) => number;
-    readonly fuzzyindex_new: (a: number, b: number) => number;
-    readonly fuzzyindex_remove: (a: number, b: number) => number;
+    readonly fuzzyindex_new: (a: number, b: number) => void;
+    readonly fuzzyindex_remove: (a: number, b: number, c: number) => void;
     readonly fuzzyindex_search: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly fuzzyindex_searchIndices: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly fuzzyindex_serialize: (a: number, b: number) => void;
     readonly fuzzyindex_size: (a: number) => number;
     readonly hamming: (a: number, b: number, c: number, d: number) => number;
     readonly hammingBatch: (a: number, b: number) => void;
-    readonly hammingMany: (a: number, b: number, c: number, d: number, e: number) => number;
+    readonly hammingMany: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly indel: (a: number, b: number, c: number, d: number) => number;
     readonly indelBatch: (a: number, b: number) => void;
-    readonly indelMany: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+    readonly indelMany: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly jaro: (a: number, b: number, c: number, d: number) => number;
     readonly jaroBatch: (a: number, b: number) => void;
-    readonly jaroMany: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
+    readonly jaroMany: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly jaroWinkler: (a: number, b: number, c: number, d: number) => number;
     readonly jaroWinklerBatch: (a: number, b: number) => void;
-    readonly jaroWinklerMany: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
+    readonly jaroWinklerMany: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly keyedfuzzyindex_add: (a: number, b: number, c: number) => void;
     readonly keyedfuzzyindex_addMany: (a: number, b: number, c: number) => void;
     readonly keyedfuzzyindex_closest: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly keyedfuzzyindex_deserialize: (a: number, b: number, c: number) => void;
     readonly keyedfuzzyindex_destroy: (a: number) => void;
     readonly keyedfuzzyindex_new: (a: number, b: number, c: number, d: number) => void;
-    readonly keyedfuzzyindex_remove: (a: number, b: number) => number;
+    readonly keyedfuzzyindex_remove: (a: number, b: number, c: number) => void;
     readonly keyedfuzzyindex_search: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly keyedfuzzyindex_serialize: (a: number, b: number) => void;
     readonly keyedfuzzyindex_size: (a: number) => number;
     readonly levenshtein: (a: number, b: number, c: number, d: number) => number;
     readonly levenshteinBatch: (a: number, b: number) => void;
-    readonly levenshteinMany: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+    readonly levenshteinMany: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly normalizedHamming: (a: number, b: number, c: number, d: number) => number;
     readonly normalizedHammingBatch: (a: number, b: number) => void;
-    readonly normalizedHammingMany: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
+    readonly normalizedHammingMany: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly normalizedIndel: (a: number, b: number, c: number, d: number) => number;
     readonly normalizedIndelBatch: (a: number, b: number) => void;
-    readonly normalizedIndelMany: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
+    readonly normalizedIndelMany: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly normalizedLevenshtein: (a: number, b: number, c: number, d: number) => number;
     readonly normalizedLevenshteinBatch: (a: number, b: number) => void;
-    readonly normalizedLevenshteinMany: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
+    readonly normalizedLevenshteinMany: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly partialRatio: (a: number, b: number, c: number, d: number) => number;
     readonly partialRatioBatch: (a: number, b: number) => void;
-    readonly partialRatioMany: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
-    readonly search: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+    readonly partialRatioMany: (a: number, b: number, c: number, d: number, e: number) => void;
+    readonly search: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly searchKeys: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
     readonly sorensenDice: (a: number, b: number, c: number, d: number) => number;
     readonly sorensenDiceBatch: (a: number, b: number) => void;
-    readonly sorensenDiceMany: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
+    readonly sorensenDiceMany: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly tokenSetRatio: (a: number, b: number, c: number, d: number) => number;
     readonly tokenSetRatioBatch: (a: number, b: number) => void;
-    readonly tokenSetRatioMany: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
+    readonly tokenSetRatioMany: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly tokenSortRatio: (a: number, b: number, c: number, d: number) => number;
     readonly tokenSortRatioBatch: (a: number, b: number) => void;
-    readonly tokenSortRatioMany: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
+    readonly tokenSortRatioMany: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly weightedRatio: (a: number, b: number, c: number, d: number) => number;
     readonly weightedRatioBatch: (a: number, b: number) => void;
-    readonly weightedRatioMany: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
+    readonly weightedRatioMany: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly __wbindgen_export: (a: number, b: number) => number;
     readonly __wbindgen_export2: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_export3: (a: number) => void;
@@ -962,3 +997,12 @@ export function initSync(module: { module: SyncInitInput } | SyncInitInput): Ini
  * @returns {Promise<InitOutput>}
  */
 export default function __wbg_init (module_or_path?: { module_or_path: InitInput | Promise<InitInput> } | InitInput | Promise<InitInput>): Promise<InitOutput>;
+
+// `[Symbol.dispose]()` needs `SymbolConstructor.dispose`, which only the
+// `esnext.disposable` lib (TypeScript 5.2+) and @types/node declare: declared
+// here like @types/node does, so that these declarations compile with any `lib`.
+declare global {
+    interface SymbolConstructor {
+        readonly dispose: unique symbol;
+    }
+}

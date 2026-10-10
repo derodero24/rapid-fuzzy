@@ -4,6 +4,9 @@ const require = createRequire(import.meta.url);
 const binding = require('./index.js');
 
 export const {
+  // Which binding the napi-rs loader loaded ('native' or a WASI flavor);
+  // declared in index.d.ts, which index.d.mts re-exports.
+  __napiBindingTarget,
   FuzzyIndex,
   KeyedFuzzyIndex,
   MatchType,

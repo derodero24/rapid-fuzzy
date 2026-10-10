@@ -12,15 +12,58 @@ comment:
   layout: 'condensed_header, condensed_files, condensed_footer'
   require_changes: true
 
+# Code that is not measured, so that it counts neither for nor against the
+# project and patch statuses.
+ignore:
+  # Generated files (see .gitignore). CI regenerates the committed ones
+  # and compares them with the committed copies; the code they are generated
+  # from is measured where it is written.
+  # - index.js: the napi-rs loader, one branch per platform (a runner can only
+  #   take its own), plus the exports scripts/patch-binding.js appends. That
+  #   also hides the ~15 hand-written lines patch-binding.js appends (the lazy
+  #   searchObjects / FuzzyObjectIndex accessors and the highlight re-exports);
+  #   the specs exercise them, and they are not worth a separate source file.
+  - index.js
+  # - The wasm-bindgen glue of crates/wasm.
+  - rapid-fuzzy-wasm-bindgen.mjs
+  # - The browser / edge entries scripts/build-browser.js generates from the
+  #   glue and from highlight.js and objects.js (both measured themselves).
+  - browser.mjs
+  - browser-api.mjs
+  - workerd.mjs
+  - highlight.browser.mjs
+  - objects.browser.mjs
+  # - The napi-rs WASI loaders (not committed; written by the WASI build).
+  - '*.wasi.cjs'
+  - '*.wasi-browser.js'
+  - wasi-worker.mjs
+  - wasi-worker-browser.mjs
+  # crates/wasm is built only for wasm32-unknown-unknown and called only from
+  # JavaScript, and cargo llvm-cov cannot instrument wasm32 code. Its behaviour
+  # is covered by the specs that load the wasm-bindgen build and compare it
+  # with the native binding (__test__/wasm-bindgen.spec.ts and the other suites
+  # the "Build - wasm-bindgen" job requires) and by the browser, Bun, Deno and
+  # Cloudflare Workers tests in e2e/.
+  - crates/wasm/**
+  # Benchmarks, tests, build and release scripts, examples and the playground.
+  - crates/bench/**
+  - __test__/**
+  - e2e/**
+  - scripts/**
+  - examples/**
+  - playground/**
+
 flags:
   rust:
+    # Measured by the Rust tests and, through the instrumented addon, by the JS
+    # test suite (see the coverage job in .github/workflows/ci.yml).
     paths:
       - crates/
     carryforward: true
   javascript:
-    # The JS sources are the loader/wrapper modules at the repository root
-    # (index.js, objects.js, highlight.js, browser.mjs and the other *.mjs entries,
-    # wasm-bindgen glue).
+    # The hand-written modules at the repository root (objects.js, highlight.js
+    # and the *.mjs entries that re-export them); the generated ones are
+    # ignored above.
     paths:
       - '*.js'
       - '*.mjs'

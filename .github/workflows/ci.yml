@@ -364,46 +364,84 @@ jobs:
 
   coverage:
     name: Coverage
-    needs: [build]
+    # Builds its own instrumented addon, so it does not wait for the build job.
+    # Label events only matter for ci-full; other labels must not rerun CI.
+    if: ${{ github.event.action != 'labeled' || github.event.label.name == 'ci-full' }}
     runs-on: ubuntu-latest
+    # Job-level permissions replace the workflow-level block, so contents: read
+    # is restated.
+    permissions:
+      contents: read # actions/checkout
+      id-token: write # the Codecov upload authenticates with a GitHub OIDC token (no CODECOV_TOKEN secret)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-
-      # Rust coverage
-      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
-        with:
-          components: llvm-tools-preview
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-      - uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2.87.26
-        with:
-          tool: cargo-llvm-cov
-      - name: Rust coverage
-        run: cargo llvm-cov --lcov --output-path rust-lcov.info
-
-      # JS coverage
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - name: Download x86_64 linux artifact
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
         with:
-          name: bindings-x86_64-unknown-linux-gnu
-          path: .
-      - name: JS coverage
-        run: pnpm test --coverage
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          # A cache of its own: the builds below go to target/<host triple>/,
+          # not to the target/llvm-cov-target/ of a plain `cargo llvm-cov` run,
+          # and an exact hit on the old cache would never be replaced.
+          key: instrumented
+      - uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2.87.26
+        with:
+          tool: cargo-llvm-cov
+      - run: pnpm install --frozen-lockfile
 
-      # Upload to Codecov
+      # One Rust report for the Rust tests and the JS test suite together. The
+      # suite runs against a debug addon built with the same instrumentation,
+      # so the napi bindings in crates/core, which only JavaScript calls, are
+      # measured too. `show-env` prints what `cargo llvm-cov` itself would set
+      # (a RUSTC_WRAPPER that instruments the workspace crates, and
+      # LLVM_PROFILE_FILE, a path in target/): the plain cargo and napi builds
+      # then produce instrumented binaries, and every process that loads one
+      # writes a .profraw file there when it exits, which `report` merges.
+      # - Both builds target the host triple: `napi build` passes --target, so
+      #   `cargo test` does too, and they share target/<triple>/ (and its
+      #   dependency builds), which `report --target` reads.
+      # - vitest runs on worker threads: the default forks pool stops each
+      #   fork with SIGTERM, so the forks would never write their profiles.
+      #   The threads share the vitest process, which writes one when it
+      #   exits; the Node.js children some specs spawn write their own.
+      # - The JS (V8) coverage of the same run goes to coverage/lcov.info.
+      - name: Collect coverage
+        run: |
+          host=$(rustc -vV | sed -n 's/^host: //p')
+          # Through a file rather than `source <(...)`, so that a failing
+          # show-env stops the step instead of leaving the builds uninstrumented.
+          cargo llvm-cov show-env --sh > "$RUNNER_TEMP/llvm-cov-env.sh"
+          source "$RUNNER_TEMP/llvm-cov-env.sh"
+          cargo llvm-cov clean --workspace
+          cargo test --workspace --locked --target "$host"
+          pnpm run build:debug
+          node scripts/patch-binding.js
+          pnpm test --coverage --pool=threads
+          cargo llvm-cov report --target "$host" --lcov --output-path rust-lcov.info
+
+      # Upload to Codecov. Pull requests from forks get no OIDC token; the
+      # action detects them and falls back to a tokenless upload.
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7
         with:
           files: rust-lcov.info,coverage/lcov.info
           flags: rust,javascript
-          fail_ci_if_error: false
+          use_oidc: true
+          # The Codecov CLI release the action downloads (it defaults to the
+          # latest one). Renovate updates it through the custom manager in
+          # renovate.json, which matches the trailing comment.
+          version: v11.3.1 # codecov-cli
+          # Uploads reach codecov.io now (the repository is activated), so a
+          # broken upload on develop turns the job red, while a Codecov outage
+          # does not block pull requests.
+          fail_ci_if_error: ${{ github.event_name == 'push' }}
 
   build-wasm-bindgen:
     name: Build - wasm-bindgen
@@ -437,13 +475,22 @@ jobs:
       # Same check as release.yml, so stale glue fails the PR instead of the release.
       - name: Verify generated wasm-bindgen glue is up to date
         run: git diff --exit-code rapid-fuzzy-wasm-bindgen.mjs rapid-fuzzy-wasm-bindgen.d.mts browser.mjs browser.d.mts browser-api.mjs workerd.mjs highlight.browser.mjs objects.browser.mjs objects.browser.d.mts
-      # The wasm-bindgen spec compares results against the native binding.
+      # The wasm-bindgen specs compare results against the native binding.
       - name: Build native binding (debug)
         run: pnpm run build:debug && node scripts/patch-binding.js
+      # The whole suite, not a list of files: every spec that tests the
+      # wasm-bindgen build (wasm-bindgen, browser-packaging, review-fixes, and
+      # any added later) skips without the binary, which only this job builds,
+      # and RAPID_FUZZY_REQUIRE_WASM_BINDGEN turns that skip into a failure.
+      # Only wasm.spec.ts (the WASI binding, covered by the test job) skips here.
       - name: Test wasm-bindgen build
-        run: pnpm exec vitest run __test__/wasm-bindgen.spec.ts __test__/browser-packaging.spec.ts
+        run: pnpm exec vitest run
         env:
           RAPID_FUZZY_REQUIRE_WASM_BINDGEN: '1'
+      # Runs the Cloudflare Workers entry (workerd.mjs) and the example worker
+      # in Node.js, loading the .wasm?module import as Wrangler does.
+      - name: Test Cloudflare Workers entry
+        run: pnpm run test:workerd
       - name: Upload wasm-bindgen artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:

@@ -2,10 +2,11 @@ mod typed_array;
 
 use napi_derive::napi;
 use rapid_fuzzy_core::distance as core_dist;
-use rapid_fuzzy_core::distance::DistanceError;
+use rapid_fuzzy_core::distance::{DistanceError, check_max_distance};
 use typed_array::TypedArrayResult;
 
-/// Malformed `*Batch` pairs and `NaN` thresholds are argument errors.
+/// Malformed `*Batch` pairs, `NaN` similarity thresholds and invalid
+/// `maxDistance` values are argument errors.
 fn invalid_arg(err: DistanceError) -> napi::Error {
     napi::Error::new(napi::Status::InvalidArg, err.to_string())
 }
@@ -38,14 +39,21 @@ pub fn levenshtein_batch(pairs: Vec<Vec<String>>) -> napi::Result<Vec<u32>> {
 /// Returns an array of distances, one per candidate, in the same order as the input.
 /// If `maxDistance` is provided, candidates with distance exceeding the threshold
 /// will return `maxDistance + 1`, at most 4294967295 (enabling early termination
-/// for better performance).
+/// for better performance). `maxDistance` must be a non-negative integer or
+/// `Infinity` (no limit); NaN, negative and fractional values throw an
+/// `InvalidArg` error.
 #[napi]
 pub fn levenshtein_many(
     reference: String,
     candidates: Vec<String>,
-    max_distance: Option<u32>,
-) -> Vec<u32> {
-    core_dist::levenshtein_many(&reference, &candidates, max_distance)
+    max_distance: Option<f64>,
+) -> napi::Result<Vec<u32>> {
+    let max_distance = check_max_distance(max_distance).map_err(invalid_arg)?;
+    Ok(core_dist::levenshtein_many(
+        &reference,
+        &candidates,
+        max_distance,
+    ))
 }
 
 /// Compute the Damerau-Levenshtein distance between two strings.
@@ -77,14 +85,21 @@ pub fn damerau_levenshtein_batch(pairs: Vec<Vec<String>>) -> napi::Result<Vec<u3
 /// Returns an array of distances, one per candidate, in the same order as the input.
 /// If `maxDistance` is provided, candidates with distance exceeding the threshold
 /// will return `maxDistance + 1`, at most 4294967295 (enabling early termination
-/// for better performance).
+/// for better performance). `maxDistance` must be a non-negative integer or
+/// `Infinity` (no limit); NaN, negative and fractional values throw an
+/// `InvalidArg` error.
 #[napi]
 pub fn damerau_levenshtein_many(
     reference: String,
     candidates: Vec<String>,
-    max_distance: Option<u32>,
-) -> Vec<u32> {
-    core_dist::damerau_levenshtein_many(&reference, &candidates, max_distance)
+    max_distance: Option<f64>,
+) -> napi::Result<Vec<u32>> {
+    let max_distance = check_max_distance(max_distance).map_err(invalid_arg)?;
+    Ok(core_dist::damerau_levenshtein_many(
+        &reference,
+        &candidates,
+        max_distance,
+    ))
 }
 
 /// Compute the Hamming distance between two strings.
@@ -106,7 +121,7 @@ pub fn hamming(a: String, b: String) -> Option<u32> {
 /// Each pair must be an array of exactly two strings `[a, b]`; otherwise an
 /// `InvalidArg` error is thrown.
 /// Returns `null` for pairs with different lengths.
-#[napi]
+#[napi(ts_return_type = "Array<number | null>")]
 pub fn hamming_batch(pairs: Vec<Vec<String>>) -> napi::Result<Vec<Option<u32>>> {
     core_dist::hamming_batch(&pairs).map_err(invalid_arg)
 }
@@ -117,13 +132,20 @@ pub fn hamming_batch(pairs: Vec<Vec<String>>) -> napi::Result<Vec<Option<u32>>> 
 /// Returns `null` for candidates with a different length than the reference.
 /// If `maxDistance` is provided, candidates with distance exceeding the threshold
 /// will also return `null` (enabling early termination for better performance).
-#[napi]
+/// `maxDistance` must be a non-negative integer or `Infinity` (no limit); NaN,
+/// negative and fractional values throw an `InvalidArg` error.
+#[napi(ts_return_type = "Array<number | null>")]
 pub fn hamming_many(
     reference: String,
     candidates: Vec<String>,
-    max_distance: Option<u32>,
-) -> Vec<Option<u32>> {
-    core_dist::hamming_many(&reference, &candidates, max_distance)
+    max_distance: Option<f64>,
+) -> napi::Result<Vec<Option<u32>>> {
+    let max_distance = check_max_distance(max_distance).map_err(invalid_arg)?;
+    Ok(core_dist::hamming_many(
+        &reference,
+        &candidates,
+        max_distance,
+    ))
 }
 
 /// Compute the normalized Hamming similarity between two strings.
@@ -144,7 +166,7 @@ pub fn normalized_hamming(a: String, b: String) -> Option<f64> {
 /// Each pair must be an array of exactly two strings `[a, b]`; otherwise an
 /// `InvalidArg` error is thrown.
 /// Returns `null` for pairs with different lengths.
-#[napi]
+#[napi(ts_return_type = "Array<number | null>")]
 pub fn normalized_hamming_batch(pairs: Vec<Vec<String>>) -> napi::Result<Vec<Option<f64>>> {
     core_dist::normalized_hamming_batch(&pairs).map_err(invalid_arg)
 }
@@ -156,7 +178,7 @@ pub fn normalized_hamming_batch(pairs: Vec<Vec<String>>) -> napi::Result<Vec<Opt
 /// If `minSimilarity` is provided, candidates with similarity below the threshold
 /// will also return `null`; a score equal to it is kept. Throws an `InvalidArg`
 /// error if `minSimilarity` is `NaN`.
-#[napi]
+#[napi(ts_return_type = "Array<number | null>")]
 pub fn normalized_hamming_many(
     reference: String,
     candidates: Vec<String>,
@@ -344,14 +366,17 @@ pub fn indel_batch(pairs: Vec<Vec<String>>) -> napi::Result<Vec<u32>> {
 /// Returns an array of distances, one per candidate, in the same order as the input.
 /// If `maxDistance` is provided, candidates with distance exceeding the threshold
 /// will return `maxDistance + 1`, at most 4294967295 (enabling early termination
-/// for better performance).
+/// for better performance). `maxDistance` must be a non-negative integer or
+/// `Infinity` (no limit); NaN, negative and fractional values throw an
+/// `InvalidArg` error.
 #[napi]
 pub fn indel_many(
     reference: String,
     candidates: Vec<String>,
-    max_distance: Option<u32>,
-) -> Vec<u32> {
-    core_dist::indel_many(&reference, &candidates, max_distance)
+    max_distance: Option<f64>,
+) -> napi::Result<Vec<u32>> {
+    let max_distance = check_max_distance(max_distance).map_err(invalid_arg)?;
+    Ok(core_dist::indel_many(&reference, &candidates, max_distance))
 }
 
 /// Compute the normalized Indel similarity between two strings.
@@ -560,13 +585,9 @@ pub fn weighted_ratio_many(
 pub fn levenshtein_many_u32(
     reference: String,
     candidates: Vec<String>,
-    max_distance: Option<u32>,
-) -> TypedArrayResult<u32> {
-    TypedArrayResult(core_dist::levenshtein_many(
-        &reference,
-        &candidates,
-        max_distance,
-    ))
+    max_distance: Option<f64>,
+) -> napi::Result<TypedArrayResult<u32>> {
+    levenshtein_many(reference, candidates, max_distance).map(TypedArrayResult)
 }
 
 /// Like `damerauLevenshteinMany`, but returns the distances in a `Uint32Array`.
@@ -574,13 +595,9 @@ pub fn levenshtein_many_u32(
 pub fn damerau_levenshtein_many_u32(
     reference: String,
     candidates: Vec<String>,
-    max_distance: Option<u32>,
-) -> TypedArrayResult<u32> {
-    TypedArrayResult(core_dist::damerau_levenshtein_many(
-        &reference,
-        &candidates,
-        max_distance,
-    ))
+    max_distance: Option<f64>,
+) -> napi::Result<TypedArrayResult<u32>> {
+    damerau_levenshtein_many(reference, candidates, max_distance).map(TypedArrayResult)
 }
 
 /// Like `indelMany`, but returns the distances in a `Uint32Array`.
@@ -588,9 +605,9 @@ pub fn damerau_levenshtein_many_u32(
 pub fn indel_many_u32(
     reference: String,
     candidates: Vec<String>,
-    max_distance: Option<u32>,
-) -> TypedArrayResult<u32> {
-    TypedArrayResult(core_dist::indel_many(&reference, &candidates, max_distance))
+    max_distance: Option<f64>,
+) -> napi::Result<TypedArrayResult<u32>> {
+    indel_many(reference, candidates, max_distance).map(TypedArrayResult)
 }
 
 /// Like `hammingMany`, but returns the distances in a `Uint32Array`.
@@ -603,15 +620,15 @@ pub fn indel_many_u32(
 pub fn hamming_many_u32(
     reference: String,
     candidates: Vec<String>,
-    max_distance: Option<u32>,
-) -> TypedArrayResult<u32> {
-    let distances = core_dist::hamming_many(&reference, &candidates, max_distance);
-    TypedArrayResult(
+    max_distance: Option<f64>,
+) -> napi::Result<TypedArrayResult<u32>> {
+    let distances = hamming_many(reference, candidates, max_distance)?;
+    Ok(TypedArrayResult(
         distances
             .into_iter()
             .map(|d| d.unwrap_or(u32::MAX))
             .collect(),
-    )
+    ))
 }
 
 /// Like `normalizedHammingMany`, but returns the scores in a `Float64Array`.
@@ -749,7 +766,7 @@ mod tests {
     #[test]
     fn test_levenshtein_many() {
         let candidates = vec!["sitting".to_string(), "".to_string(), "kitten".to_string()];
-        let result = levenshtein_many("kitten".to_string(), candidates, None);
+        let result = levenshtein_many("kitten".to_string(), candidates, None).unwrap();
         assert_eq!(result, vec![3, 6, 0]);
     }
 
@@ -780,7 +797,7 @@ mod tests {
             "karolin".to_string(),
             "abc".to_string(),
         ];
-        let result = hamming_many("karolin".to_string(), candidates, None);
+        let result = hamming_many("karolin".to_string(), candidates, None).unwrap();
         assert_eq!(result, vec![Some(3), Some(0), None]);
     }
 
@@ -945,14 +962,14 @@ mod tests {
                 "abcdef".to_string(),
             ];
             // max_distance = 2: "sitting" (dist=3) exceeds, "kitten" (dist=0) passes, "abcdef" (dist=5) exceeds
-            let result = levenshtein_many("kitten".to_string(), candidates, Some(2));
+            let result = levenshtein_many("kitten".to_string(), candidates, Some(2.0)).unwrap();
             assert_eq!(result, vec![3, 0, 3]); // sentinel = max_distance + 1 = 3
         }
 
         #[test]
         fn test_levenshtein_many_without_cutoff() {
             let candidates = vec!["sitting".to_string(), "kitten".to_string()];
-            let result = levenshtein_many("kitten".to_string(), candidates, None);
+            let result = levenshtein_many("kitten".to_string(), candidates, None).unwrap();
             assert_eq!(result, vec![3, 0]);
         }
 
@@ -963,7 +980,8 @@ mod tests {
                 "kitten".to_string(),
                 "abcdef".to_string(),
             ];
-            let result = damerau_levenshtein_many("kitten".to_string(), candidates, Some(2));
+            let result =
+                damerau_levenshtein_many("kitten".to_string(), candidates, Some(2.0)).unwrap();
             // "sitting" has DL distance 3 (exceeds cutoff 2 -> sentinel 3)
             // "kitten" has DL distance 0 (within cutoff)
             // "abcdef" has DL distance > 2 (exceeds cutoff -> sentinel 3)
@@ -975,7 +993,7 @@ mod tests {
         #[test]
         fn test_damerau_levenshtein_many_without_cutoff() {
             let candidates = vec!["sitting".to_string(), "kitten".to_string()];
-            let result = damerau_levenshtein_many("kitten".to_string(), candidates, None);
+            let result = damerau_levenshtein_many("kitten".to_string(), candidates, None).unwrap();
             assert_eq!(result[1], 0);
             assert!(result[0] > 0);
         }
@@ -987,7 +1005,7 @@ mod tests {
                 "karolin".to_string(), // dist=0, within cutoff
                 "abc".to_string(),     // different length -> None
             ];
-            let result = hamming_many("karolin".to_string(), candidates, Some(2));
+            let result = hamming_many("karolin".to_string(), candidates, Some(2.0)).unwrap();
             assert_eq!(result, vec![None, Some(0), None]);
         }
 
@@ -998,7 +1016,7 @@ mod tests {
                 "karolin".to_string(),
                 "abc".to_string(),
             ];
-            let result = hamming_many("karolin".to_string(), candidates, None);
+            let result = hamming_many("karolin".to_string(), candidates, None).unwrap();
             assert_eq!(result, vec![Some(3), Some(0), None]);
         }
 
@@ -1006,7 +1024,7 @@ mod tests {
         fn test_hamming_many_cutoff_zero() {
             // max_distance = 0 means only exact matches pass
             let candidates = vec!["karolin".to_string(), "kathrin".to_string()];
-            let result = hamming_many("karolin".to_string(), candidates, Some(0));
+            let result = hamming_many("karolin".to_string(), candidates, Some(0.0)).unwrap();
             assert_eq!(result, vec![Some(0), None]);
         }
 
@@ -1081,7 +1099,7 @@ mod tests {
         fn test_levenshtein_many_cutoff_zero() {
             // max_distance = 0 means only exact matches pass
             let candidates = vec!["kitten".to_string(), "sitting".to_string()];
-            let result = levenshtein_many("kitten".to_string(), candidates, Some(0));
+            let result = levenshtein_many("kitten".to_string(), candidates, Some(0.0)).unwrap();
             assert_eq!(result[0], 0); // exact match
             assert_eq!(result[1], 1); // sentinel = 0 + 1 = 1
         }

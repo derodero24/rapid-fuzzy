@@ -230,6 +230,18 @@ test.describe('many functions', () => {
     // Length mismatches are null, as in the Node.js binding
     expect(result[2]).toBeNull();
   });
+
+  test('thresholds that are not numbers throw a TypeError', async ({ page }) => {
+    const result = await page.evaluate(() => window.__results.thresholdTypeErrors);
+    expect(result).toEqual([
+      'TypeError: maxDistance must be a number, got string',
+      'TypeError: maxDistance must be a number, got string',
+      'TypeError: maxDistance must be a number, got boolean',
+      'TypeError: minSimilarity must be a number, got string',
+      'TypeError: minScore must be a number, got boolean',
+      'TypeError: minScore must be a number, got object',
+    ]);
+  });
 });
 
 test.describe('token-based functions', () => {

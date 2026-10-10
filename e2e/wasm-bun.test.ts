@@ -111,6 +111,21 @@ describe('WASM on Bun (wasm-bindgen)', () => {
       // Length mismatches are null, as in the Node.js binding
       expect(result[2]).toBeNull();
     });
+
+    test('thresholds that are not numbers throw a TypeError', () => {
+      // Deliberately wrong types, which used to be converted with Number().
+      const anyThreshold = (value: unknown) => value as number;
+      expect(() => wasm.levenshteinMany('sitten', ['kitten'], anyThreshold(''))).toThrow(
+        new TypeError('maxDistance must be a number, got string'),
+      );
+      expect(() => wasm.jaroMany('abc', ['abd'], anyThreshold('0.9'))).toThrow(
+        new TypeError('minSimilarity must be a number, got string'),
+      );
+      expect(() => wasm.closest('ap', ['apricot', 'ap'], anyThreshold(true))).toThrow(
+        new TypeError('minScore must be a number, got boolean'),
+      );
+      expect(Array.from(wasm.levenshteinMany('sitten', ['kitten'], null))).toEqual([1]);
+    });
   });
 
   describe('token-based functions', () => {
