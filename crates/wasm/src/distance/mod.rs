@@ -161,7 +161,8 @@ pub fn hamming_batch(
 /// If `maxDistance` is provided, candidates with distance exceeding the threshold
 /// will also return `null` (enabling early termination for better performance).
 /// `maxDistance` must be a non-negative integer or `Infinity` (no limit); NaN,
-/// negative and fractional values throw an `Error`.
+/// negative and fractional values throw an `Error`, and a value that is not a
+/// number a `TypeError`.
 #[wasm_bindgen(js_name = "hammingMany", unchecked_return_type = "(number | null)[]")]
 pub fn hamming_many(
     reference: String,

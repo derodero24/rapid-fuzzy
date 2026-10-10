@@ -513,7 +513,8 @@ export function hammingBatch(pairs: ReadonlyArray<ReadonlyArray<string>>): (numb
  * If `maxDistance` is provided, candidates with distance exceeding the threshold
  * will also return `null` (enabling early termination for better performance).
  * `maxDistance` must be a non-negative integer or `Infinity` (no limit); NaN,
- * negative and fractional values throw an `Error`.
+ * negative and fractional values throw an `Error`, and a value that is not a
+ * number a `TypeError`.
  */
 export function hammingMany(reference: string, candidates: ReadonlyArray<string>, maxDistance?: number | null): (number | null)[];
 

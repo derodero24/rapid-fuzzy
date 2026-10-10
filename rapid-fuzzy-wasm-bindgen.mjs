@@ -664,7 +664,8 @@ export function hammingBatch(pairs) {
  * If `maxDistance` is provided, candidates with distance exceeding the threshold
  * will also return `null` (enabling early termination for better performance).
  * `maxDistance` must be a non-negative integer or `Infinity` (no limit); NaN,
- * negative and fractional values throw an `Error`.
+ * negative and fractional values throw an `Error`, and a value that is not a
+ * number a `TypeError`.
  * @param {string} reference
  * @param {string[]} candidates
  * @param {number | null} [maxDistance]
