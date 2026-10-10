@@ -1119,6 +1119,9 @@ describe.skipIf(!wasmAvailable)('wasm-bindgen runtime', () => {
       [-0.5, '-0.5'],
       [Number.POSITIVE_INFINITY, 'Infinity'],
       [Number.NEGATIVE_INFINITY, '-Infinity'],
+      [1e-7, '1e-7'],
+      [-1.5e-7, '-1.5e-7'],
+      [5e-324, '5e-324'],
     ])('throws a RangeError for %s and removes nothing', (value, shown) => {
       for (const index of indexes()) {
         const err = thrown(() => index.remove(value));

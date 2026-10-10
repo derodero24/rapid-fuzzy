@@ -611,7 +611,8 @@ describe.skipIf(!wasmAvailable)('wasm', () => {
       expect(Array.from(wasm[name]('kitten', cands, 1))).toEqual(
         Array.from(native[name]('kitten', cands, 1)),
       );
-      for (const maxDistance of [Number.NaN, -1, 2.9]) {
+      // `${maxDistance}` is how JavaScript shows the number ('1e-7', '-1e+21').
+      for (const maxDistance of [Number.NaN, -1, 2.9, 1e-7, -1e21]) {
         expect(() => wasm[name]('kitten', cands, maxDistance)).toThrow(
           `maxDistance must be a non-negative integer or Infinity, got ${maxDistance}`,
         );

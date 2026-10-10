@@ -1834,6 +1834,10 @@ describe('FuzzyIndex', () => {
       ['a negative fraction', -0.5, '-0.5'],
       ['Infinity', Number.POSITIVE_INFINITY, 'Infinity'],
       ['-Infinity', Number.NEGATIVE_INFINITY, '-Infinity'],
+      // Shown in exponential notation, as JavaScript's String(value) does.
+      ['a tiny fraction', 1e-7, '1e-7'],
+      ['a tiny negative fraction', -1.5e-7, '-1.5e-7'],
+      ['the smallest subnormal', 5e-324, '5e-324'],
     ])('throws a RangeError for %s and removes nothing', (_label, value, shown) => {
       const index = create();
       expect(() => index.remove(value)).toThrow(RangeError);
@@ -1852,6 +1856,25 @@ describe('FuzzyIndex', () => {
       const remove = (): boolean => index.remove(value as unknown as number);
       expect(remove).toThrow(TypeError);
       expect(remove).toThrow(`index must be a number, got ${type}`);
+      expect(index.size).toBe(3);
+    });
+
+    it('shows a non-integer index the way String(value) does', () => {
+      const index = create();
+      // Sweep the magnitudes of doubles that are not integers, whose notation
+      // JavaScript switches to exponential below 1e-6.
+      const values = Array.from({ length: 339 }, (_, i) => i - 323).flatMap((exponent) =>
+        [1, -1.5, 1.2345678901234567, -9.87654321].map((mantissa) => mantissa * 10 ** exponent),
+      );
+      for (const value of values.filter((v) => !Number.isInteger(v))) {
+        let message: unknown;
+        try {
+          index.remove(value);
+        } catch (error) {
+          message = (error as Error).message;
+        }
+        expect(message).toBe(`index must be an integer, got ${value}`);
+      }
       expect(index.size).toBe(3);
     });
 

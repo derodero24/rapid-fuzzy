@@ -793,6 +793,8 @@ mod tests {
             (0.5, "0.5"),
             (-0.5, "-0.5"),
             (f64::NEG_INFINITY, "-Infinity"),
+            (1e-7, "1e-7"),
+            (-1e21, "-1e+21"),
         ] {
             assert_eq!(
                 check_max_results(invalid),

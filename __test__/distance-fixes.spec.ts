@@ -153,6 +153,16 @@ function expectSame(actual: unknown, expected: unknown, context: string): void {
   }
 }
 
+/** The message of the error `fn` throws, or undefined if it returns. */
+function thrownMessage(fn: () => unknown): unknown {
+  try {
+    fn();
+  } catch (error) {
+    return (error as Error).message;
+  }
+  return undefined;
+}
+
 function expectInvalidArg(fn: () => unknown): void {
   let caught: unknown;
   try {
@@ -688,11 +698,32 @@ describe('*Many threshold handling', () => {
         expect(() => fn('kitten', cands, 2.9)).toThrow(
           'maxDistance must be a non-negative integer or Infinity, got 2.9',
         );
+        // Numbers are shown as JavaScript shows them.
+        expect(() => fn('kitten', cands, 1e-7)).toThrow(
+          'maxDistance must be a non-negative integer or Infinity, got 1e-7',
+        );
+        expect(() => fn('kitten', cands, -1e21)).toThrow(
+          'maxDistance must be a non-negative integer or Infinity, got -1e+21',
+        );
         // -0 is 0, and undefined / null mean no limit.
         expect(Array.from(fn('kitten', cands, -0))).toEqual(Array.from(fn('kitten', cands, 0)));
         expect(Array.from(fn('kitten', cands, null))).toEqual(Array.from(fn('kitten', cands)));
       });
     }
+
+    it('shows the rejected number the way String(value) does', () => {
+      // Every negative number is rejected: sweep the magnitudes of doubles,
+      // whose notation JavaScript switches to exponential below 1e-6 and
+      // from 1e21 on.
+      const values = Array.from({ length: 632 }, (_, i) => i - 323).flatMap((exponent) =>
+        [1, 1.5, 1.2345678901234567, 9.87654321].map((mantissa) => -mantissa * 10 ** exponent),
+      );
+      for (const value of values.filter(Number.isFinite)) {
+        expect(thrownMessage(() => levenshteinMany('kitten', cands, value))).toBe(
+          `maxDistance must be a non-negative integer or Infinity, got ${value}`,
+        );
+      }
+    });
 
     it('keeps filtering with an integer threshold', () => {
       expect(levenshteinMany('kitten', cands, 2)).toEqual([0, 3, 2, 3]);

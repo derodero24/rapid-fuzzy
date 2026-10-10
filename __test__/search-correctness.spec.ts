@@ -389,6 +389,12 @@ describe('maxResults validation', () => {
       expect(() => keyed.search('a', { maxResults })).toThrow(error);
       expect(() => searchKeys('a', [items], [1], { maxResults })).toThrow(error);
     }
+    // Numbers are shown as JavaScript shows them.
+    for (const maxResults of [1e-7, -1e21]) {
+      expect(() => search('a', items, { maxResults })).toThrow(
+        `maxResults must be a non-negative integer or Infinity, got ${maxResults}`,
+      );
+    }
   });
 
   it('still accepts omitted, undefined and null options', () => {

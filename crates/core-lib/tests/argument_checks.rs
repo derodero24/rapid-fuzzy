@@ -39,6 +39,10 @@ fn remove_index_rejects_non_integers_like_fuzzy_object_index() {
         (1.5, "1.5"),
         (0.9, "0.9"),
         (-0.5, "-0.5"),
+        // JavaScript's exponential notation, as in `${value}`.
+        (1e-7, "1e-7"),
+        (-1.5e-7, "-1.5e-7"),
+        (5e-324, "5e-324"),
     ] {
         assert_eq!(
             check_remove_index(value),
@@ -88,6 +92,8 @@ fn max_distance_rejects_nan_negative_and_fractional_values() {
         (-4_294_967_295.0, "-4294967295"),
         (2.9, "2.9"),
         (0.5, "0.5"),
+        (1e-7, "1e-7"),
+        (-1e21, "-1e+21"),
     ] {
         let err = check_max_distance(Some(value)).unwrap_err();
         assert!(
