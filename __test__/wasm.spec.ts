@@ -594,5 +594,111 @@ describe.skipIf(!wasmAvailable)('wasm', () => {
         'matchMode must be "perKey" or "crossKey", got "cross"',
       );
     });
+
+    it.each([
+      'levenshteinMany',
+      'damerauLevenshteinMany',
+      'indelMany',
+      'hammingMany',
+      'levenshteinManyU32',
+      'hammingManyU32',
+    ])('%s validates maxDistance like native (no modulo-2^32 wrapping)', (name) => {
+      const cands = ['kitten', 'sitting', 'kitchen'];
+      const plain = Array.from(wasm[name]('kitten', cands));
+      for (const maxDistance of [Number.POSITIVE_INFINITY, 2 ** 32, 2 ** 32 + 2]) {
+        expect(Array.from(wasm[name]('kitten', cands, maxDistance))).toEqual(plain);
+      }
+      expect(Array.from(wasm[name]('kitten', cands, 1))).toEqual(
+        Array.from(native[name]('kitten', cands, 1)),
+      );
+      for (const maxDistance of [Number.NaN, -1, 2.9]) {
+        expect(() => wasm[name]('kitten', cands, maxDistance)).toThrow(
+          `maxDistance must be a non-negative integer or Infinity, got ${maxDistance}`,
+        );
+      }
+    });
+
+    // Known upstream bug, kept visible: @emnapi/core's stringToUTF8 and
+    // lengthBytesUTF8 (2.0.0-alpha.6, and 1.11.3 stable) read every code unit
+    // in 0xD800-0xDFFF as the lead of a surrogate pair and swallow the next
+    // one, so a lone surrogate eats the following character in the WASI
+    // build ('ab\uD800cd' arrives as 'ab𐁣d'), while the native and
+    // browser builds turn it into U+FFFD. `it.fails` passes while the builds
+    // disagree; once a fixed emnapi is pinned this fails, so drop `.fails`.
+    it.fails('handles lone UTF-16 surrogates like native (emnapi bug)', () => {
+      const items = ['ab\uD800cd', 'end\uD800', 'x\uDC00y'];
+      for (const item of items) {
+        expect(wasm.search('', [item], { returnAllOnEmpty: true })[0]?.item).toBe(
+          native.search('', [item], { returnAllOnEmpty: true })[0]?.item,
+        );
+      }
+      expect(wasm.levenshtein('a\uD800', 'a�')).toBe(native.levenshtein('a\uD800', 'a�'));
+      expect(wasm.levenshtein('\uD800日', 'x')).toBe(native.levenshtein('\uD800日', 'x'));
+      expect(wasm.hamming('\uD800日', 'ab')).toBe(native.hamming('\uD800日', 'ab'));
+    });
+
+    it('deserialize() accepts a plain Uint8Array like native', () => {
+      const bytes = new Uint8Array(new wasm.FuzzyIndex(['apple', 'banana']).serialize());
+      expect(wasm.FuzzyIndex.deserialize(bytes).size).toBe(2);
+      const keyed = new wasm.KeyedFuzzyIndex([['a', 'b']], [1]);
+      expect(wasm.KeyedFuzzyIndex.deserialize(new Uint8Array(keyed.serialize())).size).toBe(2);
+      // Hamming results hold numbers and null only, as declared.
+      expect(wasm.hammingMany('abc', ['abd', 'ab'])).toEqual([1, null]);
+    });
+
+    it('rejects a NaN minScore like native', () => {
+      const items = ['a', 'ab'];
+      const message = 'minScore must be a number, got NaN';
+      const nan = Number.NaN;
+      expect(() => wasm.search('a', items, { minScore: nan })).toThrow(message);
+      expect(() => wasm.closest('a', items, nan)).toThrow(message);
+      expect(() => new wasm.FuzzyIndex(items).closest('a', nan)).toThrow(message);
+      expect(() => new wasm.FuzzyIndex(items).search('a', { minScore: nan })).toThrow(message);
+      expect(() => wasm.searchKeys('a', [items], [1], { minScore: nan })).toThrow(message);
+      expect(() => new wasm.KeyedFuzzyIndex([items], [1]).closest('a', nan)).toThrow(message);
+      expect(wasm.closest('a', items, 0)).toBe(native.closest('a', items, 0));
+    });
+
+    describe('remove() validates its index like native (no modulo-2^32 wrapping)', () => {
+      const create = (m: typeof wasm) => [
+        new m.FuzzyIndex(['a', 'b', 'c']),
+        new m.KeyedFuzzyIndex([['a', 'b', 'c']], [1]),
+      ];
+      /** The class and message of the error `fn` throws. */
+      const errorOf = (fn: () => unknown): [unknown, string] => {
+        try {
+          fn();
+        } catch (err) {
+          return [(err as Error).constructor, (err as Error).message];
+        }
+        return [undefined, 'no error'];
+      };
+
+      it.each([
+        [Number.NaN, RangeError],
+        [1.5, RangeError],
+        [Number.POSITIVE_INFINITY, RangeError],
+        [undefined, TypeError],
+        [null, TypeError],
+        ['1', TypeError],
+      ])('throws for %s like native and removes nothing', (value, errorClass) => {
+        const nativeIndexes = create(native);
+        create(wasm).forEach((index, i) => {
+          const wasmError = errorOf(() => index.remove(value));
+          expect(wasmError[0]).toBe(errorClass);
+          expect(wasmError).toEqual(errorOf(() => nativeIndexes[i].remove(value)));
+          expect(index.size).toBe(3);
+        });
+      });
+
+      it('returns false for out-of-range integers', () => {
+        for (const index of create(wasm)) {
+          for (const value of [-1, 3, 2 ** 32, 2 ** 32 + 1]) {
+            expect(index.remove(value)).toBe(false);
+          }
+          expect(index.size).toBe(3);
+        }
+      });
+    });
   });
 });

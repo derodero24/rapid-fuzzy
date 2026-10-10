@@ -639,14 +639,64 @@ describe('*Many threshold handling', () => {
         expect(family.many('kitten', cands, U32_MAX)).toEqual(plain);
         expect(Array.from(family.manyU32('kitten', cands, U32_MAX))).toEqual(plain);
         expect(family.many('kitten', cands, U32_MAX - 1)).toEqual(plain);
-        // Negative values wrap to the top of the u32 range, which disables filtering.
-        expect(family.many('kitten', cands, -1)).toEqual(plain);
       });
     }
 
     it('hammingMany does not overflow for maxDistance = 4294967295', () => {
       expect(hammingMany('abc', ['abd', 'ab'], U32_MAX)).toEqual([1, null]);
-      expect(hammingMany('abc', ['abd', 'ab'], -1)).toEqual([1, null]);
+    });
+  });
+
+  // maxDistance used to be read as a u32, wrapping it modulo 2^32: Infinity,
+  // NaN and 2 ** 32 became 0 (every candidate that was not identical was
+  // reported as exceeding it), -1 disabled it and 2.9 was truncated.
+  describe('maxDistance validation (like maxResults)', () => {
+    const cands = ['kitten', 'sitting', 'kitchen', 'a much longer candidate'];
+    const distanceManyFunctions: readonly (readonly [
+      string,
+      (reference: string, candidates: string[], maxDistance?: MaybeThreshold) => ArrayLike<unknown>,
+    ])[] = [
+      ...DISTANCE_FAMILIES.flatMap(
+        (f) =>
+          [
+            [`${f.name}Many`, f.many],
+            [`${f.name}ManyU32`, f.manyU32],
+          ] as const,
+      ),
+      ['hammingMany', hammingMany],
+      ['hammingManyU32', hammingManyU32],
+    ];
+
+    for (const [name, fn] of distanceManyFunctions) {
+      it(`${name}: Infinity and values >= 2^32 mean no limit`, () => {
+        const plain = Array.from(fn('kitten', cands));
+        for (const maxDistance of [Number.POSITIVE_INFINITY, 2 ** 32, 2 ** 32 + 2, 1e300]) {
+          expect(Array.from(fn('kitten', cands, maxDistance))).toEqual(plain);
+        }
+      });
+
+      it(`${name}: NaN, negative and fractional values throw an InvalidArg error`, () => {
+        for (const maxDistance of [Number.NaN, -1, -0.5, 2.9, Number.NEGATIVE_INFINITY]) {
+          expectInvalidArg(() => fn('kitten', cands, maxDistance));
+        }
+        expect(() => fn('kitten', cands, Number.NaN)).toThrow(
+          'maxDistance must be a non-negative integer or Infinity, got NaN',
+        );
+        expect(() => fn('kitten', cands, -1)).toThrow(
+          'maxDistance must be a non-negative integer or Infinity, got -1',
+        );
+        expect(() => fn('kitten', cands, 2.9)).toThrow(
+          'maxDistance must be a non-negative integer or Infinity, got 2.9',
+        );
+        // -0 is 0, and undefined / null mean no limit.
+        expect(Array.from(fn('kitten', cands, -0))).toEqual(Array.from(fn('kitten', cands, 0)));
+        expect(Array.from(fn('kitten', cands, null))).toEqual(Array.from(fn('kitten', cands)));
+      });
+    }
+
+    it('keeps filtering with an integer threshold', () => {
+      expect(levenshteinMany('kitten', cands, 2)).toEqual([0, 3, 2, 3]);
+      expect(hammingMany('kitten', ['sitten', 'kitten', 'sittin'], 1)).toEqual([1, 0, null]);
     });
   });
 });

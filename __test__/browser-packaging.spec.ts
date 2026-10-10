@@ -244,7 +244,11 @@ describe.skipIf(!wasmAvailable)('browser.mjs (the WebAssembly build)', () => {
   it('exports exactly what the Node.js ES module entry exports', async () => {
     const browser = await load();
     const nodeEsm = (await import('../index.mjs')) as Record<string, unknown>;
-    expect(Object.keys(browser).sort()).toEqual(Object.keys(nodeEsm).sort());
+    // Except the napi-rs loader's marker of the Node.js binding it loaded
+    // (browser.types.ts excludes it too).
+    const nodeNames = Object.keys(nodeEsm).filter((name) => name !== '__napiBindingTarget');
+    expect(Object.keys(nodeEsm)).toContain('__napiBindingTarget');
+    expect(Object.keys(browser).sort()).toEqual(nodeNames.sort());
   });
 
   it('is ready to use as soon as the import resolves', async () => {

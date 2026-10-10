@@ -10,7 +10,9 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
 use nucleo_matcher::pattern::CaseMatching;
-use rapid_fuzzy_core::search::{KeyScoreMode, KeyedFuzzyIndexCore, search_keys_impl};
+use rapid_fuzzy_core::search::{
+    FuzzyIndexCore, KeyScoreMode, KeyedFuzzyIndexCore, search_keys_impl,
+};
 
 struct CountingAlloc;
 
@@ -170,4 +172,24 @@ fn standalone_search_keys_allocates_no_matcher_of_its_own() {
     assert_eq!(results[0].index, 0);
     drop(results);
     assert_eq!(live(), before);
+}
+
+#[test]
+fn ascii_key_texts_are_stored_once() {
+    // Like `FuzzyIndexCore`, the index matches ASCII text as its own bytes
+    // instead of keeping a second copy: a one-key index costs what a
+    // `FuzzyIndexCore` over the same items costs, plus its per-key columns
+    // (it used to cost the text again, plus 8 bytes per item). Both get
+    // clones, whose strings have no spare capacity.
+    let items: Vec<String> = (0..1000)
+        .map(|i| format!("handler_repository_service_{i}"))
+        .collect();
+    let fuzzy = FuzzyIndexCore::new(items.clone()).heap_size();
+    let keyed = KeyedFuzzyIndexCore::new(vec![items.clone()], vec![1.0])
+        .unwrap()
+        .heap_size();
+    assert!(
+        keyed <= fuzzy + 256,
+        "KeyedFuzzyIndexCore: {keyed} bytes, FuzzyIndexCore: {fuzzy} bytes"
+    );
 }

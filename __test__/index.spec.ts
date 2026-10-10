@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -1819,6 +1821,56 @@ describe('FuzzyIndex', () => {
     });
   });
 
+  // The index used to be read as a u32, wrapping it modulo 2^32: remove(NaN)
+  // and remove(2 ** 32) removed item 0 and returned true. Both index classes
+  // now validate it like FuzzyObjectIndex.remove().
+  describe.each([
+    ['FuzzyIndex', () => new FuzzyIndex(['a', 'b', 'c'])],
+    ['KeyedFuzzyIndex', () => new KeyedFuzzyIndex([['a', 'b', 'c']], [1])],
+  ])('%s.remove() argument validation', (_name, create) => {
+    it.each([
+      ['NaN', Number.NaN, 'NaN'],
+      ['a fraction', 1.5, '1.5'],
+      ['a negative fraction', -0.5, '-0.5'],
+      ['Infinity', Number.POSITIVE_INFINITY, 'Infinity'],
+      ['-Infinity', Number.NEGATIVE_INFINITY, '-Infinity'],
+    ])('throws a RangeError for %s and removes nothing', (_label, value, shown) => {
+      const index = create();
+      expect(() => index.remove(value)).toThrow(RangeError);
+      expect(() => index.remove(value)).toThrow(`index must be an integer, got ${shown}`);
+      expect(index.size).toBe(3);
+    });
+
+    it.each([
+      ['a string', '1', 'string'],
+      ['null', null, 'object'],
+      ['undefined', undefined, 'undefined'],
+      ['a boolean', true, 'boolean'],
+      ['an object', {}, 'object'],
+    ])('throws a TypeError for %s and removes nothing', (_label, value, type) => {
+      const index = create();
+      const remove = (): boolean => index.remove(value as unknown as number);
+      expect(remove).toThrow(TypeError);
+      expect(remove).toThrow(`index must be a number, got ${type}`);
+      expect(index.size).toBe(3);
+    });
+
+    it('returns false for out-of-range integers, including those beyond 2^32', () => {
+      const index = create();
+      for (const value of [-1, 3, 2 ** 32, 2 ** 32 + 1, -(2 ** 32) + 1, Number.MAX_SAFE_INTEGER]) {
+        expect(index.remove(value)).toBe(false);
+      }
+      expect(index.size).toBe(3);
+    });
+
+    it('removes the item at an integer index (-0 is index 0)', () => {
+      const index = create();
+      expect(index.remove(-0)).toBe(true);
+      expect(index.remove(1)).toBe(true);
+      expect(index.size).toBe(1);
+    });
+  });
+
   describe('destroy', () => {
     it('should clear all items', () => {
       const index = new FuzzyIndex(items);
@@ -1954,22 +2006,38 @@ describe('KeyedFuzzyIndex error propagation', () => {
 });
 
 describe('ESM/CJS export parity', () => {
-  // Exported by the napi-rs loader itself, not part of the public API.
-  const napiInternal = new Set(['__napiBindingTarget']);
-
   it('should have matching exports between CJS and ESM', async () => {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const cjs = require('../index.js') as Record<string, unknown>;
     const esm: Record<string, unknown> = { ...(await import('../index.mjs')) };
 
-    const cjsNames = Object.keys(cjs).filter((name) => !napiInternal.has(name));
-    const esmNames = Object.keys(esm).filter((name) => !napiInternal.has(name));
+    const cjsNames = Object.keys(cjs);
+    const esmNames = Object.keys(esm);
 
-    // Every CJS export is available from the ESM entry, and vice versa.
+    // Every CJS export is available from the ESM entry, and vice versa,
+    // including the loader's `__napiBindingTarget`.
     expect(cjsNames.filter((name) => !(name in esm))).toEqual([]);
     expect(esmNames.filter((name) => !(name in cjs))).toEqual([]);
     // Both entries hand out the same objects.
     expect(esmNames.filter((name) => esm[name] !== cjs[name])).toEqual([]);
+    expect(esm.__napiBindingTarget).toBe('native');
+  });
+
+  // index.d.mts re-exports index.d.ts, so every value it declares must exist
+  // at runtime: an import of a declared name missing from index.mjs
+  // type-checks, then fails when the ES module graph is linked.
+  it('exports every value index.d.ts declares from both entries', async () => {
+    const dts = readFileSync(join(__dirname, '..', 'index.d.ts'), 'utf8');
+    const declared = [...dts.matchAll(/^export declare (?:const|function|class|enum) (\w+)/gm)].map(
+      (m) => m[1] ?? '',
+    );
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const cjs = require('../index.js') as Record<string, unknown>;
+    const esm: Record<string, unknown> = { ...(await import('../index.mjs')) };
+    expect(declared.length).toBeGreaterThan(50);
+    expect(declared).toContain('__napiBindingTarget');
+    expect(declared.filter((name) => !(name in esm))).toEqual([]);
+    expect(declared.filter((name) => !(name in cjs))).toEqual([]);
   });
 });
 

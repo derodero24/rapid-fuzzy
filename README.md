@@ -104,6 +104,8 @@ TypeScript does not apply the `browser` condition on its own, so a browser proje
 }
 ```
 
+These declarations compile on their own, with `skipLibCheck` off: they need neither the Node.js types (`@types/node`) nor a `lib` newer than `ES2022` + `DOM` (use `"customConditions": ["workerd"]` for Cloudflare Workers).
+
 #### CDN (no bundler required)
 
 The browser build is plain ES modules, so it runs directly from a CDN that serves the package files unmodified, such as [jsDelivr](https://www.jsdelivr.com/) or [unpkg](https://unpkg.com/):
@@ -758,7 +760,10 @@ Serialized indexes contain the item strings plus 4 bytes per item (see [Index Se
 - `hamming()` / `normalizedHamming()` return `null` when the input strings have different lengths.
 - `closest()` returns `null` if no item matches the query, if the best match scores below `minScore`, or if the item list is empty.
 - Methods of a `FuzzyIndex`, `FuzzyObjectIndex` or `KeyedFuzzyIndex` do not throw after `.destroy()`: the index behaves as an empty one and accepts new items.
-- `maxResults` must be a non-negative integer or `Infinity`; `NaN`, negative or fractional values throw.
+- `maxResults`, and the `maxDistance` of `levenshteinMany`, `damerauLevenshteinMany`, `indelMany`, `hammingMany` and their `*ManyU32` variants, must be a non-negative integer or `Infinity` (no limit); `NaN`, negative or fractional values throw.
+- A `NaN` `minScore` throws, in every function and method that takes one (including the numeric `closest()` shorthand); any other number is accepted.
+- `remove(index)` of a `FuzzyIndex`, `KeyedFuzzyIndex` or `FuzzyObjectIndex` returns `false` for an index out of range (negative, or not less than `size`), and throws a `TypeError` for an index that is not a number and a `RangeError` for one that is not an integer (`NaN`, `±Infinity` or a fraction).
+- Arguments of the wrong type throw before any work is done: in the browser and edge build, a `TypeError` for a value that is not a string where a string is expected, or for an array argument that is not an array of strings.
 - `*Batch` functions throw if a pair is not exactly two strings; `*Many` similarity functions throw on a `NaN` `minSimilarity`.
 - `FuzzyIndex.deserialize()` / `FuzzyObjectIndex.deserialize()` throw on corrupt data or data from another format version.
 - `searchObjects()` and `FuzzyObjectIndex` throw a `TypeError` if `options.keys` is missing or empty.
@@ -918,6 +923,7 @@ The WASM build is slower than the native addon. To keep an application responsiv
 
 - **One character per grapheme**: the search matcher keeps only the first code point of each grapheme cluster, so combining marks are ignored. Thai tone and vowel marks, Devanagari vowel signs, NFD accents and half-width `ﾞ`/`ﾟ` therefore do not have to match: `कि` matches `का` and `कु`, and `ｶﾞ` matches `ｶ`. NFKC normalization fixes the Japanese cases (it composes `ｶﾞ` into `ガ`) but not the Thai or Devanagari ones.
 - **Scripts without spaces (Chinese, Japanese, Thai, …)**: nucleo gives its bonuses at the start of the item and at word boundaries, and these scripts have no spaces between words. A query found verbatim at the start of an item scores 1.0, but found in the middle of one it scores about 0.44 (1 character) to 0.73 (10 characters) and never more than about 0.77 — `東京` in `ここは東京` scores 0.58. A `minScore` of 0.5-0.7, reasonable for English, silently drops many such matches; use a low threshold (0.4 or less) or none, and rely on the ranking. A match with gaps that starts at the beginning of an item can also outrank a verbatim match in the middle: for `日本語`, `日本の言語` (0.84) ranks above `これは日本語です` (0.64).
+- **Lone surrogates**: strings are converted to UTF-8 on their way into Rust, so a lone UTF-16 surrogate (for example from cutting an emoji in half with `s.slice(0, n)`) becomes U+FFFD (`�`). `search()`, `closest()` and `FuzzyIndex` then return that converted copy, which is not `===` your string (use `result.index` to get your own), and the distance functions treat every lone surrogate as the same character. Clean such strings with [`String.prototype.toWellFormed()`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/toWellFormed) before passing them in. The WASI fallback build currently reads a lone surrogate as the start of a pair and swallows the character after it (a bug in its emnapi runtime), so its results for such strings differ from the native and browser builds.
 - **Very long items and queries**: when an item is longer than a few thousand characters (about 8,300 for a 6-character query; less for longer queries and for non-ASCII text, about 7,000 here), or a single query term is longer than about 180 characters, nucleo switches to a faster greedy match. The item still matches, but the score reflects the first possible character positions rather than the best ones, so a verbatim occurrence can score as low as a scattered one. A single term longer than 2,520 characters matches nothing. Split long documents into shorter fields or chunks before indexing them.
 
 ## Limitations

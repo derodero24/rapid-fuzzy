@@ -989,12 +989,19 @@ describe('closest() options', () => {
   it('take a number as a shorthand for minScore', () => {
     const keyed = index();
     const objects = objectIndex();
-    for (const minScore of [0, 0.3, 0.5, 0.6, 0.9, 1, 2, -1, Number.NaN, Infinity]) {
+    for (const minScore of [0, 0.3, 0.5, 0.6, 0.9, 1, 2, -1, Infinity]) {
       for (const query of QUERIES) {
         expect(keyed.closest(query, minScore)).toBe(keyed.closest(query, { minScore }));
         expect(objects.closest(query, minScore)).toBe(objects.closest(query, { minScore }));
       }
     }
+    // A NaN minScore throws in both forms (it used to match nothing).
+    const nan = Number.NaN;
+    expect(() => keyed.closest('john', nan)).toThrow('minScore must be a number, got NaN');
+    expect(() => keyed.closest('john', { minScore: nan })).toThrow(
+      'minScore must be a number, got NaN',
+    );
+    expect(() => objects.closest('john', nan)).toThrow('minScore must be a number, got NaN');
     // The modes are the defaults ('weighted', 'perKey').
     expect(keyed.closest('john tokyo', 0)).toBe(3);
     expect(keyed.closest('john tokyo', { scoreMode: 'max', matchMode: 'crossKey' })).toBe(0);

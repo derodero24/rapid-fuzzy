@@ -3,10 +3,17 @@
 //! Every conversion that can fail runs inside an exported function and reports
 //! failure as an `Err`, which wasm-bindgen throws as a JS exception only after
 //! the function has returned and Rust has dropped everything it allocated.
-//! Failing inside `FromWasmAbi` instead (what `#[tsify(from_wasm_abi)]` does)
-//! unwinds straight past the wasm frames and leaks every argument converted so
-//! far, so arguments that need validation are taken as plain JS handles.
+//! Failing inside `FromWasmAbi` instead (what `#[tsify(from_wasm_abi)]` and a
+//! `Vec<String>` parameter do, through `throw_str`) unwinds straight past the
+//! wasm frames: it leaks every argument converted so far and the shadow-stack
+//! space of the call, and leaves the `RefCell` borrow of `self` taken, so a
+//! method of an index then fails for good ("recursive use of an object"). So
+//! arguments that need validation, including every `string[]`, are taken as
+//! plain JS handles (`JsValue`) and converted with the functions below, and
+//! scripts/build-wasm-bindgen.js fails the build if a `Vec<String>` (or other
+//! `Vec<JsValue>`-based) parameter comes back.
 
+use rapid_fuzzy_core::search::{check_remove_index, invalid_index_type};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use wasm_bindgen::prelude::*;
@@ -19,6 +26,28 @@ pub(crate) fn error(message: &str) -> JsValue {
 /// A JS `TypeError`, for arguments of the wrong type or shape.
 pub(crate) fn type_error(message: &str) -> JsValue {
     js_sys::TypeError::new(message).into()
+}
+
+/// A JS `RangeError`, for numeric arguments outside their valid values.
+pub(crate) fn range_error(message: &str) -> JsValue {
+    js_sys::RangeError::new(message).into()
+}
+
+/// Read the `index` argument of `FuzzyIndex.remove()` and
+/// `KeyedFuzzyIndex.remove()` exactly like `FuzzyObjectIndex.remove()` reads
+/// its own (see [`check_remove_index`]): a `TypeError` for a value that is
+/// not a number, a `RangeError` for a number that is not an integer, and
+/// `None` (nothing to remove) for an integer out of range.
+///
+/// The index is taken as a JS handle: a `u32` parameter wrapped it modulo
+/// 2^32 (`NaN`, `2 ** 32` and `undefined` removed item 0), and an `f64` one
+/// would still convert `null`, booleans and strings to numbers.
+pub(crate) fn remove_index_from_js(index: &JsValue) -> Result<Option<u32>, JsValue> {
+    let Some(value) = index.as_f64() else {
+        let type_of = index.js_typeof().as_string().unwrap_or_default();
+        return Err(type_error(&invalid_index_type(&type_of)));
+    };
+    check_remove_index(value).map_err(|message| range_error(&message))
 }
 
 /// Deserialize a JS argument, throwing a `TypeError` that names `what`.

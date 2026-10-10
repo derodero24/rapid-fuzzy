@@ -13,7 +13,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use tsify::Tsify;
 use wasm_bindgen::prelude::*;
 
-use crate::convert::{from_js, or_null, to_js, type_error};
+use crate::convert::{from_js, or_null, strings_from_js, to_js, type_error};
 
 // ─── Shared wasm types ──────────────────────────────────────────────────────
 
@@ -47,7 +47,10 @@ impl From<core::MatchType> for MatchType {
 #[derive(Debug, Clone, Serialize, Tsify)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchResult {
-    /// The original string that matched.
+    /// The matched item. Strings are converted to UTF-8 on the way into
+    /// Rust, so this is the same string as `items[index]` unless that one
+    /// contains a lone UTF-16 surrogate (for example from slicing an emoji in
+    /// half), which becomes U+FFFD; `index` always identifies your string.
     pub item: String,
     /// The match score normalized to 0.0-1.0 range (1.0 is a perfect match).
     pub score: f64,
@@ -119,9 +122,9 @@ pub struct SearchOptions {
     #[tsify(optional)]
     #[serde(default, deserialize_with = "deserialize_max_results")]
     pub max_results: Option<u32>,
-    /// Minimum normalized score (0.0-1.0) to include in results.
+    /// Minimum normalized score (0.0-1.0) to include in results. NaN throws.
     #[tsify(optional)]
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_min_score")]
     pub min_score: Option<f64>,
     /// If true, include matched character positions in results.
     #[tsify(optional)]
@@ -328,9 +331,9 @@ pub struct KeySearchOptions {
     #[serde(default, deserialize_with = "deserialize_max_results")]
     pub max_results: Option<u32>,
     /// Minimum combined score (0.0-1.0, see `scoreMode`) to include in
-    /// results.
+    /// results. NaN throws.
     #[tsify(optional)]
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_min_score")]
     pub min_score: Option<f64>,
     /// Accepted for compatibility with `SearchOptions`, but has no effect:
     /// multi-key results have no match positions.
@@ -448,9 +451,9 @@ pub struct KeyClosestOptions {
     // Each field is read exactly like the `KeySearchOptions` field of the same
     // name (the same serde attributes and deserializers).
     /// Minimum combined score (0.0-1.0, see `scoreMode`): `closest()`
-    /// returns null when the best match scores below it.
+    /// returns null when the best match scores below it. NaN throws.
     #[tsify(optional)]
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_min_score")]
     pub min_score: Option<f64>,
     /// How the per-key scores of an item are combined into its score:
     /// `"weighted"` (default), `"matched"` or `"max"`, as in
@@ -473,7 +476,7 @@ impl KeyClosestOptions {
     pub(crate) fn from_js_or_min_score(options: Option<JsValue>) -> Result<Self, JsValue> {
         options_from_js(options, "KeyClosestOptions", |min_score| {
             Ok(Self {
-                min_score: Some(min_score),
+                min_score: core::check_min_score(Some(min_score))?,
                 ..Self::default()
             })
         })
@@ -501,6 +504,22 @@ fn deserialize_max_results<'de, D: Deserializer<'de>>(
         Some(value) => core::check_max_results(value).map_err(serde::de::Error::custom),
         None => Ok(None),
     }
+}
+
+/// Read a `minScore` option like the Node.js binding does (see
+/// [`core::check_min_score`]): NaN, which used to filter out every match
+/// silently, is rejected.
+fn deserialize_min_score<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<f64>, D::Error> {
+    core::check_min_score(Option::<f64>::deserialize(deserializer)?)
+        .map_err(serde::de::Error::custom)
+}
+
+/// Validate the `minScore` argument of `closest()` and `FuzzyIndex.closest()`
+/// (see [`core::check_min_score`]), throwing a `TypeError` for NaN.
+pub(crate) fn min_score_arg(min_score: Option<f64>) -> Result<Option<f64>, JsValue> {
+    core::check_min_score(min_score).map_err(|message| type_error(&message))
 }
 
 pub(crate) use rapid_fuzzy_core::search::resolve_case_matching;
@@ -538,10 +557,11 @@ pub(crate) fn search_impl(
 #[wasm_bindgen(unchecked_return_type = "SearchResult[]")]
 pub fn search(
     query: String,
-    items: Vec<String>,
+    #[wasm_bindgen(unchecked_param_type = "string[]")] items: JsValue,
     #[wasm_bindgen(unchecked_optional_param_type = "number | SearchOptions | null")]
     options: Option<JsValue>,
 ) -> Result<JsValue, JsValue> {
+    let items = strings_from_js(&items)?;
     let opts = SearchOptions::from_js_or_max_results(options)?;
     let (max_results, min_score, include_positions, case_matching, return_all_on_empty) = (
         opts.max_results,
@@ -581,14 +601,19 @@ pub fn search(
 
 /// Find the closest matching string from a list.
 ///
-/// Returns the best match, or null if no match is found.
-/// If `minScore` is provided, returns null when the best match scores below the threshold.
+/// Returns the best match, or null if no match is found. Like
+/// `SearchResult.item`, the returned string is converted to UTF-8: a lone
+/// UTF-16 surrogate in it becomes U+FFFD.
+/// If `minScore` is provided, returns null when the best match scores below
+/// the threshold. A NaN `minScore` throws a `TypeError`.
 #[wasm_bindgen(unchecked_return_type = "string | null")]
 pub fn closest(
     query: String,
-    items: Vec<String>,
+    #[wasm_bindgen(unchecked_param_type = "string[]")] items: JsValue,
     #[wasm_bindgen(js_name = "minScore")] min_score: Option<f64>,
-) -> JsValue {
+) -> Result<JsValue, JsValue> {
+    let items = strings_from_js(&items)?;
+    let min_score = min_score_arg(min_score)?;
     let results = search_impl(query, items, Some(1), min_score, false, CaseMatching::Smart);
-    or_null(results.into_iter().next().map(|r| r.item))
+    Ok(or_null(results.into_iter().next().map(|r| r.item)))
 }
