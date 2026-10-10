@@ -364,7 +364,9 @@ jobs:
 
   coverage:
     name: Coverage
-    needs: [build]
+    # Builds its own instrumented addon, so it does not wait for the build job.
+    # Label events only matter for ci-full; other labels must not rerun CI.
+    if: ${{ github.event.action != 'labeled' || github.event.label.name == 'ci-full' }}
     runs-on: ubuntu-latest
     # Job-level permissions replace the workflow-level block, so contents: read
     # is restated.
@@ -375,32 +377,54 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-
-      # Rust coverage
-      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
-        with:
-          components: llvm-tools-preview
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-      - uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2.87.26
-        with:
-          tool: cargo-llvm-cov
-      - name: Rust coverage
-        run: cargo llvm-cov --lcov --output-path rust-lcov.info
-
-      # JS coverage
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - name: Download x86_64 linux artifact
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
         with:
-          name: bindings-x86_64-unknown-linux-gnu
-          path: .
-      - name: JS coverage
-        run: pnpm test --coverage
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          # A cache of its own: the builds below go to target/<host triple>/,
+          # not to the target/llvm-cov-target/ of a plain `cargo llvm-cov` run,
+          # and an exact hit on the old cache would never be replaced.
+          key: instrumented
+      - uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2.87.26
+        with:
+          tool: cargo-llvm-cov
+      - run: pnpm install --frozen-lockfile
+
+      # One Rust report for the Rust tests and the JS test suite together. The
+      # suite runs against a debug addon built with the same instrumentation,
+      # so the napi bindings in crates/core, which only JavaScript calls, are
+      # measured too. `show-env` prints what `cargo llvm-cov` itself would set
+      # (a RUSTC_WRAPPER that instruments the workspace crates, and
+      # LLVM_PROFILE_FILE, a path in target/): the plain cargo and napi builds
+      # then produce instrumented binaries, and every process that loads one
+      # writes a .profraw file there when it exits, which `report` merges.
+      # - Both builds target the host triple: `napi build` passes --target, so
+      #   `cargo test` does too, and they share target/<triple>/ (and its
+      #   dependency builds), which `report --target` reads.
+      # - vitest runs on worker threads: the default forks pool stops each
+      #   fork with SIGTERM, so the forks would never write their profiles.
+      #   The threads share the vitest process, which writes one when it
+      #   exits; the Node.js children some specs spawn write their own.
+      # - The JS (V8) coverage of the same run goes to coverage/lcov.info.
+      - name: Collect coverage
+        run: |
+          host=$(rustc -vV | sed -n 's/^host: //p')
+          # Through a file rather than `source <(...)`, so that a failing
+          # show-env stops the step instead of leaving the builds uninstrumented.
+          cargo llvm-cov show-env --sh > "$RUNNER_TEMP/llvm-cov-env.sh"
+          source "$RUNNER_TEMP/llvm-cov-env.sh"
+          cargo llvm-cov clean --workspace
+          cargo test --workspace --locked --target "$host"
+          pnpm run build:debug
+          node scripts/patch-binding.js
+          pnpm test --coverage --pool=threads
+          cargo llvm-cov report --target "$host" --lcov --output-path rust-lcov.info
 
       # Upload to Codecov. Pull requests from forks get no OIDC token; the
       # action detects them and falls back to a tokenless upload.
@@ -414,13 +438,10 @@ jobs:
           # latest one). Renovate updates it through the custom manager in
           # renovate.json, which matches the trailing comment.
           version: v11.3.1 # codecov-cli
-          # Keep this false until the repository is activated on codecov.io
-          # (sign in there, or install the Codecov GitHub App, and enable
-          # derodero24/rapid-fuzzy): until then every upload is rejected and
-          # would fail the job. Once uploads succeed, change it to
-          # ${{ github.event_name == 'push' }} so a broken upload on develop
-          # turns the job red while a Codecov outage does not block PRs.
-          fail_ci_if_error: false
+          # Uploads reach codecov.io now (the repository is activated), so a
+          # broken upload on develop turns the job red, while a Codecov outage
+          # does not block pull requests.
+          fail_ci_if_error: ${{ github.event_name == 'push' }}
 
   build-wasm-bindgen:
     name: Build - wasm-bindgen
