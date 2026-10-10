@@ -1,6 +1,6 @@
 {
   "name": "rapid-fuzzy-darwin-arm64",
-  "version": "2.1.1",
+  "version": "2.2.0",
   "cpu": [
     "arm64"
   ],
