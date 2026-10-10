@@ -304,7 +304,7 @@ jobs:
       - name: Install wasm-pack
         uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2.87.26
         with:
-          tool: wasm-pack@0.13.1
+          tool: wasm-pack@0.15.0
       - name: Install binaryen
         run: bash scripts/install-binaryen.sh
       - name: Build wasm-bindgen
