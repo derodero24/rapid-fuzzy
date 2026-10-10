@@ -1051,7 +1051,13 @@ describe.skipIf(!wasmAvailable)('wasm-bindgen runtime', () => {
       for (const [name, call] of calls(Number.NaN)) {
         const err = thrown(call);
         expect(err, name).toBeInstanceOf(TypeError);
-        expect((err as Error).message, name).toContain('minScore must be a number, got NaN');
+        // The bare message for a positional minScore; an options object
+        // prefixes it with the name of the options type.
+        expect((err as Error).message, name).toMatch(
+          ['closest', 'FuzzyIndex.closest', 'KeyedFuzzyIndex.closest(number)'].includes(name)
+            ? /^minScore must be a number, got NaN$/
+            : /^Invalid (Search|KeySearch|KeyClosest)Options: Error: minScore must be a number, got NaN$/,
+        );
       }
       for (const minScore of [Number.NEGATIVE_INFINITY, 0, 2, Number.POSITIVE_INFINITY]) {
         for (const [name, call] of calls(minScore)) {

@@ -437,7 +437,7 @@ describe('minScore validation', () => {
   it('throws an InvalidArg error for NaN in every API', () => {
     const error = expect.objectContaining({
       code: 'InvalidArg',
-      message: expect.stringContaining('minScore must be a number, got NaN'),
+      message: 'minScore must be a number, got NaN',
     });
     for (const [name, call] of calls(NAN)) {
       expect(call, name).toThrow(error);
