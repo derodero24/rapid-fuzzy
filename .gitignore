@@ -47,6 +47,7 @@ Thumbs.db
 # Coverage
 coverage/
 *.lcov
+rust-lcov.info
 
 # Vitest reports (JSON report, attachments, blobs)
 .vitest/
