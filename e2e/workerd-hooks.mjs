@@ -1,6 +1,9 @@
 // Node.js module customization hooks that load the Cloudflare Workers entry
 // (workerd.mjs) the way Wrangler bundles it, for e2e/workerd-smoke.mjs.
-// Registered by e2e/workerd-register.mjs (`pnpm run test:workerd`).
+// Registered by e2e/workerd-register.mjs (`pnpm run test:workerd`) with
+// module.registerHooks(), or module.register() on Node.js 22 before 22.15.
+// The hooks are synchronous (they return what the next hook returns), as
+// registerHooks() requires; register() also accepts them.
 import { fileURLToPath } from 'node:url';
 
 const PACKAGE_JSON = new URL('../package.json', import.meta.url).href;
