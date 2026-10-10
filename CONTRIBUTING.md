@@ -5,7 +5,7 @@ Thank you for your interest in contributing! This guide covers everything you ne
 ## Prerequisites
 
 - [Rust](https://rustup.rs/) — `rust-toolchain.toml` selects the stable toolchain (with `rustfmt`, `clippy` and the `wasm32-wasip1-threads` target). The minimum supported Rust version is **1.88** (`rust-version` in `Cargo.toml`); CI checks the workspace with exactly that version.
-- [Node.js](https://nodejs.org/) ≥ 22.13 (the strictest `engines` of the development tools, `@napi-rs/cli`; the published package supports Node.js ≥ 22)
+- [Node.js](https://nodejs.org/) 22.13 or later on the 22 line, 24, or 26 and later: the intersection of the development tools' `engines` (`@napi-rs/cli` needs 22.13+ on the 22 line, and Vitest 5 and `@changesets/cli` support only the even-numbered lines). The published package supports Node.js ≥ 22.
 - [pnpm](https://pnpm.io/) ≥ 12 (the exact version is pinned in `package.json` `packageManager`; `corepack enable` picks it up automatically)
 - [cargo-deny](https://github.com/EmbarkStudios/cargo-deny) for the pre-push hook: `cargo install --locked cargo-deny`
 - [Git](https://git-scm.com/)
