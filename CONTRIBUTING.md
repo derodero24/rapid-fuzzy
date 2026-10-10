@@ -5,7 +5,7 @@ Thank you for your interest in contributing! This guide covers everything you ne
 ## Prerequisites
 
 - [Rust](https://rustup.rs/) — `rust-toolchain.toml` selects the stable toolchain (with `rustfmt`, `clippy` and the `wasm32-wasip1-threads` target). The minimum supported Rust version is **1.88** (`rust-version` in `Cargo.toml`); CI checks the workspace with exactly that version.
-- [Node.js](https://nodejs.org/) ≥ 22.12 (the minimum of the test runner, Vitest 5; the published package supports Node.js ≥ 22)
+- [Node.js](https://nodejs.org/) ≥ 22.13 (the strictest `engines` of the development tools, `@napi-rs/cli`; the published package supports Node.js ≥ 22)
 - [pnpm](https://pnpm.io/) ≥ 12 (the exact version is pinned in `package.json` `packageManager`; `corepack enable` picks it up automatically)
 - [cargo-deny](https://github.com/EmbarkStudios/cargo-deny) for the pre-push hook: `cargo install --locked cargo-deny`
 - [Git](https://git-scm.com/)
@@ -32,19 +32,37 @@ pnpm test                  # JS/TS tests
 cargo test --workspace     # Rust tests
 ```
 
-### WASM testing (optional)
+### WebAssembly and end-to-end testing (optional)
 
-WASM tests are automatically skipped if the WASM binary is not built. To run the full test suite including WASM:
+The tests of the two WebAssembly builds skip when the binary they need is missing, so `pnpm test` passes without them. Build both to run the full suite:
 
 ```bash
-# Install the WASM target
-rustup target add wasm32-wasip1-threads
-
-# Build the WASM binary
+# WASI build: the Node.js fallback binding (__test__/wasm.spec.ts).
+# rust-toolchain.toml already installs the wasm32-wasip1-threads target.
 pnpm run build:wasm
 
-# Run all tests including WASM
-pnpm test
+# wasm-bindgen build: the browser / edge build behind the `browser` and
+# `workerd` export conditions (__test__/wasm-bindgen.spec.ts,
+# browser-packaging.spec.ts, the WebAssembly cases of review-fixes.spec.ts,
+# and the end-to-end tests below)
+rustup target add wasm32-unknown-unknown
+cargo install wasm-pack --version 0.13.1 --locked  # the version CI uses
+pnpm run build:wasm-bindgen
+
+# Fail instead of skipping when a binary is missing
+RAPID_FUZZY_REQUIRE_WASM=1 RAPID_FUZZY_REQUIRE_WASM_BINDGEN=1 pnpm test
+```
+
+Both builds run `wasm-opt` from [binaryen](https://github.com/WebAssembly/binaryen) when it is on `PATH` and skip that step otherwise; on Linux x86_64, `bash scripts/install-binaryen.sh` downloads the release CI uses. `pnpm run build:wasm-bindgen` also regenerates the committed glue (`rapid-fuzzy-wasm-bindgen.mjs` / `.d.mts`) and the browser entry points: commit them when you change `crates/wasm` or the build scripts. CI rebuilds them with wasm-pack 0.13.1 and fails if they differ.
+
+The end-to-end tests of the wasm-bindgen build need `pnpm run build:wasm-bindgen` first:
+
+```bash
+pnpm exec playwright install chromium  # once
+pnpm run test:browser  # Playwright + Chromium: a Vite app using the packed package (build and dev server)
+pnpm run test:bun      # Bun with --conditions=browser (needs Bun)
+pnpm run test:deno     # Deno with --conditions=browser (needs Deno 2)
+pnpm run test:workerd  # the Cloudflare Workers entry (workerd.mjs) and examples/cloudflare-workers, in Node.js
 ```
 
 ### GitHub Codespaces / Dev Containers
@@ -196,9 +214,11 @@ The Rust benchmarks use [codspeed-criterion-compat](https://crates.io/crates/cod
 
 Releases are automated by `.github/workflows/release.yml`:
 
-1. On every push to `develop` that brings changesets, the workflow opens or updates the "chore(release): version packages" PR, which bumps the version in `package.json`, the Cargo manifests and the `npm/*` platform manifests and writes the changelog.
+1. On every push to `develop` that brings changesets, the workflow opens or updates the "chore(release): version packages" PR, which bumps the version in `package.json`, the Cargo manifests and the `npm/*` platform manifests and writes the changelog. `github-actions[bot]` pushes that PR's branch, so its CI runs wait for a maintainer's approval instead of starting: approve them on the PR page (**Approve and run**) before merging, again after every update of the PR. Without that, the version commit is first tested by the `develop` CI run after the merge.
 2. Once that PR is merged and the version is not on npm yet, the workflow opens or updates the "chore(release): release vX.Y.Z" PR from `develop` to `main`.
 3. Merging the release PR builds the binaries for every target and the wasm-bindgen browser build, loads each binary on its own platform, publishes the nine platform packages and then `rapid-fuzzy` to npm with provenance, and finally tags the released commit and creates the GitHub release.
+
+Only `main` publishes. Besides the push of the merged release PR, the publishing jobs run when the Release workflow is started by hand on `main` (**Actions** → **Release** → **Run workflow**), which retries a failed release as long as the version in `package.json` is not on npm yet. Select `main` in that form: it preselects `develop`, the default branch, and a run on any other branch publishes nothing.
 
 ### npm trusted publishing
 

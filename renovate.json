@@ -112,6 +112,14 @@
     },
     {
       "customType": "regex",
+      "description": "Codecov CLI release pinned through codecov/codecov-action's version input",
+      "managerFilePatterns": ["/^\\.github/workflows/ci\\.yml$/"],
+      "matchStrings": ["version: (?<currentValue>v\\d+\\.\\d+\\.\\d+) # codecov-cli"],
+      "depNameTemplate": "codecov/codecov-cli",
+      "datasourceTemplate": "github-releases"
+    },
+    {
+      "customType": "regex",
       "description": "Tool versions installed with taiki-e/install-action in workflows",
       "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.ya?ml$/"],
       "matchStrings": ["tool: (?<depName>[a-z0-9-]+)@(?<currentValue>\\d+\\.\\d+\\.\\d+)"],

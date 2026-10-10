@@ -190,7 +190,7 @@ Bun uses the native napi-rs bindings by default (fastest). To use the WASM build
 bun --conditions=browser run main.ts
 ```
 
-The same works in Node.js (`node --conditions=browser main.mjs`).
+The same works in Node.js 22.3 or later (`node --conditions=browser main.mjs`). Earlier Node.js 22 releases lack `process.getBuiltinModule()`, which the WebAssembly build uses to read its `.wasm` file, so there it fails to load.
 
 ## API
 
@@ -285,9 +285,9 @@ In `search()`, `closest()` and `FuzzyIndex`, terms are separated by any whitespa
 
 Search uses the [nucleo](https://github.com/helix-editor/nucleo) matcher, the one in the Helix editor. Each query term matches an item when all of its characters occur in the item **in order** (a subsequence match): `tsc` matches `TypeScript`, and `typscript` matches `TypeScript` because the query only *omits* a letter. Typos that **substitute or swap** letters do not match: `tpyescript` and `typozcript` find nothing in `['TypeScript']`. To tolerate those, compare strings with a [distance function](#string-distance) instead (for example `levenshteinMany` or `jaroWinklerMany` over your candidates).
 
-- **Scores** are nucleo's scores normalized to 0.0–1.0, where 1.0 is the best score the query can get: typically the query appears verbatim at the start of the item or of a space-separated word. Matches at the start of the item, after a space or other delimiter (`-`, `_`, `.`, `/`), at camelCase humps and in consecutive runs score higher, so `york` scores 1.0 against `new york city` but 0.67 against `newyorkcity`. A query with several terms gets the average of its terms' scores. Scores are for ranking: they are not a percentage of similarity, and they are not comparable with fuse.js or fuzzysort scores. Pick `minScore` by looking at scores on your own data.
+- **Scores** are nucleo's scores normalized to 0.0–1.0, where 1.0 is the best score the query can get: typically the query appears verbatim at the start of the item or of a space-separated word. Matches at the start of the item, after a space or other delimiter (`-`, `_`, `.`, `/`), at camelCase humps and in consecutive runs score higher, so `york` scores 1.0 against `new york city` but 0.67 against `newyorkcity`. A query with several terms gets the sum of its terms' raw scores divided by the sum of their best possible scores: an average weighted by each term's best possible score, which grows with its length, so a short term moves the score less than a long one (`k newyorkcity` scores 0.94 against `xxxxkxxxx newyorkcity`, where `k` alone scores 0.44 and `newyorkcity` 1.0). Excluded terms (`!term`) do not count. Scores are for ranking: they are not a percentage of similarity, and they are not comparable with fuse.js or fuzzysort scores. Pick `minScore` by looking at scores on your own data.
 - **Case**: smart case by default — a query in lower case matches any case; a query with an upper-case letter is matched case-sensitively. `isCaseSensitive: true` makes every query case-sensitive. There is no option that forces case-insensitive matching for a query with capitals; lower-case the query instead.
-- **Ties** are broken by item length (shorter first), then by index.
+- **Ties** are broken by the item's length in UTF-8 bytes (shorter first; an ASCII character takes 1 byte, most CJK characters 3 and an emoji 4), then by index.
 
 ### Object Search
 
@@ -324,7 +324,7 @@ searchObjects('john', users, {
 searchObjects('new york', items, { keys: ['address.city'] });
 ```
 
-By default the combined score is the weighted average of the per-key scores (`keyScores`, one per key, each computed like `search()` scores a string) over all keys; the `scoreMode` option below changes that. A key with weight `0` is still scored in `keyScores` but never selects an item on its own. Ties are broken like `search()`: the item whose best-matching key text is shorter comes first, then the lower index.
+By default the combined score is the weighted average of the per-key scores (`keyScores`, one per key, each computed like `search()` scores a string) over all keys; the `scoreMode` option below changes that. A key with weight `0` is still scored in `keyScores` but never selects an item on its own. Ties are broken like `search()`: the item whose best-matching key text is shorter in UTF-8 bytes comes first, then the lower index.
 
 #### Combining key scores (`scoreMode`)
 
@@ -845,7 +845,7 @@ The token-based ratios do not return the same scores as fuzzball's (see the [fuz
 
 - **Indexed search**: a `FuzzyIndex` was 10-14x faster per query than standalone `search()` on 1K-10K items, because `search()` converts every item on every call.
 - **vs fuse.js**: `FuzzyIndex` was about 150-200x faster on 1K-10K items, and standalone `search()` about 14-19x.
-- **vs fuzzysort**: fuzzysort was faster on 20 items (about 6x) and about as fast on 1K items. On 10K items `FuzzyIndex` was 1.6-2.1x faster, and on 50K-100K items 3-5x faster using 4 threads (about 1.6x on one thread).
+- **vs fuzzysort**: fuzzysort was faster on 20 items (about 6x) and about as fast on 1K items. On 10K items `FuzzyIndex` was 1.6-2.1x faster, and on 50K-100K items 3-5x faster using 4 threads (1.6-2.1x on one thread).
 - **vs uFuzzy**: uFuzzy was faster on 20 items; `FuzzyIndex` was about 3-4.5x faster on 1K-10K items.
 - **Distance functions**: for single pairs, fastest-levenshtein (pure JS) was about 1.2x faster than `levenshtein`, and about 2.8x faster than `levenshteinMany` over 1,000 short candidates, since each call crosses the JS/Rust boundary. rapid-fuzzy was about 2.5x faster than leven, 3x faster than string-similarity and 3-4x faster than fuzzball's ratios.
 
@@ -874,7 +874,9 @@ Pure-JS libraries have no native addon or WebAssembly module to load, which matt
 
 ### "Cannot find native binding" error
 
-The native binary for your platform may not have been installed correctly. Run `npm rebuild rapid-fuzzy` or delete `node_modules` and reinstall. Ensure your platform and architecture are [supported by napi-rs](https://napi.rs/docs/cross-build/summary).
+The native binary comes in a platform package (such as `rapid-fuzzy-linux-x64-gnu`) that npm installs as an optional dependency; this error usually means that package was not installed. Remove both `node_modules` and `package-lock.json`, then install again: a known npm bug can leave the platform packages out of the lockfile ([npm/cli#4828](https://github.com/npm/cli/issues/4828)). Do not install with `--omit=optional` (or `--no-optional`), which skips them.
+
+Prebuilt binaries exist for macOS (x64, arm64), Linux (x64, arm64; glibc and musl) and Windows (x64, arm64). On other platforms, install the WebAssembly (WASI) build next to the package, `npm install rapid-fuzzy rapid-fuzzy-wasm32-wasi` (Node.js 22.13+ or 23.5+): the loader falls back to it when no native binary loads (see [Runtime-specific notes](#runtime-specific-notes)).
 
 ### WASM fails to load in the browser
 
@@ -886,7 +888,7 @@ Server-side rendering frameworks need to externalize rapid-fuzzy so the native m
 
 ### Using the WASM build in Bun or Node.js
 
-Bun and Node.js load the native binding. To run the WASM build instead, add `--conditions=browser` — see the [Bun section](#bun).
+Bun and Node.js load the native binding. To run the WASM build instead, add `--conditions=browser` (in Node.js 22.3 or later) — see the [Bun section](#bun).
 
 ## Performance and Untrusted Input
 

@@ -366,6 +366,11 @@ jobs:
     name: Coverage
     needs: [build]
     runs-on: ubuntu-latest
+    # Job-level permissions replace the workflow-level block, so contents: read
+    # is restated.
+    permissions:
+      contents: read # actions/checkout
+      id-token: write # the Codecov upload authenticates with a GitHub OIDC token (no CODECOV_TOKEN secret)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -397,12 +402,24 @@ jobs:
       - name: JS coverage
         run: pnpm test --coverage
 
-      # Upload to Codecov
+      # Upload to Codecov. Pull requests from forks get no OIDC token; the
+      # action detects them and falls back to a tokenless upload.
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7
         with:
           files: rust-lcov.info,coverage/lcov.info
           flags: rust,javascript
+          use_oidc: true
+          # The Codecov CLI release the action downloads (it defaults to the
+          # latest one). Renovate updates it through the custom manager in
+          # renovate.json, which matches the trailing comment.
+          version: v11.3.1 # codecov-cli
+          # Keep this false until the repository is activated on codecov.io
+          # (sign in there, or install the Codecov GitHub App, and enable
+          # derodero24/rapid-fuzzy): until then every upload is rejected and
+          # would fail the job. Once uploads succeed, change it to
+          # ${{ github.event_name == 'push' }} so a broken upload on develop
+          # turns the job red while a Codecov outage does not block PRs.
           fail_ci_if_error: false
 
   build-wasm-bindgen:
@@ -437,13 +454,22 @@ jobs:
       # Same check as release.yml, so stale glue fails the PR instead of the release.
       - name: Verify generated wasm-bindgen glue is up to date
         run: git diff --exit-code rapid-fuzzy-wasm-bindgen.mjs rapid-fuzzy-wasm-bindgen.d.mts browser.mjs browser.d.mts browser-api.mjs workerd.mjs highlight.browser.mjs objects.browser.mjs objects.browser.d.mts
-      # The wasm-bindgen spec compares results against the native binding.
+      # The wasm-bindgen specs compare results against the native binding.
       - name: Build native binding (debug)
         run: pnpm run build:debug && node scripts/patch-binding.js
+      # The whole suite, not a list of files: every spec that tests the
+      # wasm-bindgen build (wasm-bindgen, browser-packaging, review-fixes, and
+      # any added later) skips without the binary, which only this job builds,
+      # and RAPID_FUZZY_REQUIRE_WASM_BINDGEN turns that skip into a failure.
+      # Only wasm.spec.ts (the WASI binding, covered by the test job) skips here.
       - name: Test wasm-bindgen build
-        run: pnpm exec vitest run __test__/wasm-bindgen.spec.ts __test__/browser-packaging.spec.ts
+        run: pnpm exec vitest run
         env:
           RAPID_FUZZY_REQUIRE_WASM_BINDGEN: '1'
+      # Runs the Cloudflare Workers entry (workerd.mjs) and the example worker
+      # in Node.js, loading the .wasm?module import as Wrangler does.
+      - name: Test Cloudflare Workers entry
+        run: pnpm run test:workerd
       - name: Upload wasm-bindgen artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:

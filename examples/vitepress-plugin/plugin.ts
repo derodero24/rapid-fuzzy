@@ -7,10 +7,11 @@
  *  3. Builds a KeyedFuzzyIndex (title weight=2, body weight=1)
  *  4. Writes search-index.bin and search-manifest.json to the output directory
  *
- * Usage (.vitepress/config.ts):
+ * Usage (.vitepress/config.ts, see theme.ts for the complete setup):
+ *   import { fileURLToPath } from 'node:url'
  *   import { rapidFuzzySearch } from '../examples/vitepress-plugin/plugin'
  *   export default defineConfig({
- *     vite: { plugins: [rapidFuzzySearch('.')] }
+ *     vite: { plugins: [rapidFuzzySearch(fileURLToPath(new URL('..', import.meta.url)))] }
  *   })
  */
 import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
@@ -91,9 +92,12 @@ function collectMdFiles(dir: string, results: string[] = []): string[] {
 /**
  * Create the rapid-fuzzy VitePress search plugin.
  *
- * @param docsDir - Absolute path to the VitePress docs root (the directory
- *                  containing `.vitepress/`). Usually `__dirname` of your
- *                  `config.ts`.
+ * @param docsDir - Absolute path to the VitePress docs root: the directory
+ *                  that contains `.vitepress/`, so
+ *                  `fileURLToPath(new URL('..', import.meta.url))` in
+ *                  `.vitepress/config.ts`. Not `__dirname` there, which is
+ *                  `.vitepress/` itself: the plugin skips dot directories
+ *                  and would index no pages.
  */
 export function rapidFuzzySearch(docsDir: string): Plugin {
   let resolvedConfig: ResolvedConfig;
@@ -108,6 +112,11 @@ export function rapidFuzzySearch(docsDir: string): Plugin {
 
     closeBundle() {
       const files = collectMdFiles(docsDir);
+      if (files.length === 0) {
+        this.warn(
+          `no .md files in ${docsDir}: pass the docs root, the directory that contains .vitepress/`,
+        );
+      }
       const meta: PageMeta[] = [];
       const titles: string[] = [];
       const texts: string[] = [];
