@@ -58,7 +58,8 @@ export class FuzzyIndex {
      * Returns the best match, or null if no match is found: the index's
      * copy of the item, converted to UTF-8 like `SearchResult.item`.
      * If `minScore` is provided, returns null when the best match scores below
-     * the threshold. A NaN `minScore` throws a `TypeError`.
+     * the threshold. A NaN `minScore`, or one that is not a number, throws a
+     * `TypeError`.
      * @param {string} query
      * @param {number | null} [minScore]
      * @returns {string | null}
@@ -68,7 +69,7 @@ export class FuzzyIndex {
             const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
             const ptr0 = passStringToWasm0(query, wasm.__wbindgen_export, wasm.__wbindgen_export2);
             const len0 = WASM_VECTOR_LEN;
-            wasm.fuzzyindex_closest(retptr, this.__wbg_ptr, ptr0, len0, !isLikeNone(minScore), isLikeNone(minScore) ? 0 : minScore);
+            wasm.fuzzyindex_closest(retptr, this.__wbg_ptr, ptr0, len0, isLikeNone(minScore) ? 0 : addHeapObject(minScore));
             var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
             var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
             var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
@@ -499,7 +500,8 @@ if (Symbol.dispose) KeyedFuzzyIndex.prototype[Symbol.dispose] = KeyedFuzzyIndex.
  * `SearchResult.item`, the returned string is converted to UTF-8: a lone
  * UTF-16 surrogate in it becomes U+FFFD.
  * If `minScore` is provided, returns null when the best match scores below
- * the threshold. A NaN `minScore` throws a `TypeError`.
+ * the threshold. A NaN `minScore`, or one that is not a number, throws a
+ * `TypeError`.
  * @param {string} query
  * @param {string[]} items
  * @param {number | null} [minScore]
@@ -510,7 +512,7 @@ export function closest(query, items, minScore) {
         const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
         const ptr0 = passStringToWasm0(query, wasm.__wbindgen_export, wasm.__wbindgen_export2);
         const len0 = WASM_VECTOR_LEN;
-        wasm.closest(retptr, ptr0, len0, addHeapObject(items), !isLikeNone(minScore), isLikeNone(minScore) ? 0 : minScore);
+        wasm.closest(retptr, ptr0, len0, addHeapObject(items), isLikeNone(minScore) ? 0 : addHeapObject(minScore));
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
         var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
@@ -579,7 +581,8 @@ export function damerauLevenshteinBatch(pairs) {
  * If `maxDistance` is provided, candidates with distance exceeding the threshold
  * will return `maxDistance + 1`, at most 4294967295 (enabling early termination
  * for better performance). `maxDistance` must be a non-negative integer or
- * `Infinity` (no limit); NaN, negative and fractional values throw an `Error`.
+ * `Infinity` (no limit); NaN, negative and fractional values throw an `Error`,
+ * and a value that is not a number a `TypeError`.
  * @param {string} reference
  * @param {string[]} candidates
  * @param {number | null} [maxDistance]
@@ -590,7 +593,7 @@ export function damerauLevenshteinMany(reference, candidates, maxDistance) {
         const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
         const ptr0 = passStringToWasm0(reference, wasm.__wbindgen_export, wasm.__wbindgen_export2);
         const len0 = WASM_VECTOR_LEN;
-        wasm.damerauLevenshteinMany(retptr, ptr0, len0, addHeapObject(candidates), !isLikeNone(maxDistance), isLikeNone(maxDistance) ? 0 : maxDistance);
+        wasm.damerauLevenshteinMany(retptr, ptr0, len0, addHeapObject(candidates), isLikeNone(maxDistance) ? 0 : addHeapObject(maxDistance));
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
         var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
@@ -672,7 +675,7 @@ export function hammingMany(reference, candidates, maxDistance) {
         const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
         const ptr0 = passStringToWasm0(reference, wasm.__wbindgen_export, wasm.__wbindgen_export2);
         const len0 = WASM_VECTOR_LEN;
-        wasm.hammingMany(retptr, ptr0, len0, addHeapObject(candidates), !isLikeNone(maxDistance), isLikeNone(maxDistance) ? 0 : maxDistance);
+        wasm.hammingMany(retptr, ptr0, len0, addHeapObject(candidates), isLikeNone(maxDistance) ? 0 : addHeapObject(maxDistance));
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
         var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
@@ -744,7 +747,8 @@ export function indelBatch(pairs) {
  * If `maxDistance` is provided, candidates with distance exceeding the threshold
  * will return `maxDistance + 1`, at most 4294967295 (enabling early termination
  * for better performance). `maxDistance` must be a non-negative integer or
- * `Infinity` (no limit); NaN, negative and fractional values throw an `Error`.
+ * `Infinity` (no limit); NaN, negative and fractional values throw an `Error`,
+ * and a value that is not a number a `TypeError`.
  * @param {string} reference
  * @param {string[]} candidates
  * @param {number | null} [maxDistance]
@@ -755,7 +759,7 @@ export function indelMany(reference, candidates, maxDistance) {
         const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
         const ptr0 = passStringToWasm0(reference, wasm.__wbindgen_export, wasm.__wbindgen_export2);
         const len0 = WASM_VECTOR_LEN;
-        wasm.indelMany(retptr, ptr0, len0, addHeapObject(candidates), !isLikeNone(maxDistance), isLikeNone(maxDistance) ? 0 : maxDistance);
+        wasm.indelMany(retptr, ptr0, len0, addHeapObject(candidates), isLikeNone(maxDistance) ? 0 : addHeapObject(maxDistance));
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
         var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
@@ -833,7 +837,7 @@ export function jaroMany(reference, candidates, minSimilarity) {
         const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
         const ptr0 = passStringToWasm0(reference, wasm.__wbindgen_export, wasm.__wbindgen_export2);
         const len0 = WASM_VECTOR_LEN;
-        wasm.jaroMany(retptr, ptr0, len0, addHeapObject(candidates), !isLikeNone(minSimilarity), isLikeNone(minSimilarity) ? 0 : minSimilarity);
+        wasm.jaroMany(retptr, ptr0, len0, addHeapObject(candidates), isLikeNone(minSimilarity) ? 0 : addHeapObject(minSimilarity));
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
         var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
@@ -912,7 +916,7 @@ export function jaroWinklerMany(reference, candidates, minSimilarity) {
         const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
         const ptr0 = passStringToWasm0(reference, wasm.__wbindgen_export, wasm.__wbindgen_export2);
         const len0 = WASM_VECTOR_LEN;
-        wasm.jaroWinklerMany(retptr, ptr0, len0, addHeapObject(candidates), !isLikeNone(minSimilarity), isLikeNone(minSimilarity) ? 0 : minSimilarity);
+        wasm.jaroWinklerMany(retptr, ptr0, len0, addHeapObject(candidates), isLikeNone(minSimilarity) ? 0 : addHeapObject(minSimilarity));
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
         var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
@@ -984,7 +988,8 @@ export function levenshteinBatch(pairs) {
  * If `maxDistance` is provided, candidates with distance exceeding the threshold
  * will return `maxDistance + 1`, at most 4294967295 (enabling early termination
  * for better performance). `maxDistance` must be a non-negative integer or
- * `Infinity` (no limit); NaN, negative and fractional values throw an `Error`.
+ * `Infinity` (no limit); NaN, negative and fractional values throw an `Error`,
+ * and a value that is not a number a `TypeError`.
  * @param {string} reference
  * @param {string[]} candidates
  * @param {number | null} [maxDistance]
@@ -995,7 +1000,7 @@ export function levenshteinMany(reference, candidates, maxDistance) {
         const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
         const ptr0 = passStringToWasm0(reference, wasm.__wbindgen_export, wasm.__wbindgen_export2);
         const len0 = WASM_VECTOR_LEN;
-        wasm.levenshteinMany(retptr, ptr0, len0, addHeapObject(candidates), !isLikeNone(maxDistance), isLikeNone(maxDistance) ? 0 : maxDistance);
+        wasm.levenshteinMany(retptr, ptr0, len0, addHeapObject(candidates), isLikeNone(maxDistance) ? 0 : addHeapObject(maxDistance));
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
         var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
@@ -1073,7 +1078,7 @@ export function normalizedHammingMany(reference, candidates, minSimilarity) {
         const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
         const ptr0 = passStringToWasm0(reference, wasm.__wbindgen_export, wasm.__wbindgen_export2);
         const len0 = WASM_VECTOR_LEN;
-        wasm.normalizedHammingMany(retptr, ptr0, len0, addHeapObject(candidates), !isLikeNone(minSimilarity), isLikeNone(minSimilarity) ? 0 : minSimilarity);
+        wasm.normalizedHammingMany(retptr, ptr0, len0, addHeapObject(candidates), isLikeNone(minSimilarity) ? 0 : addHeapObject(minSimilarity));
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
         var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
@@ -1152,7 +1157,7 @@ export function normalizedIndelMany(reference, candidates, minSimilarity) {
         const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
         const ptr0 = passStringToWasm0(reference, wasm.__wbindgen_export, wasm.__wbindgen_export2);
         const len0 = WASM_VECTOR_LEN;
-        wasm.normalizedIndelMany(retptr, ptr0, len0, addHeapObject(candidates), !isLikeNone(minSimilarity), isLikeNone(minSimilarity) ? 0 : minSimilarity);
+        wasm.normalizedIndelMany(retptr, ptr0, len0, addHeapObject(candidates), isLikeNone(minSimilarity) ? 0 : addHeapObject(minSimilarity));
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
         var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
@@ -1232,7 +1237,7 @@ export function normalizedLevenshteinMany(reference, candidates, minSimilarity) 
         const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
         const ptr0 = passStringToWasm0(reference, wasm.__wbindgen_export, wasm.__wbindgen_export2);
         const len0 = WASM_VECTOR_LEN;
-        wasm.normalizedLevenshteinMany(retptr, ptr0, len0, addHeapObject(candidates), !isLikeNone(minSimilarity), isLikeNone(minSimilarity) ? 0 : minSimilarity);
+        wasm.normalizedLevenshteinMany(retptr, ptr0, len0, addHeapObject(candidates), isLikeNone(minSimilarity) ? 0 : addHeapObject(minSimilarity));
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
         var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
@@ -1317,7 +1322,7 @@ export function partialRatioMany(reference, candidates, minSimilarity) {
         const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
         const ptr0 = passStringToWasm0(reference, wasm.__wbindgen_export, wasm.__wbindgen_export2);
         const len0 = WASM_VECTOR_LEN;
-        wasm.partialRatioMany(retptr, ptr0, len0, addHeapObject(candidates), !isLikeNone(minSimilarity), isLikeNone(minSimilarity) ? 0 : minSimilarity);
+        wasm.partialRatioMany(retptr, ptr0, len0, addHeapObject(candidates), isLikeNone(minSimilarity) ? 0 : addHeapObject(minSimilarity));
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
         var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
@@ -1468,7 +1473,7 @@ export function sorensenDiceMany(reference, candidates, minSimilarity) {
         const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
         const ptr0 = passStringToWasm0(reference, wasm.__wbindgen_export, wasm.__wbindgen_export2);
         const len0 = WASM_VECTOR_LEN;
-        wasm.sorensenDiceMany(retptr, ptr0, len0, addHeapObject(candidates), !isLikeNone(minSimilarity), isLikeNone(minSimilarity) ? 0 : minSimilarity);
+        wasm.sorensenDiceMany(retptr, ptr0, len0, addHeapObject(candidates), isLikeNone(minSimilarity) ? 0 : addHeapObject(minSimilarity));
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
         var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
@@ -1548,7 +1553,7 @@ export function tokenSetRatioMany(reference, candidates, minSimilarity) {
         const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
         const ptr0 = passStringToWasm0(reference, wasm.__wbindgen_export, wasm.__wbindgen_export2);
         const len0 = WASM_VECTOR_LEN;
-        wasm.tokenSetRatioMany(retptr, ptr0, len0, addHeapObject(candidates), !isLikeNone(minSimilarity), isLikeNone(minSimilarity) ? 0 : minSimilarity);
+        wasm.tokenSetRatioMany(retptr, ptr0, len0, addHeapObject(candidates), isLikeNone(minSimilarity) ? 0 : addHeapObject(minSimilarity));
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
         var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
@@ -1626,7 +1631,7 @@ export function tokenSortRatioMany(reference, candidates, minSimilarity) {
         const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
         const ptr0 = passStringToWasm0(reference, wasm.__wbindgen_export, wasm.__wbindgen_export2);
         const len0 = WASM_VECTOR_LEN;
-        wasm.tokenSortRatioMany(retptr, ptr0, len0, addHeapObject(candidates), !isLikeNone(minSimilarity), isLikeNone(minSimilarity) ? 0 : minSimilarity);
+        wasm.tokenSortRatioMany(retptr, ptr0, len0, addHeapObject(candidates), isLikeNone(minSimilarity) ? 0 : addHeapObject(minSimilarity));
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
         var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
@@ -1706,7 +1711,7 @@ export function weightedRatioMany(reference, candidates, minSimilarity) {
         const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
         const ptr0 = passStringToWasm0(reference, wasm.__wbindgen_export, wasm.__wbindgen_export2);
         const len0 = WASM_VECTOR_LEN;
-        wasm.weightedRatioMany(retptr, ptr0, len0, addHeapObject(candidates), !isLikeNone(minSimilarity), isLikeNone(minSimilarity) ? 0 : minSimilarity);
+        wasm.weightedRatioMany(retptr, ptr0, len0, addHeapObject(candidates), isLikeNone(minSimilarity) ? 0 : addHeapObject(minSimilarity));
         var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
         var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
         var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);

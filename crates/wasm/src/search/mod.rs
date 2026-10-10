@@ -13,7 +13,9 @@ use serde::{Deserialize, Deserializer, Serialize};
 use tsify::Tsify;
 use wasm_bindgen::prelude::*;
 
-use crate::convert::{from_js, or_null, strings_from_js, to_js, type_error};
+use crate::convert::{
+    from_js, optional_number_from_js, or_null, strings_from_js, to_js, type_error,
+};
 
 // ─── Shared wasm types ──────────────────────────────────────────────────────
 
@@ -516,9 +518,12 @@ fn deserialize_min_score<'de, D: Deserializer<'de>>(
         .map_err(serde::de::Error::custom)
 }
 
-/// Validate the `minScore` argument of `closest()` and `FuzzyIndex.closest()`
-/// (see [`core::check_min_score`]), throwing a `TypeError` for NaN.
-pub(crate) fn min_score_arg(min_score: Option<f64>) -> Result<Option<f64>, JsValue> {
+/// Read the `minScore` argument of `closest()` and `FuzzyIndex.closest()`
+/// like the Node.js binding does: a `TypeError` for a value that is not a
+/// number (see [`optional_number_from_js`]) and for NaN (see
+/// [`core::check_min_score`]).
+pub(crate) fn min_score_arg(min_score: Option<JsValue>) -> Result<Option<f64>, JsValue> {
+    let min_score = optional_number_from_js(min_score, "minScore")?;
     core::check_min_score(min_score).map_err(|message| type_error(&message))
 }
 
@@ -605,12 +610,14 @@ pub fn search(
 /// `SearchResult.item`, the returned string is converted to UTF-8: a lone
 /// UTF-16 surrogate in it becomes U+FFFD.
 /// If `minScore` is provided, returns null when the best match scores below
-/// the threshold. A NaN `minScore` throws a `TypeError`.
+/// the threshold. A NaN `minScore`, or one that is not a number, throws a
+/// `TypeError`.
 #[wasm_bindgen(unchecked_return_type = "string | null")]
 pub fn closest(
     query: String,
     #[wasm_bindgen(unchecked_param_type = "string[]")] items: JsValue,
-    #[wasm_bindgen(js_name = "minScore")] min_score: Option<f64>,
+    #[wasm_bindgen(js_name = "minScore", unchecked_optional_param_type = "number | null")]
+    min_score: Option<JsValue>,
 ) -> Result<JsValue, JsValue> {
     let items = strings_from_js(&items)?;
     let min_score = min_score_arg(min_score)?;

@@ -290,7 +290,8 @@ export class FuzzyIndex {
      * Returns the best match, or null if no match is found: the index's
      * copy of the item, converted to UTF-8 like `SearchResult.item`.
      * If `minScore` is provided, returns null when the best match scores below
-     * the threshold. A NaN `minScore` throws a `TypeError`.
+     * the threshold. A NaN `minScore`, or one that is not a number, throws a
+     * `TypeError`.
      */
     closest(query: string, minScore?: number | null): string | null;
     /**
@@ -446,7 +447,8 @@ export class KeyedFuzzyIndex {
  * `SearchResult.item`, the returned string is converted to UTF-8: a lone
  * UTF-16 surrogate in it becomes U+FFFD.
  * If `minScore` is provided, returns null when the best match scores below
- * the threshold. A NaN `minScore` throws a `TypeError`.
+ * the threshold. A NaN `minScore`, or one that is not a number, throws a
+ * `TypeError`.
  */
 export function closest(query: string, items: ReadonlyArray<string>, minScore?: number | null): string | null;
 
@@ -477,7 +479,8 @@ export function damerauLevenshteinBatch(pairs: ReadonlyArray<ReadonlyArray<strin
  * If `maxDistance` is provided, candidates with distance exceeding the threshold
  * will return `maxDistance + 1`, at most 4294967295 (enabling early termination
  * for better performance). `maxDistance` must be a non-negative integer or
- * `Infinity` (no limit); NaN, negative and fractional values throw an `Error`.
+ * `Infinity` (no limit); NaN, negative and fractional values throw an `Error`,
+ * and a value that is not a number a `TypeError`.
  */
 export function damerauLevenshteinMany(reference: string, candidates: ReadonlyArray<string>, maxDistance?: number | null): Uint32Array;
 
@@ -544,7 +547,8 @@ export function indelBatch(pairs: ReadonlyArray<ReadonlyArray<string>>): Uint32A
  * If `maxDistance` is provided, candidates with distance exceeding the threshold
  * will return `maxDistance + 1`, at most 4294967295 (enabling early termination
  * for better performance). `maxDistance` must be a non-negative integer or
- * `Infinity` (no limit); NaN, negative and fractional values throw an `Error`.
+ * `Infinity` (no limit); NaN, negative and fractional values throw an `Error`,
+ * and a value that is not a number a `TypeError`.
  */
 export function indelMany(reference: string, candidates: ReadonlyArray<string>, maxDistance?: number | null): Uint32Array;
 
@@ -628,7 +632,8 @@ export function levenshteinBatch(pairs: ReadonlyArray<ReadonlyArray<string>>): U
  * If `maxDistance` is provided, candidates with distance exceeding the threshold
  * will return `maxDistance + 1`, at most 4294967295 (enabling early termination
  * for better performance). `maxDistance` must be a non-negative integer or
- * `Infinity` (no limit); NaN, negative and fractional values throw an `Error`.
+ * `Infinity` (no limit); NaN, negative and fractional values throw an `Error`,
+ * and a value that is not a number a `TypeError`.
  */
 export function levenshteinMany(reference: string, candidates: ReadonlyArray<string>, maxDistance?: number | null): Uint32Array;
 
@@ -896,13 +901,13 @@ export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_fuzzyindex_free: (a: number, b: number) => void;
     readonly __wbg_keyedfuzzyindex_free: (a: number, b: number) => void;
-    readonly closest: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+    readonly closest: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly damerauLevenshtein: (a: number, b: number, c: number, d: number) => number;
     readonly damerauLevenshteinBatch: (a: number, b: number) => void;
-    readonly damerauLevenshteinMany: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+    readonly damerauLevenshteinMany: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly fuzzyindex_add: (a: number, b: number, c: number) => void;
     readonly fuzzyindex_addMany: (a: number, b: number, c: number) => void;
-    readonly fuzzyindex_closest: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+    readonly fuzzyindex_closest: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly fuzzyindex_deserialize: (a: number, b: number, c: number) => void;
     readonly fuzzyindex_destroy: (a: number) => void;
     readonly fuzzyindex_fromAsync: (a: number) => number;
@@ -914,16 +919,16 @@ export interface InitOutput {
     readonly fuzzyindex_size: (a: number) => number;
     readonly hamming: (a: number, b: number, c: number, d: number) => number;
     readonly hammingBatch: (a: number, b: number) => void;
-    readonly hammingMany: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+    readonly hammingMany: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly indel: (a: number, b: number, c: number, d: number) => number;
     readonly indelBatch: (a: number, b: number) => void;
-    readonly indelMany: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+    readonly indelMany: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly jaro: (a: number, b: number, c: number, d: number) => number;
     readonly jaroBatch: (a: number, b: number) => void;
-    readonly jaroMany: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+    readonly jaroMany: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly jaroWinkler: (a: number, b: number, c: number, d: number) => number;
     readonly jaroWinklerBatch: (a: number, b: number) => void;
-    readonly jaroWinklerMany: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+    readonly jaroWinklerMany: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly keyedfuzzyindex_add: (a: number, b: number, c: number) => void;
     readonly keyedfuzzyindex_addMany: (a: number, b: number, c: number) => void;
     readonly keyedfuzzyindex_closest: (a: number, b: number, c: number, d: number, e: number) => void;
@@ -936,33 +941,33 @@ export interface InitOutput {
     readonly keyedfuzzyindex_size: (a: number) => number;
     readonly levenshtein: (a: number, b: number, c: number, d: number) => number;
     readonly levenshteinBatch: (a: number, b: number) => void;
-    readonly levenshteinMany: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+    readonly levenshteinMany: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly normalizedHamming: (a: number, b: number, c: number, d: number) => number;
     readonly normalizedHammingBatch: (a: number, b: number) => void;
-    readonly normalizedHammingMany: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+    readonly normalizedHammingMany: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly normalizedIndel: (a: number, b: number, c: number, d: number) => number;
     readonly normalizedIndelBatch: (a: number, b: number) => void;
-    readonly normalizedIndelMany: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+    readonly normalizedIndelMany: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly normalizedLevenshtein: (a: number, b: number, c: number, d: number) => number;
     readonly normalizedLevenshteinBatch: (a: number, b: number) => void;
-    readonly normalizedLevenshteinMany: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+    readonly normalizedLevenshteinMany: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly partialRatio: (a: number, b: number, c: number, d: number) => number;
     readonly partialRatioBatch: (a: number, b: number) => void;
-    readonly partialRatioMany: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+    readonly partialRatioMany: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly search: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly searchKeys: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
     readonly sorensenDice: (a: number, b: number, c: number, d: number) => number;
     readonly sorensenDiceBatch: (a: number, b: number) => void;
-    readonly sorensenDiceMany: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+    readonly sorensenDiceMany: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly tokenSetRatio: (a: number, b: number, c: number, d: number) => number;
     readonly tokenSetRatioBatch: (a: number, b: number) => void;
-    readonly tokenSetRatioMany: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+    readonly tokenSetRatioMany: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly tokenSortRatio: (a: number, b: number, c: number, d: number) => number;
     readonly tokenSortRatioBatch: (a: number, b: number) => void;
-    readonly tokenSortRatioMany: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+    readonly tokenSortRatioMany: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly weightedRatio: (a: number, b: number, c: number, d: number) => number;
     readonly weightedRatioBatch: (a: number, b: number) => void;
-    readonly weightedRatioMany: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+    readonly weightedRatioMany: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly __wbindgen_export: (a: number, b: number) => number;
     readonly __wbindgen_export2: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_export3: (a: number) => void;

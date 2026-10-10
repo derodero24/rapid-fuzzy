@@ -50,6 +50,32 @@ pub(crate) fn remove_index_from_js(index: &JsValue) -> Result<Option<u32>, JsVal
     check_remove_index(value).map_err(|message| range_error(&message))
 }
 
+/// Read an optional numeric argument (`maxDistance`, `minSimilarity`, the
+/// `minScore` of `closest()`) like the Node.js binding does: `undefined` and
+/// `null` mean not given, a number is read as is, and anything else throws a
+/// `TypeError` naming the argument and its `typeof`.
+///
+/// The argument is taken as a JS handle: an `Option<f64>` parameter converts
+/// any value with `Number()` first, so `''`, `false` and `[]` became 0 and
+/// `'2'` became 2, where the Node.js binding throws.
+pub(crate) fn optional_number_from_js(
+    value: Option<JsValue>,
+    name: &str,
+) -> Result<Option<f64>, JsValue> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    match value.as_f64() {
+        Some(number) => Ok(Some(number)),
+        None => {
+            let type_of = value.js_typeof().as_string().unwrap_or_default();
+            Err(type_error(&format!(
+                "{name} must be a number, got {type_of}"
+            )))
+        }
+    }
+}
+
 /// Deserialize a JS argument, throwing a `TypeError` that names `what`.
 pub(crate) fn from_js<T: DeserializeOwned>(value: JsValue, what: &str) -> Result<T, JsValue> {
     serde_wasm_bindgen::from_value(value).map_err(|e| type_error(&format!("Invalid {what}: {e}")))

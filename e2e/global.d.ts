@@ -27,6 +27,7 @@ interface Window {
     indelMany: number[];
     normalizedIndelMany: number[];
     normalizedHammingMany: (number | null)[];
+    thresholdTypeErrors: Array<string | null>;
     tokenSortRatio: number;
     tokenSetRatio: number;
     partialRatio: number;

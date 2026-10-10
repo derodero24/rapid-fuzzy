@@ -117,12 +117,14 @@ impl FuzzyIndex {
     /// Returns the best match, or null if no match is found: the index's
     /// copy of the item, converted to UTF-8 like `SearchResult.item`.
     /// If `minScore` is provided, returns null when the best match scores below
-    /// the threshold. A NaN `minScore` throws a `TypeError`.
+    /// the threshold. A NaN `minScore`, or one that is not a number, throws a
+    /// `TypeError`.
     #[wasm_bindgen(unchecked_return_type = "string | null")]
     pub fn closest(
         &self,
         query: String,
-        #[wasm_bindgen(js_name = "minScore")] min_score: Option<f64>,
+        #[wasm_bindgen(js_name = "minScore", unchecked_optional_param_type = "number | null")]
+        min_score: Option<JsValue>,
     ) -> Result<JsValue, JsValue> {
         let min_score = min_score_arg(min_score)?;
         let results = self

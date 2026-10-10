@@ -1099,6 +1099,150 @@ describe.skipIf(!wasmAvailable)('wasm-bindgen runtime', () => {
     });
   });
 
+  // The numeric positional arguments used to be f64 parameters, which convert
+  // any value with Number(): '', false and [] became a maxDistance of 0 (every
+  // distance capped at 1), '2' became 2 and true a minScore of 1, while the
+  // Node.js binding throws for all of them.
+  describe('numeric arguments are not converted from other types (like the Node.js binding)', () => {
+    const NOT_NUMBERS: readonly unknown[] = [
+      '',
+      '2',
+      '0.5',
+      false,
+      true,
+      [],
+      [3],
+      {},
+      new Number(2),
+      1n,
+      Symbol('2'),
+      () => 2,
+    ];
+    const cands = ['kitten', 'sitting', 'kitchen', 'a much longer candidate'];
+    const items = ['apricot', 'ap', 'banana'];
+
+    /** [name, argument, wasm call, Node.js call]: each takes the numeric argument. */
+    const calls = (): Array<
+      readonly [string, string, (value: unknown) => unknown, (value: unknown) => unknown]
+    > => {
+      const index = new wasm.FuzzyIndex(items);
+      const nodeIndex = new napi.FuzzyIndex(items);
+      type ManyFn = (reference: string, candidates: string[], threshold?: number | null) => unknown;
+      const many = (name: string, argument: string, fn: ManyFn, nodeFn: ManyFn) =>
+        [
+          name,
+          argument,
+          (value: unknown) => callUnchecked(fn, 'kitten', cands, value),
+          (value: unknown) => callUnchecked(nodeFn, 'kitten', cands, value),
+        ] as const;
+      return [
+        many('levenshteinMany', 'maxDistance', wasm.levenshteinMany, napi.levenshteinMany),
+        many(
+          'damerauLevenshteinMany',
+          'maxDistance',
+          wasm.damerauLevenshteinMany,
+          napi.damerauLevenshteinMany,
+        ),
+        many('indelMany', 'maxDistance', wasm.indelMany, napi.indelMany),
+        many('hammingMany', 'maxDistance', wasm.hammingMany, napi.hammingMany),
+        many('jaroMany', 'minSimilarity', wasm.jaroMany, napi.jaroMany),
+        many('jaroWinklerMany', 'minSimilarity', wasm.jaroWinklerMany, napi.jaroWinklerMany),
+        many(
+          'normalizedLevenshteinMany',
+          'minSimilarity',
+          wasm.normalizedLevenshteinMany,
+          napi.normalizedLevenshteinMany,
+        ),
+        many(
+          'normalizedHammingMany',
+          'minSimilarity',
+          wasm.normalizedHammingMany,
+          napi.normalizedHammingMany,
+        ),
+        many(
+          'normalizedIndelMany',
+          'minSimilarity',
+          wasm.normalizedIndelMany,
+          napi.normalizedIndelMany,
+        ),
+        many('sorensenDiceMany', 'minSimilarity', wasm.sorensenDiceMany, napi.sorensenDiceMany),
+        many(
+          'tokenSortRatioMany',
+          'minSimilarity',
+          wasm.tokenSortRatioMany,
+          napi.tokenSortRatioMany,
+        ),
+        many('tokenSetRatioMany', 'minSimilarity', wasm.tokenSetRatioMany, napi.tokenSetRatioMany),
+        many('partialRatioMany', 'minSimilarity', wasm.partialRatioMany, napi.partialRatioMany),
+        many('weightedRatioMany', 'minSimilarity', wasm.weightedRatioMany, napi.weightedRatioMany),
+        [
+          'closest',
+          'minScore',
+          (value: unknown) => callUnchecked(wasm.closest, 'ap', items, value),
+          (value: unknown) => callUnchecked(napi.closest, 'ap', items, value),
+        ],
+        [
+          'FuzzyIndex.closest',
+          'minScore',
+          (value: unknown) => callUnchecked(index.closest.bind(index), 'ap', value),
+          (value: unknown) => callUnchecked(nodeIndex.closest.bind(nodeIndex), 'ap', value),
+        ],
+      ];
+    };
+
+    it('throws a TypeError naming the argument and its type, where Node.js throws too', () => {
+      for (const [name, argument, call, nodeCall] of calls()) {
+        for (const value of NOT_NUMBERS) {
+          const label = `${name}(${typeof value} ${String(value as object)})`;
+          const err = thrown(() => call(value));
+          expect(err, label).toBeInstanceOf(TypeError);
+          expect(err, label).toHaveProperty(
+            'message',
+            `${argument} must be a number, got ${typeof value}`,
+          );
+          expect(() => nodeCall(value), label).toThrow();
+        }
+      }
+    });
+
+    it('still reads undefined and null as not given, and numbers like Node.js', () => {
+      // Typed arrays (the *Many results of the browser build) as plain arrays.
+      const plain = (result: unknown): unknown =>
+        ArrayBuffer.isView(result) ? Array.from(result as unknown as ArrayLike<unknown>) : result;
+      for (const [name, , call, nodeCall] of calls()) {
+        expect(plain(call(null)), name).toEqual(plain(call(undefined)));
+        expect(plain(call(undefined)), name).toEqual(plain(nodeCall(undefined)));
+        // 0.5 is not a valid maxDistance in either binding.
+        for (const value of [0, 1, 0.5, 2, Number.POSITIVE_INFINITY]) {
+          const label = `${name}(${value})`;
+          const nodeErr = (() => {
+            try {
+              nodeCall(value);
+              return undefined;
+            } catch (err) {
+              return err;
+            }
+          })();
+          if (nodeErr === undefined) {
+            expect(plain(call(value)), label).toEqual(plain(nodeCall(value)));
+          } else {
+            expect(() => call(value), label).toThrow((nodeErr as Error).message);
+          }
+        }
+      }
+    });
+
+    it('leaves a FuzzyIndex usable after rejecting its minScore', () => {
+      const index = new wasm.FuzzyIndex(items);
+      expect(thrown(() => callUnchecked(index.closest.bind(index), 'ap', '0.5'))).toBeInstanceOf(
+        TypeError,
+      );
+      expect(index.closest('ap')).toBe('ap');
+      expect(index.search('ap').map((r) => r.item)).toEqual(['ap', 'apricot']);
+      index.free();
+    });
+  });
+
   // The index used to be a u32 parameter, which wraps numbers modulo 2^32 and
   // converts anything else to a number: remove(NaN), remove(2 ** 32) and
   // remove(undefined) (a missed Map lookup) removed item 0 and returned true.

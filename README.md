@@ -763,7 +763,7 @@ Serialized indexes contain the item strings plus 4 bytes per item (see [Index Se
 - `maxResults`, and the `maxDistance` of `levenshteinMany`, `damerauLevenshteinMany`, `indelMany`, `hammingMany` and their `*ManyU32` variants, must be a non-negative integer or `Infinity` (no limit); `NaN`, negative or fractional values throw.
 - A `NaN` `minScore` throws, in every function and method that takes one (including the numeric `closest()` shorthand); any other number is accepted.
 - `remove(index)` of a `FuzzyIndex`, `KeyedFuzzyIndex` or `FuzzyObjectIndex` returns `false` for an index out of range (negative, or not less than `size`), and throws a `TypeError` for an index that is not a number and a `RangeError` for one that is not an integer (`NaN`, `±Infinity` or a fraction).
-- Arguments of the wrong type throw before any work is done: in the browser and edge build, a `TypeError` for a value that is not a string where a string is expected, or for an array argument that is not an array of strings.
+- Arguments of the wrong type throw before any work is done: in the browser and edge build, a `TypeError` for a value that is not a string where a string is expected, for an array argument that is not an array of strings, or for a `maxDistance`, `minSimilarity` or `minScore` argument that is not a number, `undefined` or `null` (such as `'2'` or `true`, which used to be converted to a number).
 - `*Batch` functions throw if a pair is not exactly two strings; `*Many` similarity functions throw on a `NaN` `minSimilarity`.
 - `FuzzyIndex.deserialize()` / `FuzzyObjectIndex.deserialize()` throw on corrupt data or data from another format version.
 - `searchObjects()` and `FuzzyObjectIndex` throw a `TypeError` if `options.keys` is missing or empty.
