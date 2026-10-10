@@ -46,14 +46,14 @@ pnpm run build:wasm
 # browser-packaging.spec.ts, the WebAssembly cases of review-fixes.spec.ts,
 # and the end-to-end tests below)
 rustup target add wasm32-unknown-unknown
-cargo install wasm-pack --version 0.13.1 --locked  # the version CI uses
+cargo install wasm-pack --version 0.15.0 --locked  # the version CI uses
 pnpm run build:wasm-bindgen
 
 # Fail instead of skipping when a binary is missing
 RAPID_FUZZY_REQUIRE_WASM=1 RAPID_FUZZY_REQUIRE_WASM_BINDGEN=1 pnpm test
 ```
 
-Both builds run `wasm-opt` from [binaryen](https://github.com/WebAssembly/binaryen) when it is on `PATH` and skip that step otherwise; on Linux x86_64, `bash scripts/install-binaryen.sh` downloads the release CI uses. `pnpm run build:wasm-bindgen` also regenerates the committed glue (`rapid-fuzzy-wasm-bindgen.mjs` / `.d.mts`) and the browser entry points: commit them when you change `crates/wasm` or the build scripts. CI rebuilds them with wasm-pack 0.13.1 and fails if they differ.
+Both builds run `wasm-opt` from [binaryen](https://github.com/WebAssembly/binaryen) when it is on `PATH` and skip that step otherwise; on Linux x86_64, `bash scripts/install-binaryen.sh` downloads the release CI uses. `pnpm run build:wasm-bindgen` also regenerates the committed glue (`rapid-fuzzy-wasm-bindgen.mjs` / `.d.mts`) and the browser entry points: commit them when you change `crates/wasm` or the build scripts. CI rebuilds them with the wasm-pack version pinned in `.github/workflows/ci.yml` (0.15.0) and fails if they differ.
 
 The end-to-end tests of the wasm-bindgen build need `pnpm run build:wasm-bindgen` first:
 
