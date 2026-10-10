@@ -21,7 +21,7 @@ import uFuzzy from '@leeoniya/ufuzzy';
 const uf = new uFuzzy({ intraMode: 1 });
 const haystack = ['TypeScript', 'JavaScript', 'Python'];
 const [idxs, info, order] = uf.search(haystack, 'typscript');
-const results = order.map(i => haystack[idxs[i]]);
+const results = order.map(i => haystack[info.idx[i]]);
 console.log(results[0]); // 'TypeScript'
 
 // After (rapid-fuzzy)
@@ -35,7 +35,7 @@ console.log(results[0].item); // 'TypeScript'
 | uFuzzy | rapid-fuzzy | Notes |
 |---|---|---|
 | `new uFuzzy(opts)` + `uf.search(haystack, needle)` | `search(query, items)` | No constructor; returns sorted results directly |
-| `idxs[order[i]]` → index into haystack | `results[i].item` | No manual mapping needed |
+| `info.idx[order[i]]` → index into haystack | `results[i].item` | No manual mapping needed |
 | `info.ranges` | `results[i].positions` | Use `{ includePositions: true }` |
 | `uFuzzy.highlight()` / `mark()` | `highlight(item, positions, open, close)` | Built-in utility |
 | `opts.intraMode` / `opts.interMode` | Query syntax (`^`, `$`, `'`, `!`) | Different approach to matching control |
@@ -44,7 +44,7 @@ console.log(results[0].item); // 'TypeScript'
 
 ## Result Structure
 
-uFuzzy returns three separate values that require manual assembly: `idxs` (the indices of the matching items, `[]` when nothing matches), `info` (match details such as `ranges`) and `order` (the ranking, as indices into `idxs` and `info`). All three are `null` for an empty query. `info` and `order` are also `null` when more items match than `infoThresh`, the fourth argument of `search()` (1,000 by default), and `idxs` is then left unranked, so the uFuzzy snippets in this guide pass `Infinity` to always rank. rapid-fuzzy returns ready-to-use sorted results:
+uFuzzy returns three separate values that require manual assembly: `idxs` (the indices of the matching items, `[]` when nothing matches), `info` (match details such as `ranges`) and `order` (the ranking, as indices into `info.idx` and `info.ranges`; `info` can leave out some of `idxs`, so map through `info.idx`, as uFuzzy's own README does). All three are `null` for an empty query. `info` and `order` are also `null` when more items match than `infoThresh`, the fourth argument of `search()` (1,000 by default), and `idxs` is then left unranked, so the uFuzzy snippets in this guide pass `Infinity` to always rank. rapid-fuzzy returns ready-to-use sorted results:
 
 ```typescript
 // uFuzzy — 3 return values, manual result construction
@@ -58,7 +58,7 @@ if (idxs == null || idxs.length === 0) {
 
 // Assemble results manually (order is null for an empty query)
 const results = (order ?? []).map((idx) => ({
-  item: haystack[idxs[idx]],
+  item: haystack[info.idx[idx]],
   ranges: info.ranges[idx],
 }));
 
@@ -75,7 +75,7 @@ const results = search('query', items);
 // uFuzzy
 const uf = new uFuzzy();
 const [idxs, info, order] = uf.search(haystack, 'query', 0, Infinity);
-const top = order?.length ? haystack[idxs[order[0]]] : undefined;
+const top = order?.length ? haystack[info.idx[order[0]]] : undefined;
 
 // rapid-fuzzy
 const results = search('query', items);
@@ -87,7 +87,7 @@ const top = results[0]?.item;
 ```typescript
 // uFuzzy — manual slicing
 const [idxs, info, order] = uf.search(haystack, 'query', 0, Infinity);
-const top5 = (order ?? []).slice(0, 5).map(i => haystack[idxs[i]]);
+const top5 = (order ?? []).slice(0, 5).map(i => haystack[info.idx[i]]);
 
 // rapid-fuzzy — either form works
 const results = search('query', items, 5);
@@ -99,7 +99,7 @@ const results = search('query', items, { maxResults: 5 });
 ```typescript
 // uFuzzy
 const [idxs, info, order] = uf.search(haystack, 'query', 0, Infinity);
-const best = order?.length ? haystack[idxs[order[0]]] : null;
+const best = order?.length ? haystack[info.idx[order[0]]] : null;
 
 // rapid-fuzzy
 import { closest } from 'rapid-fuzzy';
@@ -113,7 +113,7 @@ const best = closest('query', items);
 const uf = new uFuzzy();
 const [idxs, info, order] = uf.search(haystack, 'query', 0, Infinity);
 const highlighted = uFuzzy.highlight(
-  haystack[idxs[order[0]]],
+  haystack[info.idx[order[0]]],
   info.ranges[order[0]],
 );
 
@@ -138,7 +138,7 @@ uFuzzy does not have built-in object search — you must extract string values, 
 // uFuzzy — manual key extraction
 const names = users.map(u => u.name);
 const [idxs, info, order] = uf.search(names, 'john', 0, Infinity);
-const matchedUsers = (order ?? []).map(i => users[idxs[i]]);
+const matchedUsers = (order ?? []).map(i => users[info.idx[i]]);
 
 // rapid-fuzzy — built-in object search with weighted keys
 import { searchObjects } from 'rapid-fuzzy';
