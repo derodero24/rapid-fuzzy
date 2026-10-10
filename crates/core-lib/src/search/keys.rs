@@ -277,7 +277,7 @@ pub(crate) trait KeyedCorpus {
     ) -> Option<u32>;
 
     /// Normalized score of key `k` of item `i`, 0.0 when it does not match.
-    #[inline]
+    #[inline(always)]
     fn key_score(
         &self,
         plan: &QueryPlan,

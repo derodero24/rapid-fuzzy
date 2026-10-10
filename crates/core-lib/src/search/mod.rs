@@ -479,6 +479,7 @@ pub fn utf32_haystack<'a>(s: &'a str, buf: &'a mut Vec<char>) -> Utf32Str<'a> {
 ///
 /// Indexes keep their items as `String`s anyway, so storing only the
 /// non-ASCII haystacks avoids keeping a second copy of every ASCII item.
+#[inline(always)]
 pub(crate) fn index_haystack(item: &str) -> Option<Box<[char]>> {
     (!item.is_ascii()).then(|| chars::graphemes(item).collect())
 }
