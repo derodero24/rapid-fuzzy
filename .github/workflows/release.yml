@@ -352,7 +352,7 @@ jobs:
           test "$(npm --version)" = "${NPM_VERSION}"
           echo "node $(node --version), npm $(npm --version) at $(command -v npm)"
         env:
-          NPM_VERSION: 11.21.0
+          NPM_VERSION: 12.2.0
 
       - run: pnpm install --frozen-lockfile
 
