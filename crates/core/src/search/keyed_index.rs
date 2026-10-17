@@ -1,11 +1,11 @@
 use napi::Env;
-use napi::bindgen_prelude::{Buffer, ObjectFinalize};
+use napi::bindgen_prelude::{Buffer, ObjectFinalize, Unknown};
 use napi_derive::napi;
 use rapid_fuzzy_core::search::KeyedFuzzyIndexCore;
 use rapid_fuzzy_core::search::serialization::{deserialize_keyed_index, serialize_keyed_index};
 
 use super::keys::KeySearchResult;
-use super::{KeyClosestOptions, KeyClosestOptionsArg, KeySearchOptionsArg};
+use super::{KeyClosestOptions, KeyClosestOptionsArg, KeySearchOptionsArg, read_remove_index};
 
 /// A persistent multi-key fuzzy search index backed by Rust-side data.
 ///
@@ -162,9 +162,20 @@ impl KeyedFuzzyIndex {
 
     /// Remove the item at the given index.
     ///
-    /// Uses swap-remove for O(1) performance. Returns false if out of bounds.
+    /// Uses swap-remove for O(1) performance: the last item moves into the
+    /// freed slot. Returns false, removing nothing, if `index` is out of
+    /// range (negative, or not less than `size`). Throws a `TypeError` if
+    /// `index` is not a number and a `RangeError` if it is not an integer
+    /// (`NaN`, `±Infinity` or a fraction), like `FuzzyObjectIndex.remove()`.
     #[napi]
-    pub fn remove(&mut self, env: Env, index: u32) -> napi::Result<bool> {
+    pub fn remove(
+        &mut self,
+        env: Env,
+        #[napi(ts_arg_type = "number")] index: Unknown<'_>,
+    ) -> napi::Result<bool> {
+        let Some(index) = read_remove_index(env, index)? else {
+            return Ok(false);
+        };
         let removed = self.core.remove(index);
         self.report_memory(env)?;
         Ok(removed)
@@ -185,14 +196,22 @@ impl KeyedFuzzyIndex {
     /// The returned Buffer can be written to disk, stored in IndexedDB,
     /// or transferred over the network. Use `KeyedFuzzyIndex.deserialize()` to
     /// reconstruct the index.
-    #[napi]
+    #[napi(ts_return_type = "NodeBuffer")]
     pub fn serialize(&self) -> Buffer {
         self.serialize_impl().into()
     }
 
-    /// Reconstruct a KeyedFuzzyIndex from a previously serialized Buffer.
+    /// Reconstruct a KeyedFuzzyIndex from a previously serialized Buffer, or
+    /// any other Uint8Array holding the same bytes (such as the output of the
+    /// browser build's `serialize()`).
     #[napi(factory)]
-    pub fn deserialize(env: Env, data: Buffer) -> napi::Result<Self> {
+    pub fn deserialize(
+        env: Env,
+        // Read as a Buffer, which napi-rs accepts any Uint8Array for.
+        // `NodeBuffer` keeps a Buffer valid where it is not a `Uint8Array` to
+        // TypeScript 5.7+ (the non-generic Buffer of older @types/node).
+        #[napi(ts_arg_type = "Uint8Array | NodeBuffer")] data: Buffer,
+    ) -> napi::Result<Self> {
         Self::deserialize_impl(&data)
             .map_err(napi::Error::from_reason)?
             .with_reported_memory(env)

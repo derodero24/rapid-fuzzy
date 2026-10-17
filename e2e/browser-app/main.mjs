@@ -74,6 +74,25 @@ try {
   results.normalizedIndelMany = list(rf.normalizedIndelMany('hello', ['hello', 'world']));
   results.normalizedHammingMany = list(rf.normalizedHammingMany('hello', ['hello', 'world', 'hi']));
 
+  // Thresholds that are not numbers throw instead of being converted with
+  // Number() ('' used to be a maxDistance of 0).
+  const errorOf = (fn) => {
+    try {
+      fn();
+      return null;
+    } catch (error) {
+      return `${error.name}: ${error.message}`;
+    }
+  };
+  results.thresholdTypeErrors = [
+    errorOf(() => rf.levenshteinMany('sitten', ['kitten', 'sitting'], '')),
+    errorOf(() => rf.levenshteinManyU32('sitten', ['kitten'], '2')),
+    errorOf(() => rf.hammingMany('abc', ['abd'], false)),
+    errorOf(() => rf.jaroMany('abc', ['abd'], '0.9')),
+    errorOf(() => rf.closest('ap', ['apricot', 'ap'], true)),
+    errorOf(() => new rf.FuzzyIndex(['ap']).closest('ap', [])),
+  ];
+
   // TypedArray variants
   const u32 = rf.levenshteinManyU32('hello', ['hello', 'world']);
   results.levenshteinManyU32 = { typed: u32 instanceof Uint32Array, values: list(u32) };

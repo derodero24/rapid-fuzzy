@@ -13,7 +13,8 @@
 //!
 //! - `max_distance` (distances): a candidate whose distance exceeds it gets
 //!   `max_distance + 1` instead (saturating at `u32::MAX`), or `None` for
-//!   Hamming.
+//!   Hamming. The bindings read it from JavaScript with
+//!   [`check_max_distance`].
 //! - `min_similarity` (similarities): a candidate scoring below it gets `0.0`
 //!   instead (`None` for normalized Hamming); a score equal to it is kept.
 //!   `NaN` is rejected with [`DistanceError::NanThreshold`].
@@ -32,7 +33,7 @@ use rapidfuzz::distance::levenshtein as rapid_lev;
 // ─── Errors ──────────────────────────────────────────────────────────────────
 
 /// Invalid input to a `*_batch` or `*_many` function.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DistanceError {
     /// A `*_batch` pair that does not hold exactly two strings.
     InvalidPair {
@@ -43,6 +44,9 @@ pub enum DistanceError {
     },
     /// A `min_similarity` threshold that is `NaN`.
     NanThreshold,
+    /// A `maxDistance` that is `NaN`, negative or fractional (see
+    /// [`check_max_distance`]).
+    InvalidMaxDistance(f64),
 }
 
 impl fmt::Display for DistanceError {
@@ -53,11 +57,43 @@ impl fmt::Display for DistanceError {
                 "pairs[{index}] must contain exactly 2 strings, got {len}"
             ),
             Self::NanThreshold => f.write_str("minSimilarity must be a number, got NaN"),
+            Self::InvalidMaxDistance(value) => write!(
+                f,
+                "maxDistance must be a non-negative integer or Infinity, got {}",
+                crate::js_number(*value)
+            ),
         }
     }
 }
 
 impl std::error::Error for DistanceError {}
+
+/// Validate the `maxDistance` threshold of a `*_many` distance function
+/// coming from JavaScript (as a double), like `maxResults` is validated
+/// (see `search::check_max_results`):
+///
+/// - `None` (not given) and `Infinity` mean no limit, and so does any value
+///   of at least `u32::MAX`, which no distance reaches;
+/// - NaN, negative values (including `-Infinity`) and fractions are rejected
+///   with [`DistanceError::InvalidMaxDistance`];
+/// - any other value is the threshold.
+///
+/// Reading the threshold as a `u32` instead wrapped it modulo 2^32:
+/// `Infinity` and NaN became 0, so every candidate that was not identical to
+/// the reference was reported as exceeding the threshold, and `-1` disabled
+/// it.
+pub fn check_max_distance(max_distance: Option<f64>) -> Result<Option<u32>, DistanceError> {
+    let Some(value) = max_distance else {
+        return Ok(None);
+    };
+    if value == f64::INFINITY {
+        return Ok(None);
+    }
+    if value.is_nan() || value < 0.0 || value.fract() != 0.0 {
+        return Err(DistanceError::InvalidMaxDistance(value));
+    }
+    Ok((value < f64::from(u32::MAX)).then_some(value as u32))
+}
 
 // ─── Shared helpers ──────────────────────────────────────────────────────────
 

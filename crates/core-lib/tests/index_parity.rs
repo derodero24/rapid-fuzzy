@@ -448,6 +448,37 @@ fn mutated_index_matches_standalone_search() {
     }
 }
 
+/// Type-ahead after a typo: once a typed prefix matches nothing (although
+/// every one of its characters occurs in some item), the index answers every
+/// longer query from its empty cached match set. Results must stay identical
+/// to `search()`, also after deleting characters, which rescans.
+#[test]
+fn typing_on_after_a_query_without_matches() {
+    let items = filler(6000);
+    let ctx = "typing after a typo";
+    let index = FuzzyIndexCore::new(items.clone());
+    for case_matching in [CaseMatching::Smart, CaseMatching::Respect] {
+        let opts = Opts {
+            max_results: None,
+            min_score: None,
+            include_positions: false,
+            case_matching,
+        };
+        // No item has a letter after its trailing digits.
+        for query in ["9adapt", "service9a", "handler 1a", "Async9"] {
+            assert_typing_parity(&index, &items, query, opts, ctx);
+            assert!(
+                index
+                    .search_impl(query, None, None, false, case_matching)
+                    .is_empty()
+            );
+            for end in (1..query.len()).rev() {
+                assert_parity(&index, &items, &query[..end], opts, ctx);
+            }
+        }
+    }
+}
+
 /// Corpora above 5000 items: the size at which the index used to pre-filter
 /// with an (unsound) bigram index.
 #[test]

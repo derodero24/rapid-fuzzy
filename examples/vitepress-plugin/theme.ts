@@ -2,18 +2,23 @@
  * VitePress theme integration for the rapid-fuzzy search plugin.
  *
  * Copy these snippets into your .vitepress/theme/index.ts to replace
- * VitePress's built-in local search with rapid-fuzzy.
+ * VitePress's built-in local search with rapid-fuzzy. The import paths assume
+ * a .vitepress/ directory at the root of this repository; adjust them to
+ * where you copy plugin.ts and SearchBox.vue.
  *
- * Step 1 — add the Vite plugin to .vitepress/config.ts:
+ * Step 1 — add the Vite plugin to .vitepress/config.ts. Leave
+ * themeConfig.search unset: `provider: 'local'` would turn VitePress's
+ * built-in search on next to this one.
  *
+ *   import { fileURLToPath } from 'node:url'
  *   import { defineConfig } from 'vitepress'
- *   import { rapidFuzzySearch } from 'vitepress-plugin-rapid-fuzzy/plugin'
+ *   import { rapidFuzzySearch } from '../examples/vitepress-plugin/plugin'
  *
  *   export default defineConfig({
- *     // Disable the built-in local search
- *     themeConfig: { search: { provider: 'local', options: {} } },
  *     vite: {
- *       plugins: [rapidFuzzySearch(__dirname)],
+ *       // The docs root: the parent of .vitepress/ (`__dirname` here would be
+ *       // .vitepress/ itself, which contains no pages)
+ *       plugins: [rapidFuzzySearch(fileURLToPath(new URL('..', import.meta.url)))],
  *     },
  *   })
  *
@@ -21,7 +26,7 @@
  *
  *   import { h } from 'vue'
  *   import DefaultTheme from 'vitepress/theme'
- *   import SearchBox from 'vitepress-plugin-rapid-fuzzy/SearchBox.vue'
+ *   import SearchBox from '../../examples/vitepress-plugin/SearchBox.vue'
  *
  *   export default {
  *     extends: DefaultTheme,

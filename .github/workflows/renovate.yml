@@ -5,10 +5,11 @@ on:
     - cron: '0 19 * * *' # Daily 19:00 UTC (4:00 JST)
   workflow_dispatch:
 
+# Renovate pushes branches and opens PRs and issues with RENOVATE_TOKEN (a
+# personal access token): the action passes the container that token, never
+# the workflow's GITHUB_TOKEN, which only actions/checkout uses.
 permissions:
-  contents: write
-  pull-requests: write
-  issues: write
+  contents: read # actions/checkout
 
 jobs:
   renovate:

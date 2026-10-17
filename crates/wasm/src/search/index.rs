@@ -3,8 +3,8 @@ use rapid_fuzzy_core::search::serialization::{deserialize_fuzzy_index, serialize
 use rapid_fuzzy_core::search::{FuzzyIndexCore, is_empty_query};
 use wasm_bindgen::prelude::*;
 
-use super::{IndexSearchResult, SearchOptions, SearchResult, resolve_case_matching};
-use crate::convert::{error, or_null, strings_from_js, to_js};
+use super::{IndexSearchResult, SearchOptions, SearchResult, min_score_arg, resolve_case_matching};
+use crate::convert::{error, or_null, remove_index_from_js, strings_from_js, to_js};
 
 /// A persistent fuzzy search index backed by Rust-side data.
 ///
@@ -15,14 +15,24 @@ pub struct FuzzyIndex {
     core: FuzzyIndexCore,
 }
 
-#[wasm_bindgen]
 impl FuzzyIndex {
-    /// Create a new FuzzyIndex from an array of strings.
-    #[wasm_bindgen(constructor)]
-    pub fn new(items: Vec<String>) -> Self {
+    fn from_items(items: Vec<String>) -> Self {
         Self {
             core: FuzzyIndexCore::new(items),
         }
+    }
+}
+
+#[wasm_bindgen]
+impl FuzzyIndex {
+    /// Create a new FuzzyIndex from an array of strings.
+    ///
+    /// Throws a `TypeError` for anything but an array of strings.
+    #[wasm_bindgen(constructor)]
+    pub fn new(
+        #[wasm_bindgen(unchecked_param_type = "string[]")] items: JsValue,
+    ) -> Result<FuzzyIndex, JsValue> {
+        Ok(Self::from_items(strings_from_js(&items)?))
     }
 
     /// Return the number of items in the index.
@@ -44,7 +54,7 @@ impl FuzzyIndex {
         #[wasm_bindgen(unchecked_param_type = "string[]")] items: JsValue,
     ) -> js_sys::Promise {
         match strings_from_js(&items) {
-            Ok(items) => js_sys::Promise::resolve(&JsValue::from(Self::new(items))),
+            Ok(items) => js_sys::Promise::resolve(&JsValue::from(Self::from_items(items))),
             Err(err) => js_sys::Promise::reject(&err),
         }
     }
@@ -104,18 +114,23 @@ impl FuzzyIndex {
 
     /// Find the closest matching string in the index.
     ///
-    /// Returns the best match, or null if no match is found.
-    /// If `minScore` is provided, returns null when the best match scores below the threshold.
+    /// Returns the best match, or null if no match is found: the index's
+    /// copy of the item, converted to UTF-8 like `SearchResult.item`.
+    /// If `minScore` is provided, returns null when the best match scores below
+    /// the threshold. A NaN `minScore`, or one that is not a number, throws a
+    /// `TypeError`.
     #[wasm_bindgen(unchecked_return_type = "string | null")]
     pub fn closest(
         &self,
         query: String,
-        #[wasm_bindgen(js_name = "minScore")] min_score: Option<f64>,
-    ) -> JsValue {
+        #[wasm_bindgen(js_name = "minScore", unchecked_optional_param_type = "number | null")]
+        min_score: Option<JsValue>,
+    ) -> Result<JsValue, JsValue> {
+        let min_score = min_score_arg(min_score)?;
         let results = self
             .core
             .search_impl(&query, Some(1), min_score, false, CaseMatching::Smart);
-        or_null(results.into_iter().next().map(|r| r.item))
+        Ok(or_null(results.into_iter().next().map(|r| r.item)))
     }
 
     /// Search the index, returning only indices and scores (no item strings).
@@ -176,16 +191,31 @@ impl FuzzyIndex {
     }
 
     /// Add multiple items to the index at once.
+    ///
+    /// Throws a `TypeError`, adding nothing, for anything but an array of
+    /// strings.
     #[wasm_bindgen(js_name = "addMany")]
-    pub fn add_many(&mut self, items: Vec<String>) {
+    pub fn add_many(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "string[]")] items: JsValue,
+    ) -> Result<(), JsValue> {
+        let items = strings_from_js(&items)?;
         self.core.add_many(items);
+        Ok(())
     }
 
     /// Remove the item at the given index.
     ///
-    /// Uses swap-remove for O(1) performance. Returns false if out of bounds.
-    pub fn remove(&mut self, index: u32) -> bool {
-        self.core.remove(index)
+    /// Uses swap-remove for O(1) performance: the last item moves into the
+    /// freed slot. Returns false, removing nothing, if `index` is out of
+    /// range (negative, or not less than `size`). Throws a `TypeError` if
+    /// `index` is not a number and a `RangeError` if it is not an integer
+    /// (`NaN`, `±Infinity` or a fraction), like `FuzzyObjectIndex.remove()`.
+    pub fn remove(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "number")] index: JsValue,
+    ) -> Result<bool, JsValue> {
+        Ok(remove_index_from_js(&index)?.is_some_and(|index| self.core.remove(index)))
     }
 
     /// Free the internal data. After calling this, the index is empty.

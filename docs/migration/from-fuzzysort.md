@@ -169,7 +169,7 @@ From the [README benchmarks](../../README.md#benchmarks) (Node.js 22, Linux x64,
 | Large (10K items, rotating queries) | 451 ops/s | **4,644 ops/s** | 2,231 ops/s |
 | Huge (100K items) | — | **1,125 ops/s** | 231 ops/s |
 
-fuzzysort was about 6x faster on 20 items and about as fast on 1K items. `FuzzyIndex` was 1.6-2.1x faster on 10K items, and about 5x faster on 100K items, where it scored candidates on 4 threads (about 1.6x faster on one thread). Standalone `search()` was slower than fuzzysort's prepared search at every size, because it converts every item on each call.
+fuzzysort was about 6x faster on 20 items and about as fast on 1K items. `FuzzyIndex` was 1.6-2.1x faster on 10K items, and about 5x faster on 100K items, where it scored candidates on 4 threads (about 2x faster on one thread). Standalone `search()` was slower than fuzzysort's prepared search at every size, because it converts every item on each call.
 
 ## Why Choose rapid-fuzzy Over fuzzysort?
 

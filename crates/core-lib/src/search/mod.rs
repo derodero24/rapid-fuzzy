@@ -35,7 +35,9 @@ pub enum MatchType {
 /// A single fuzzy search result with the matched item and its score.
 #[derive(Debug, Clone)]
 pub struct SearchResult {
-    /// The original string that matched.
+    /// The matched item, as converted to UTF-8 by the bindings: a lone UTF-16
+    /// surrogate of the caller's string is U+FFFD here (see the bindings'
+    /// `SearchResult.item`).
     pub item: String,
     /// The match score normalized to 0.0-1.0 range (1.0 is a perfect match).
     pub score: f64,
@@ -124,15 +126,9 @@ pub fn check_max_results(value: f64) -> Result<Option<u32>, String> {
         return Ok(None);
     }
     if value.is_nan() || value < 0.0 || value.fract() != 0.0 {
-        let shown = if value.is_nan() {
-            "NaN".to_string()
-        } else if value.is_infinite() {
-            "-Infinity".to_string()
-        } else {
-            value.to_string()
-        };
         return Err(format!(
-            "maxResults must be a non-negative integer or Infinity, got {shown}"
+            "maxResults must be a non-negative integer or Infinity, got {}",
+            crate::js_number(value)
         ));
     }
     Ok(Some(if value >= f64::from(u32::MAX) {
@@ -140,6 +136,50 @@ pub fn check_max_results(value: f64) -> Result<Option<u32>, String> {
     } else {
         value as u32
     }))
+}
+
+/// Validate the `index` argument of `FuzzyIndex.remove()` and
+/// `KeyedFuzzyIndex.remove()` coming from JavaScript (as a double), exactly
+/// like `FuzzyObjectIndex.remove()` validates its own:
+///
+/// - NaN, `±Infinity` and fractional values are rejected with the message
+///   both bindings report (as a `RangeError`): reading them as a `u32`
+///   wrapped them modulo 2^32, so `remove(NaN)` removed item 0;
+/// - negative values and values beyond `u32::MAX` are out of range, like any
+///   index not below the size of the index: `Ok(None)`, for which `remove()`
+///   returns false without removing anything;
+/// - any other value is the index of the item to remove.
+///
+/// A value that is not a number at all is rejected with
+/// [`invalid_index_type`] (as a `TypeError`) before this check.
+pub fn check_remove_index(value: f64) -> Result<Option<u32>, String> {
+    if !value.is_finite() || value.fract() != 0.0 {
+        return Err(format!(
+            "index must be an integer, got {}",
+            crate::js_number(value)
+        ));
+    }
+    // `-0.0 >= 0.0`, so -0 is index 0, as in JavaScript.
+    Ok((value >= 0.0 && value <= f64::from(u32::MAX)).then_some(value as u32))
+}
+
+/// The message of the `TypeError` both bindings throw for an `index`
+/// argument of `remove()` that is not a number, given its `typeof`.
+pub fn invalid_index_type(type_of: &str) -> String {
+    format!("index must be a number, got {type_of}")
+}
+
+/// Validate a `minScore` option coming from JavaScript: NaN is rejected with
+/// the message both bindings report, and any other value (including
+/// `±Infinity` and values above 1) is accepted.
+///
+/// No score compares as at least NaN, so a NaN threshold used to filter out
+/// every match silently, while a NaN `maxResults` or `minSimilarity` throws.
+pub fn check_min_score(min_score: Option<f64>) -> Result<Option<f64>, String> {
+    match min_score {
+        Some(score) if score.is_nan() => Err("minScore must be a number, got NaN".to_string()),
+        other => Ok(other),
+    }
 }
 
 thread_local! {
@@ -439,6 +479,7 @@ pub fn utf32_haystack<'a>(s: &'a str, buf: &'a mut Vec<char>) -> Utf32Str<'a> {
 ///
 /// Indexes keep their items as `String`s anyway, so storing only the
 /// non-ASCII haystacks avoids keeping a second copy of every ASCII item.
+#[inline(always)]
 pub(crate) fn index_haystack(item: &str) -> Option<Box<[char]>> {
     (!item.is_ascii()).then(|| chars::graphemes(item).collect())
 }

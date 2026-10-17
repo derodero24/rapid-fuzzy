@@ -1,11 +1,14 @@
-use napi::bindgen_prelude::{AsyncTask, Buffer, ObjectFinalize};
+use napi::bindgen_prelude::{AsyncTask, Buffer, ObjectFinalize, Unknown};
 use napi::{Env, Task};
 use napi_derive::napi;
 use nucleo_matcher::pattern::CaseMatching;
 use rapid_fuzzy_core::search::serialization::{deserialize_fuzzy_index, serialize_fuzzy_index};
 use rapid_fuzzy_core::search::{FuzzyIndexCore, is_empty_query};
 
-use super::{IndexSearchResult, ResolvedSearchOptions, SearchOptionsArg, SearchResult};
+use super::{
+    IndexSearchResult, ResolvedSearchOptions, SearchOptionsArg, SearchResult, read_remove_index,
+    resolve_min_score,
+};
 
 pub struct BuildFuzzyIndexTask {
     /// The converted items, or the conversion error to reject the Promise with.
@@ -175,12 +178,15 @@ impl FuzzyIndex {
 
     /// Find the closest matching string in the index.
     ///
-    /// Returns the best match, or null if no match is found.
-    /// If minScore is provided, returns null when the best match scores below the threshold.
+    /// Returns the best match, or null if no match is found: the index's
+    /// copy of the item, converted to UTF-8 like `SearchResult.item`.
+    /// If minScore is provided, returns null when the best match scores below
+    /// the threshold. A NaN minScore throws an `InvalidArg` error.
     #[napi]
-    pub fn closest(&self, query: String, min_score: Option<f64>) -> Option<String> {
+    pub fn closest(&self, query: String, min_score: Option<f64>) -> napi::Result<Option<String>> {
+        let min_score = resolve_min_score(min_score)?;
         let results = self.search_impl(&query, Some(1), min_score, false, CaseMatching::Smart);
-        results.into_iter().next().map(|r| r.item)
+        Ok(results.into_iter().next().map(|r| r.item))
     }
 
     /// Search the index, returning only indices and scores (no item strings).
@@ -247,9 +253,20 @@ impl FuzzyIndex {
 
     /// Remove the item at the given index.
     ///
-    /// Uses swap-remove for O(1) performance. Returns false if out of bounds.
+    /// Uses swap-remove for O(1) performance: the last item moves into the
+    /// freed slot. Returns false, removing nothing, if `index` is out of
+    /// range (negative, or not less than `size`). Throws a `TypeError` if
+    /// `index` is not a number and a `RangeError` if it is not an integer
+    /// (`NaN`, `±Infinity` or a fraction), like `FuzzyObjectIndex.remove()`.
     #[napi]
-    pub fn remove(&mut self, env: Env, index: u32) -> napi::Result<bool> {
+    pub fn remove(
+        &mut self,
+        env: Env,
+        #[napi(ts_arg_type = "number")] index: Unknown<'_>,
+    ) -> napi::Result<bool> {
+        let Some(index) = read_remove_index(env, index)? else {
+            return Ok(false);
+        };
         let removed = self.core.remove(index);
         self.report_memory(env)?;
         Ok(removed)
@@ -276,17 +293,25 @@ impl FuzzyIndex {
     /// `deserialize()` recomputes it, so loading takes about as long as
     /// building the index from an array. The format is versioned; data
     /// written by a different format version is rejected.
-    #[napi]
+    #[napi(ts_return_type = "NodeBuffer")]
     pub fn serialize(&self) -> Buffer {
         self.serialize_impl().into()
     }
 
-    /// Reconstruct a FuzzyIndex from a previously serialized Buffer.
+    /// Reconstruct a FuzzyIndex from a previously serialized Buffer, or any
+    /// other Uint8Array holding the same bytes (such as the output of the
+    /// browser build's `serialize()`).
     ///
     /// Pre-computes the search representation of the stored items,
     /// so the returned index is immediately ready for searching.
     #[napi(factory)]
-    pub fn deserialize(env: Env, data: Buffer) -> napi::Result<Self> {
+    pub fn deserialize(
+        env: Env,
+        // Read as a Buffer, which napi-rs accepts any Uint8Array for.
+        // `NodeBuffer` keeps a Buffer valid where it is not a `Uint8Array` to
+        // TypeScript 5.7+ (the non-generic Buffer of older @types/node).
+        #[napi(ts_arg_type = "Uint8Array | NodeBuffer")] data: Buffer,
+    ) -> napi::Result<Self> {
         Self::deserialize_impl(&data)
             .map_err(napi::Error::from_reason)?
             .with_reported_memory(env)
@@ -404,14 +429,14 @@ mod tests {
     #[test]
     fn test_closest() {
         let index = FuzzyIndex::new(vec!["apple".into(), "banana".into()]);
-        let result = index.closest("app".into(), None);
+        let result = index.closest("app".into(), None).unwrap();
         assert_eq!(result, Some("apple".into()));
     }
 
     #[test]
     fn test_closest_with_min_score() {
         let index = FuzzyIndex::new(vec!["xyz".into()]);
-        let result = index.closest("hello".into(), Some(0.99));
+        let result = index.closest("hello".into(), Some(0.99)).unwrap();
         assert!(result.is_none());
     }
 
@@ -421,7 +446,7 @@ mod tests {
         assert_eq!(index.size(), 1);
         index.core.add("banana".into());
         assert_eq!(index.size(), 2);
-        let result = index.closest("banana".into(), None);
+        let result = index.closest("banana".into(), None).unwrap();
         assert_eq!(result, Some("banana".into()));
     }
 
