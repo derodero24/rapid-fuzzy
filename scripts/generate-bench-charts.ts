@@ -11,8 +11,14 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 // Paths are relative to the repository root, where `pnpm bench:charts` runs.
-const ASSET_DIR = join('.github', 'assets');
-mkdirSync(ASSET_DIR, { recursive: true });
+// The README shows the charts from .github/assets, the website from its
+// public directory.
+const ASSET_DIRS = [join('.github', 'assets'), join('site', 'public')];
+for (const dir of ASSET_DIRS) mkdirSync(dir, { recursive: true });
+
+function writeChart(name: string, svg: string): void {
+  for (const dir of ASSET_DIRS) writeFileSync(join(dir, name), svg);
+}
 
 // ---------------------------------------------------------------------------
 // 1. Parse benchmark tables from README
@@ -264,7 +270,7 @@ const distData = parseDistanceTable();
 
 if (searchData.groups.length > 0) {
   const svg = generateSvg(searchData);
-  writeFileSync(join(ASSET_DIR, 'bench-search.svg'), svg);
+  writeChart('bench-search.svg', svg);
   console.log(`✓ Generated bench-search.svg (${searchData.groups.length} groups)`);
 } else {
   console.warn('⚠ No search benchmark data found in README');
@@ -272,7 +278,7 @@ if (searchData.groups.length > 0) {
 
 if (distData.groups.length > 0) {
   const svg = generateSvg(distData);
-  writeFileSync(join(ASSET_DIR, 'bench-distance.svg'), svg);
+  writeChart('bench-distance.svg', svg);
   console.log(`✓ Generated bench-distance.svg (${distData.groups.length} groups)`);
 } else {
   console.warn('⚠ No distance benchmark data found in README');

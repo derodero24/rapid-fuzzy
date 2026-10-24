@@ -1,0 +1,12 @@
+# The documentation site is its own pnpm project (with its own lockfile), not a
+# member of the repository's workspace: it installs the published rapid-fuzzy
+# from npm, so the site documents and demonstrates the released version.
+allowBuilds:
+  esbuild: true
+  sharp: true
+# pnpm holds back releases younger than a day; the site should pick up a new
+# rapid-fuzzy release right away.
+minimumReleaseAgeExclude:
+  - rapid-fuzzy
+  - rapid-fuzzy-*
+  - '@astrojs/starlight@0.42.7'

@@ -1,0 +1,13 @@
+---
+title: Playground
+description: Try rapid-fuzzy in your browser. Search sample data or your own list, search objects with weighted keys, compare string similarity metrics, and time rapid-fuzzy against fuse.js and fuzzysort.
+tableOfContents: false
+---
+
+import Playground from '../../components/playground/Playground.astro';
+
+Everything on this page runs in your browser with the WebAssembly build of the latest published `rapid-fuzzy`. Type a query to search, or paste your own list. Turn on **Compare** to run the same query through fuse.js and fuzzysort and see their results and timings side by side.
+
+<Playground />
+
+Timings are the average of repeated runs in your browser's WebAssembly engine, so they are slower than the native Node.js addon in the [benchmarks](/rapid-fuzzy/benchmarks/). The libraries match differently (see [Why rapid-fuzzy?](/rapid-fuzzy/comparison/)), so their result lists will not be the same.
