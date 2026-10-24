@@ -14,7 +14,9 @@ struct SearchCache {
     query: String,
     /// Case mode the matches were computed with.
     case_matching: CaseMatching,
-    /// Ascending indices of every item matching `query`.
+    /// Ascending indices of every item matching `query`. Possibly empty: a
+    /// query that matches nothing is cached too, so that typing on after a
+    /// typo does not rescan the whole index on every keystroke.
     matching: Vec<u32>,
 }
 
@@ -171,12 +173,12 @@ impl FuzzyIndexCore {
         };
         let outcome = {
             let cache = self.cache.borrow();
+            // An empty match set narrows the search too: no refinement of a
+            // query that matches nothing can match anything.
             let candidates = cache
                 .as_ref()
                 .filter(|cache| {
-                    cache.case_matching == case_matching
-                        && !cache.matching.is_empty()
-                        && refines(&cache.query, &query)
+                    cache.case_matching == case_matching && refines(&cache.query, &query)
                 })
                 .map(|cache| cache.matching.as_slice());
             search_core(&plan, corpus, candidates, params, unfiltered)
@@ -291,7 +293,76 @@ impl FuzzyIndexCore {
 
 #[cfg(test)]
 mod tests {
-    use super::refines;
+    use nucleo_matcher::pattern::CaseMatching;
+
+    use super::{FuzzyIndexCore, SearchCache, refines};
+
+    fn search(index: &FuzzyIndexCore, query: &str) -> Vec<String> {
+        index
+            .search_impl(query, None, None, false, CaseMatching::Smart)
+            .into_iter()
+            .map(|r| r.item)
+            .collect()
+    }
+
+    fn cached(index: &FuzzyIndexCore) -> Option<(String, usize)> {
+        index
+            .cache
+            .borrow()
+            .as_ref()
+            .map(|cache| (cache.query.clone(), cache.matching.len()))
+    }
+
+    /// Items containing every character of the queries below, so that the
+    /// index's union mask does not answer them on its own.
+    fn items() -> Vec<String> {
+        [
+            "alpha_9", "beta_19", "gamma_29", "delta_39", "data_4", "adapt_5",
+        ]
+        .map(String::from)
+        .to_vec()
+    }
+
+    #[test]
+    fn a_query_without_matches_is_cached() {
+        let index = FuzzyIndexCore::new(items());
+        // Every item has a '9' or an 'a', but none an 'a' after a '9'.
+        assert!(search(&index, "9a").is_empty());
+        assert_eq!(cached(&index), Some(("9a".to_string(), 0)));
+        // Typing on stays empty and keeps the (empty) cache up to date.
+        assert!(search(&index, "9ad").is_empty());
+        assert_eq!(cached(&index), Some(("9ad".to_string(), 0)));
+    }
+
+    #[test]
+    fn an_empty_cached_match_set_narrows_refining_queries() {
+        let index = FuzzyIndexCore::new(items());
+        assert_eq!(search(&index, "ad"), ["adapt_5"]);
+        // A forged empty cache for "ad" proves that a refining query is
+        // answered from it instead of rescanning.
+        *index.cache.borrow_mut() = Some(SearchCache {
+            query: "ad".to_string(),
+            case_matching: CaseMatching::Smart,
+            matching: Vec::new(),
+        });
+        assert!(search(&index, "ada").is_empty());
+        // Edits that do not refine the cached query rescan.
+        assert_eq!(search(&index, "a_5"), ["adapt_5"]);
+        assert_eq!(
+            search(&index, "a"),
+            search(&FuzzyIndexCore::new(items()), "a")
+        );
+    }
+
+    #[test]
+    fn mutations_invalidate_an_empty_cache() {
+        let mut index = FuzzyIndexCore::new(items());
+        assert!(search(&index, "9a").is_empty());
+        index.add("x_9a".to_string());
+        assert_eq!(cached(&index), None);
+        assert_eq!(search(&index, "9ad"), Vec::<String>::new());
+        assert_eq!(search(&index, "9a"), ["x_9a"]);
+    }
 
     #[test]
     fn refines_plain_extensions() {

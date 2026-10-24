@@ -6,6 +6,10 @@ import { assert, assertEquals, assertNotEquals } from 'jsr:@std/assert';
 // entry and its native addon. `pnpm run test:deno` passes --no-check: Deno type-checks a
 // self-referenced package as local files, not with the npm resolution users get
 // for `npm:rapid-fuzzy` (whose declarations __test__/types/browser.types.ts covers).
+// It also passes --node-modules-dir=manual, so Deno reads the node_modules that
+// `pnpm install` created without writing to it: `auto` relinks the dependencies to
+// Deno's own resolution, which ignores pnpm-lock.yaml, and `pnpm install` does not
+// undo that.
 import * as wasm from 'rapid-fuzzy';
 import { highlight } from 'rapid-fuzzy/highlight';
 import { FuzzyObjectIndex } from 'rapid-fuzzy/objects';

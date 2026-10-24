@@ -51,9 +51,9 @@ impl From<rapid_fuzzy_core::search::KeySearchResult> for KeySearchResult {
 /// on a key with a positive weight) are not returned.
 ///
 /// Returns results sorted by combined score (best match first), then by the
-/// length of the best-matching key's text (shorter first, like `search()`),
-/// then by index. `new KeyedFuzzyIndex(keyTexts, weights)` returns exactly
-/// the same results.
+/// UTF-8 byte length of the best-matching key's text (shorter first, like
+/// `search()`), then by index. `new KeyedFuzzyIndex(keyTexts, weights)`
+/// returns exactly the same results.
 ///
 /// The fourth argument accepts either a number (maxResults) or a
 /// KeySearchOptions object. Throws when the key texts have different lengths,

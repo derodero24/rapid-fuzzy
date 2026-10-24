@@ -44,6 +44,11 @@
       "enabled": false
     },
     {
+      "description": "@types-node-20.11/node and @types-node-22.10/node are older @types/node releases that __test__/types-node-legacy type-checks the declarations against (see main.mts there): an update would test the current release instead",
+      "matchDepNames": ["@types-node-20.11/node", "@types-node-22.10/node"],
+      "enabled": false
+    },
+    {
       "description": "Group Rust crate updates",
       "matchManagers": ["cargo"],
       "groupName": "rust-dependencies"
@@ -109,6 +114,14 @@
       "matchStrings": ["NPM_VERSION: (?<currentValue>\\d+\\.\\d+\\.\\d+)"],
       "depNameTemplate": "npm",
       "datasourceTemplate": "npm"
+    },
+    {
+      "customType": "regex",
+      "description": "Codecov CLI release pinned through codecov/codecov-action's version input",
+      "managerFilePatterns": ["/^\\.github/workflows/ci\\.yml$/"],
+      "matchStrings": ["version: (?<currentValue>v\\d+\\.\\d+\\.\\d+) # codecov-cli"],
+      "depNameTemplate": "codecov/codecov-cli",
+      "datasourceTemplate": "github-releases"
     },
     {
       "customType": "regex",

@@ -88,7 +88,7 @@ const results = search('typscript', items);
 
 ### Performance
 
-`FuzzyIndex` keeps the items on the Rust side, ready to search: in the [README benchmarks](../../README.md#benchmarks) (Node.js 22, Linux x64, Intel Xeon @ 2.10GHz) it answered a query over 10,000 items in about 0.2 ms (4,803 ops/s, vs 780 ops/s for MiniSearch with `{ fuzzy: 0.2, prefix: true }`). The two libraries return different matches for the same query, so this compares the cost of a search, not identical work.
+`FuzzyIndex` keeps the items on the Rust side, ready to search: in the [README benchmarks](../../README.md#benchmarks) (Node.js 22, Linux x64, Intel Xeon @ 2.10GHz) it answered a query over 10,000 items in about 0.2 ms (4,803 ops/s). MiniSearch is not in those tables: it is token-based and returns different matches for the same queries, so a comparison measures the cost of a search, not identical work. [`__test__/search.compare.bench.ts`](../../__test__/search.compare.bench.ts) runs both on the same data (MiniSearch with `{ fuzzy: 0.2, prefix: true }`); `pnpm run bench` measures them on your machine.
 
 ### Index serialization
 

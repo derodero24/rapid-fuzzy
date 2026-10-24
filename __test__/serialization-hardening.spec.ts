@@ -247,3 +247,30 @@ describe('serialize/deserialize round-trips every index state', () => {
     expect(restored.search('a')).toEqual([]);
   });
 });
+
+// deserialize() is declared to take a Uint8Array: bytes from fetch(),
+// IndexedDB or the browser build arrive as plain Uint8Arrays, not Buffers.
+describe('deserialize() accepts any Uint8Array', () => {
+  it('FuzzyIndex', () => {
+    const bytes = new Uint8Array(new FuzzyIndex(['TypeScript', '東京']).serialize());
+    expect(Buffer.isBuffer(bytes)).toBe(false);
+    const restored = FuzzyIndex.deserialize(bytes);
+    expect(restored.size).toBe(2);
+    expect(restored.closest('東')).toBe('東京');
+  });
+
+  it('KeyedFuzzyIndex', () => {
+    const bytes = new Uint8Array(keyedIndex().serialize());
+    const restored = KeyedFuzzyIndex.deserialize(bytes);
+    expect(restored.size).toBe(keyedIndex().size);
+    expect(restored.serialize()).toEqual(keyedIndex().serialize());
+  });
+
+  it('a view into a larger buffer', () => {
+    const serialized = new FuzzyIndex(['apple']).serialize();
+    const larger = new Uint8Array(serialized.length + 8);
+    larger.set(serialized, 4);
+    const restored = FuzzyIndex.deserialize(larger.subarray(4, 4 + serialized.length));
+    expect(restored.closest('aple')).toBe('apple');
+  });
+});

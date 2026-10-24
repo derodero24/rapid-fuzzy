@@ -14,8 +14,8 @@ type Expect<T extends true> = T;
 type IsAny<T> = 0 extends 1 & T ? true : false;
 
 type BrowserExports = keyof typeof Browser;
-// napi-rs's loader marker (index.d.ts, @napi-rs/cli >= 3.10) is internal and not
-// part of the public API; the runtime parity test in index.spec.ts skips it too.
+// napi-rs's loader marker (index.d.ts, @napi-rs/cli >= 3.10) tells which Node.js
+// binding was loaded; the WebAssembly build has no such binding.
 type NodeExports = Exclude<keyof typeof NodeEntry, '__napiBindingTarget'>;
 type ExportsWithAny = {
   [K in BrowserExports]: IsAny<(typeof Browser)[K]> extends true ? K : never;

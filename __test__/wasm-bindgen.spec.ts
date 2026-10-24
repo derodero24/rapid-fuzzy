@@ -728,7 +728,7 @@ describe.skipIf(!wasmAvailable)('wasm-bindgen runtime', () => {
       it('takes a number as a shorthand for minScore', () => {
         const w = new wasm.KeyedFuzzyIndex(keyTexts, weights);
         const n = new napi.KeyedFuzzyIndex(keyTexts, weights);
-        for (const minScore of [0, 0.5, 0.9, 1, 2, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+        for (const minScore of [0, 0.5, 0.9, 1, 2, -1, Number.POSITIVE_INFINITY]) {
           for (const query of queries) {
             const expected = n.closest(query, { minScore });
             expect(n.closest(query, minScore)).toBe(expected);
@@ -909,6 +909,417 @@ describe.skipIf(!wasmAvailable)('wasm-bindgen runtime', () => {
       for (const cls of [wasm.FuzzyIndex, wasm.KeyedFuzzyIndex]) {
         const descriptor = Object.getOwnPropertyDescriptor(cls.prototype, 'size');
         expect(typeof descriptor?.get).toBe('function');
+      }
+    });
+  });
+
+  // A string[] argument holding something other than a string used to fail
+  // inside wasm-bindgen's Vec<String> conversion, which throws from inside
+  // the wasm call: the index stayed borrowed for good ("recursive use of an
+  // object"), and the converted strings and the call's shadow-stack space
+  // leaked, until about 16,000 rejected calls broke the whole module.
+  describe('string[] arguments are validated before any work', () => {
+    it('leaves an index usable after a rejected addMany()', () => {
+      const index = new wasm.FuzzyIndex(['apple', 'banana']);
+      for (const bad of [
+        ['cherry', 42],
+        ['cherry', null],
+        ['cherry', undefined],
+      ]) {
+        const err = thrown(() => callUnchecked(index.addMany.bind(index), bad));
+        expect(err).toBeInstanceOf(TypeError);
+        expect(err).toHaveProperty('message', 'Expected a string at index 1');
+      }
+      expect(index.size).toBe(2);
+      expect(index.search('app').map((r) => r.item)).toEqual(['apple']);
+      index.addMany(['cherry']);
+      index.add('date');
+      expect(index.size).toBe(4);
+      index.free();
+    });
+
+    it('rejects anything but an array of strings with a TypeError', () => {
+      const calls: Array<[string, (arg: unknown) => unknown]> = [
+        ['new FuzzyIndex', (arg) => Reflect.construct(wasm.FuzzyIndex, [arg])],
+        ['search', (arg) => callUnchecked(wasm.search, 'a', arg)],
+        ['closest', (arg) => callUnchecked(wasm.closest, 'a', arg)],
+        ['levenshteinMany', (arg) => callUnchecked(wasm.levenshteinMany, 'a', arg)],
+        ['jaroWinklerMany', (arg) => callUnchecked(wasm.jaroWinklerMany, 'a', arg)],
+        ['hammingMany', (arg) => callUnchecked(wasm.hammingMany, 'a', arg)],
+        ['weightedRatioMany', (arg) => callUnchecked(wasm.weightedRatioMany, 'a', arg)],
+      ];
+      for (const [name, call] of calls) {
+        // A string or a number used to be read as an array (of characters,
+        // or empty).
+        for (const bad of ['abc', 5, null, {}, ['a', 1]]) {
+          expect(
+            thrown(() => call(bad)),
+            `${name}(${String(bad)})`,
+          ).toBeInstanceOf(TypeError);
+        }
+      }
+    });
+
+    it('does not leak wasm memory when an array is rejected', () => {
+      const items: unknown[] = Array.from({ length: 2000 }, (_, i) => `item number ${i} padding`);
+      items.push(42);
+      const calls: Array<() => unknown> = [
+        () => callUnchecked(wasm.search, 'item', items),
+        () => callUnchecked(wasm.closest, 'item', items),
+        () => callUnchecked(wasm.levenshteinMany, 'item', items),
+        () => Reflect.construct(wasm.FuzzyIndex, [items]),
+      ];
+      for (const call of calls) {
+        const run = (n: number): void => {
+          for (let i = 0; i < n; i++) thrown(call);
+        };
+        run(20);
+        const before = memory.buffer.byteLength;
+        run(300);
+        // Before the fix every rejected call leaked the ~2,000 converted strings.
+        expect(memory.buffer.byteLength - before).toBeLessThan(1024 * 1024);
+      }
+    });
+
+    it('keeps the module working after many rejected calls (no shadow-stack leak)', () => {
+      for (let i = 0; i < 20_000; i++) {
+        thrown(() => callUnchecked(wasm.levenshteinMany, 'a', ['a', 1]));
+      }
+      expect(wasm.levenshtein('kitten', 'sitting')).toBe(3);
+      expect(wasm.search('app', ['apple'])).toHaveLength(1);
+    });
+  });
+
+  // A string parameter given anything else used to make the glue allocate
+  // `undefined` bytes and trap with "RuntimeError: memory access out of
+  // bounds" (null: "Cannot read properties of null").
+  describe('string arguments', () => {
+    it('throw a TypeError, not a WebAssembly trap, for a value that is not a string', () => {
+      const index = new wasm.FuzzyIndex(['a']);
+      const keyed = new wasm.KeyedFuzzyIndex([['a']], [1]);
+      const calls: Array<[string, (arg: unknown) => unknown]> = [
+        ['levenshtein', (arg) => callUnchecked(wasm.levenshtein, arg, 'a')],
+        ['jaroWinkler (second argument)', (arg) => callUnchecked(wasm.jaroWinkler, 'a', arg)],
+        ['search', (arg) => callUnchecked(wasm.search, arg, ['a'])],
+        ['levenshteinMany (reference)', (arg) => callUnchecked(wasm.levenshteinMany, arg, ['a'])],
+        ['FuzzyIndex#add', (arg) => callUnchecked(index.add.bind(index), arg)],
+        ['FuzzyIndex#search', (arg) => callUnchecked(index.search.bind(index), arg)],
+        ['FuzzyIndex#closest', (arg) => callUnchecked(index.closest.bind(index), arg)],
+        ['KeyedFuzzyIndex#search', (arg) => callUnchecked(keyed.search.bind(keyed), arg)],
+      ];
+      const bad: Array<[unknown, string]> = [
+        [1, 'number'],
+        [true, 'boolean'],
+        [{}, 'object'],
+        [null, 'null'],
+        [undefined, 'undefined'],
+      ];
+      for (const [name, call] of calls) {
+        for (const [value, type] of bad) {
+          const err = thrown(() => call(value));
+          expect(err, `${name}(${String(value)})`).toBeInstanceOf(TypeError);
+          expect(err).toHaveProperty('message', `Expected a string, got ${type}`);
+        }
+      }
+      // Nothing was added, and the module keeps working.
+      expect(index.size).toBe(1);
+      expect(wasm.levenshtein('kitten', 'sitting')).toBe(3);
+      // The Node.js binding rejects the same arguments.
+      expect(() => callUnchecked(napi.levenshtein, 1, 'a')).toThrow();
+      index.free();
+      keyed.free();
+    });
+  });
+
+  // A NaN minScore used to filter out every match silently.
+  describe('minScore validation (like the Node.js binding)', () => {
+    it('throws a TypeError for NaN in every API and accepts other numbers', () => {
+      const items = ['a', 'ab', 'abc'];
+      const index = new wasm.FuzzyIndex(items);
+      const keyed = new wasm.KeyedFuzzyIndex([items], [1]);
+      const calls = (minScore: number): Array<[string, () => unknown]> => [
+        ['search', () => wasm.search('a', items, { minScore })],
+        ['closest', () => wasm.closest('a', items, minScore)],
+        ['FuzzyIndex.search', () => index.search('a', { minScore })],
+        ['FuzzyIndex.searchIndices', () => index.searchIndices('a', { minScore })],
+        ['FuzzyIndex.closest', () => index.closest('a', minScore)],
+        ['searchKeys', () => wasm.searchKeys('a', [items], [1], { minScore })],
+        ['KeyedFuzzyIndex.search', () => keyed.search('a', { minScore })],
+        ['KeyedFuzzyIndex.closest(number)', () => keyed.closest('a', minScore)],
+        ['KeyedFuzzyIndex.closest(options)', () => keyed.closest('a', { minScore })],
+      ];
+      for (const [name, call] of calls(Number.NaN)) {
+        const err = thrown(call);
+        expect(err, name).toBeInstanceOf(TypeError);
+        // The bare message for a positional minScore; an options object
+        // prefixes it with the name of the options type.
+        expect((err as Error).message, name).toMatch(
+          ['closest', 'FuzzyIndex.closest', 'KeyedFuzzyIndex.closest(number)'].includes(name)
+            ? /^minScore must be a number, got NaN$/
+            : /^Invalid (Search|KeySearch|KeyClosest)Options: Error: minScore must be a number, got NaN$/,
+        );
+      }
+      for (const minScore of [Number.NEGATIVE_INFINITY, 0, 2, Number.POSITIVE_INFINITY]) {
+        for (const [name, call] of calls(minScore)) {
+          expect(call, `${name} minScore=${minScore}`).not.toThrow();
+        }
+      }
+      index.free();
+      keyed.free();
+    });
+  });
+
+  // maxDistance used to be a u32 parameter, wrapping it modulo 2^32: Infinity,
+  // NaN and 2 ** 32 became 0 and -1 disabled the limit.
+  describe('maxDistance validation (like the Node.js binding)', () => {
+    const cands = ['kitten', 'sitting', 'kitchen', 'a much longer candidate'];
+    const fns = () =>
+      [
+        ['levenshteinMany', wasm.levenshteinMany, napi.levenshteinMany],
+        ['damerauLevenshteinMany', wasm.damerauLevenshteinMany, napi.damerauLevenshteinMany],
+        ['indelMany', wasm.indelMany, napi.indelMany],
+        ['hammingMany', wasm.hammingMany, napi.hammingMany],
+      ] as const;
+
+    it('treats Infinity and values >= 2^32 as no limit', () => {
+      for (const [name, fn, native] of fns()) {
+        const plain = Array.from(fn('kitten', cands));
+        expect(plain, name).toEqual(Array.from(native('kitten', cands)));
+        for (const maxDistance of [Number.POSITIVE_INFINITY, 2 ** 32, 2 ** 32 + 2]) {
+          expect(Array.from(fn('kitten', cands, maxDistance)), name).toEqual(plain);
+        }
+      }
+    });
+
+    it('throws an Error with the Node.js message for NaN, negative and fractional values', () => {
+      for (const [name, fn, native] of fns()) {
+        for (const maxDistance of [Number.NaN, -1, 2.9, Number.NEGATIVE_INFINITY, 'x', {}]) {
+          const err = thrown(() => callUnchecked(fn, 'kitten', cands, maxDistance));
+          expect(err, `${name}(${String(maxDistance)})`).toBeInstanceOf(Error);
+          if (typeof maxDistance === 'number') {
+            const nodeErr = thrown(() => native('kitten', cands, maxDistance));
+            expect(err).toHaveProperty('message', (nodeErr as Error).message);
+          }
+        }
+      }
+    });
+  });
+
+  // The numeric positional arguments used to be f64 parameters, which convert
+  // any value with Number(): '', false and [] became a maxDistance of 0 (every
+  // distance capped at 1), '2' became 2 and true a minScore of 1, while the
+  // Node.js binding throws for all of them.
+  describe('numeric arguments are not converted from other types (like the Node.js binding)', () => {
+    const NOT_NUMBERS: readonly unknown[] = [
+      '',
+      '2',
+      '0.5',
+      false,
+      true,
+      [],
+      [3],
+      {},
+      new Number(2),
+      1n,
+      Symbol('2'),
+      () => 2,
+    ];
+    const cands = ['kitten', 'sitting', 'kitchen', 'a much longer candidate'];
+    const items = ['apricot', 'ap', 'banana'];
+
+    /** [name, argument, wasm call, Node.js call]: each takes the numeric argument. */
+    const calls = (): Array<
+      readonly [string, string, (value: unknown) => unknown, (value: unknown) => unknown]
+    > => {
+      const index = new wasm.FuzzyIndex(items);
+      const nodeIndex = new napi.FuzzyIndex(items);
+      type ManyFn = (reference: string, candidates: string[], threshold?: number | null) => unknown;
+      const many = (name: string, argument: string, fn: ManyFn, nodeFn: ManyFn) =>
+        [
+          name,
+          argument,
+          (value: unknown) => callUnchecked(fn, 'kitten', cands, value),
+          (value: unknown) => callUnchecked(nodeFn, 'kitten', cands, value),
+        ] as const;
+      return [
+        many('levenshteinMany', 'maxDistance', wasm.levenshteinMany, napi.levenshteinMany),
+        many(
+          'damerauLevenshteinMany',
+          'maxDistance',
+          wasm.damerauLevenshteinMany,
+          napi.damerauLevenshteinMany,
+        ),
+        many('indelMany', 'maxDistance', wasm.indelMany, napi.indelMany),
+        many('hammingMany', 'maxDistance', wasm.hammingMany, napi.hammingMany),
+        many('jaroMany', 'minSimilarity', wasm.jaroMany, napi.jaroMany),
+        many('jaroWinklerMany', 'minSimilarity', wasm.jaroWinklerMany, napi.jaroWinklerMany),
+        many(
+          'normalizedLevenshteinMany',
+          'minSimilarity',
+          wasm.normalizedLevenshteinMany,
+          napi.normalizedLevenshteinMany,
+        ),
+        many(
+          'normalizedHammingMany',
+          'minSimilarity',
+          wasm.normalizedHammingMany,
+          napi.normalizedHammingMany,
+        ),
+        many(
+          'normalizedIndelMany',
+          'minSimilarity',
+          wasm.normalizedIndelMany,
+          napi.normalizedIndelMany,
+        ),
+        many('sorensenDiceMany', 'minSimilarity', wasm.sorensenDiceMany, napi.sorensenDiceMany),
+        many(
+          'tokenSortRatioMany',
+          'minSimilarity',
+          wasm.tokenSortRatioMany,
+          napi.tokenSortRatioMany,
+        ),
+        many('tokenSetRatioMany', 'minSimilarity', wasm.tokenSetRatioMany, napi.tokenSetRatioMany),
+        many('partialRatioMany', 'minSimilarity', wasm.partialRatioMany, napi.partialRatioMany),
+        many('weightedRatioMany', 'minSimilarity', wasm.weightedRatioMany, napi.weightedRatioMany),
+        [
+          'closest',
+          'minScore',
+          (value: unknown) => callUnchecked(wasm.closest, 'ap', items, value),
+          (value: unknown) => callUnchecked(napi.closest, 'ap', items, value),
+        ],
+        [
+          'FuzzyIndex.closest',
+          'minScore',
+          (value: unknown) => callUnchecked(index.closest.bind(index), 'ap', value),
+          (value: unknown) => callUnchecked(nodeIndex.closest.bind(nodeIndex), 'ap', value),
+        ],
+      ];
+    };
+
+    it('throws a TypeError naming the argument and its type, where Node.js throws too', () => {
+      for (const [name, argument, call, nodeCall] of calls()) {
+        for (const value of NOT_NUMBERS) {
+          const label = `${name}(${typeof value} ${String(value as object)})`;
+          const err = thrown(() => call(value));
+          expect(err, label).toBeInstanceOf(TypeError);
+          expect(err, label).toHaveProperty(
+            'message',
+            `${argument} must be a number, got ${typeof value}`,
+          );
+          expect(() => nodeCall(value), label).toThrow();
+        }
+      }
+    });
+
+    it('still reads undefined and null as not given, and numbers like Node.js', () => {
+      // Typed arrays (the *Many results of the browser build) as plain arrays.
+      const plain = (result: unknown): unknown =>
+        ArrayBuffer.isView(result) ? Array.from(result as unknown as ArrayLike<unknown>) : result;
+      for (const [name, , call, nodeCall] of calls()) {
+        expect(plain(call(null)), name).toEqual(plain(call(undefined)));
+        expect(plain(call(undefined)), name).toEqual(plain(nodeCall(undefined)));
+        // 0.5 is not a valid maxDistance in either binding.
+        for (const value of [0, 1, 0.5, 2, Number.POSITIVE_INFINITY]) {
+          const label = `${name}(${value})`;
+          const nodeErr = (() => {
+            try {
+              nodeCall(value);
+              return undefined;
+            } catch (err) {
+              return err;
+            }
+          })();
+          if (nodeErr === undefined) {
+            expect(plain(call(value)), label).toEqual(plain(nodeCall(value)));
+          } else {
+            expect(() => call(value), label).toThrow((nodeErr as Error).message);
+          }
+        }
+      }
+    });
+
+    it('leaves a FuzzyIndex usable after rejecting its minScore', () => {
+      const index = new wasm.FuzzyIndex(items);
+      expect(thrown(() => callUnchecked(index.closest.bind(index), 'ap', '0.5'))).toBeInstanceOf(
+        TypeError,
+      );
+      expect(index.closest('ap')).toBe('ap');
+      expect(index.search('ap').map((r) => r.item)).toEqual(['ap', 'apricot']);
+      index.free();
+    });
+  });
+
+  // The index used to be a u32 parameter, which wraps numbers modulo 2^32 and
+  // converts anything else to a number: remove(NaN), remove(2 ** 32) and
+  // remove(undefined) (a missed Map lookup) removed item 0 and returned true.
+  describe('remove() argument validation (like FuzzyObjectIndex.remove)', () => {
+    interface Removable {
+      remove(index: number): boolean;
+      readonly size: number;
+      free(): void;
+    }
+    const indexes = (): Removable[] => [
+      new wasm.FuzzyIndex(['a', 'b', 'c']),
+      new wasm.KeyedFuzzyIndex([['a', 'b', 'c']], [1]),
+    ];
+
+    it.each([
+      [Number.NaN, 'NaN'],
+      [1.5, '1.5'],
+      [-0.5, '-0.5'],
+      [Number.POSITIVE_INFINITY, 'Infinity'],
+      [Number.NEGATIVE_INFINITY, '-Infinity'],
+      [1e-7, '1e-7'],
+      [-1.5e-7, '-1.5e-7'],
+      [5e-324, '5e-324'],
+    ])('throws a RangeError for %s and removes nothing', (value, shown) => {
+      for (const index of indexes()) {
+        const err = thrown(() => index.remove(value));
+        expect(err).toBeInstanceOf(RangeError);
+        expect(err).toHaveProperty('message', `index must be an integer, got ${shown}`);
+        expect(index.size).toBe(3);
+        index.free();
+      }
+    });
+
+    it.each([
+      ['1', 'string'],
+      [null, 'object'],
+      [undefined, 'undefined'],
+      [true, 'boolean'],
+      [{}, 'object'],
+      [1n, 'bigint'],
+    ])('throws a TypeError for %s and removes nothing', (value, type) => {
+      for (const index of indexes()) {
+        const err = thrown(() => callUnchecked(index.remove.bind(index), value));
+        expect(err).toBeInstanceOf(TypeError);
+        expect(err).toHaveProperty('message', `index must be a number, got ${type}`);
+        expect(index.size).toBe(3);
+        index.free();
+      }
+    });
+
+    it('returns false for out-of-range integers, including those beyond 2^32', () => {
+      for (const index of indexes()) {
+        for (const value of [-1, 3, 2 ** 32, 2 ** 32 + 1, -(2 ** 32) + 1]) {
+          expect(index.remove(value)).toBe(false);
+        }
+        expect(index.size).toBe(3);
+        expect(index.remove(-0)).toBe(true);
+        expect(index.size).toBe(2);
+        index.free();
+      }
+    });
+
+    it('throws the same errors as the Node.js binding', () => {
+      const native = new napi.FuzzyIndex(['a', 'b', 'c']);
+      for (const value of [Number.NaN, 1.5, undefined, '1']) {
+        const wasmIndex = new wasm.FuzzyIndex(['a', 'b', 'c']);
+        const wasmErr = thrown(() => callUnchecked(wasmIndex.remove.bind(wasmIndex), value));
+        const nodeErr = thrown(() => callUnchecked(native.remove.bind(native), value));
+        expect((wasmErr as Error).constructor).toBe((nodeErr as Error).constructor);
+        expect(wasmErr).toHaveProperty('message', (nodeErr as Error).message);
+        wasmIndex.free();
       }
     });
   });

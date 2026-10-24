@@ -3,9 +3,17 @@ name: CodeQL
 on:
   push:
     branches: [develop]
+    # `*.js` does not match `.mjs` or `.cjs`: list every JavaScript and
+    # TypeScript extension. The package ships .mjs entry points (index.mjs,
+    # browser.mjs, workerd.mjs, the wasm-bindgen glue) with .d.mts
+    # declarations, and the workflow scripts in .github/scripts are .cjs.
     paths:
       - '**/*.ts'
+      - '**/*.mts'
+      - '**/*.cts'
       - '**/*.js'
+      - '**/*.mjs'
+      - '**/*.cjs'
       - '**/*.json'
       - '**/*.rs'
       - 'pnpm-lock.yaml'

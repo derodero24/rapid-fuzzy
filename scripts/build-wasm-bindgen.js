@@ -48,13 +48,45 @@ const OBSOLETE_FILES = [
   `${OUT_NAME}_bg.wasm.d.ts`,
 ];
 
-/** Point the `@ts-self-types` pragma (read by Deno) at the renamed declarations. */
+/**
+ * Post-process the glue:
+ *
+ * - Point the `@ts-self-types` pragma (read by Deno) at the renamed
+ *   declarations.
+ * - Fail if an export takes a `Vec<String>` (or another `Vec<JsValue>`-based)
+ *   parameter again, which the glue passes with `passArrayJsValueToWasm0`:
+ *   wasm-bindgen converts such an array inside the wasm call and throws from
+ *   there on an element of the wrong type, which leaks the converted strings
+ *   and the call's shadow-stack space and leaves an index permanently borrowed.
+ *   `string[]` parameters are taken as `JsValue` and checked with
+ *   `strings_from_js` instead (crates/wasm/src/convert.rs).
+ * - Make `passStringToWasm0`, which copies every `string` argument into
+ *   WebAssembly memory, throw a `TypeError` for anything but a string. It
+ *   reads `arg.length` without checking the type, so a number allocated
+ *   `undefined` bytes and trapped with "RuntimeError: memory access out of
+ *   bounds" (undefined behaviour of the allocator), where the Node.js binding
+ *   throws an error. Every call the glue makes itself passes a string.
+ */
 function rewriteGlue(source) {
   const from = `/* @ts-self-types="./${OUT_NAME}.d.ts" */`;
   if (!source.startsWith(from)) {
     throw new Error(`build-wasm-bindgen: expected the glue to start with ${from}`);
   }
-  return `/* @ts-self-types="./${OUT_NAME}.d.mts" */${source.slice(from.length)}`;
+  if (source.includes('passArrayJsValueToWasm0')) {
+    throw new Error(
+      'build-wasm-bindgen: an export takes a Vec<String> / Vec<JsValue> parameter; take a JsValue and convert it with strings_from_js (crates/wasm/src/convert.rs)',
+    );
+  }
+  const passString = 'function passStringToWasm0(arg, malloc, realloc) {\n';
+  if (source.split(passString).length !== 2) {
+    throw new Error(
+      `build-wasm-bindgen: expected exactly one \`${passString.trim()}\` in the glue`,
+    );
+  }
+  const typeCheck =
+    "    if (typeof arg !== 'string') throw new TypeError('Expected a string, got ' + (arg === null ? 'null' : typeof arg));\n";
+  const checked = source.replace(passString, passString + typeCheck);
+  return `/* @ts-self-types="./${OUT_NAME}.d.mts" */${checked.slice(from.length)}`;
 }
 
 /**
@@ -68,6 +100,7 @@ function rewriteGlue(source) {
  * - The optional fields of the options objects accept an explicit `undefined`
  *   (`field?: T | undefined`, see scripts/declarations.js): tsify declares an
  *   optional `Option<T>` field as `field?: T`.
+ * - `SymbolConstructor.dispose` is declared (see `declareSymbolDispose`).
  */
 function rewriteDeclarations(dts) {
   const declaration = /^(\s*(?:export function \w+|(?:static )?\w+|constructor))\(/;
@@ -92,7 +125,9 @@ function rewriteDeclarations(dts) {
       return line;
     })
     .join('\n');
-  const rewritten = inputFieldsAcceptUndefined(arraysRewritten, `${OUT_NAME}.d.mts`);
+  const rewritten = declareSymbolDispose(
+    inputFieldsAcceptUndefined(arraysRewritten, `${OUT_NAME}.d.mts`),
+  );
   // Fail loudly if wasm-bindgen changes its output format and the rewrite stops applying.
   for (const expected of [
     'export function levenshteinBatch(pairs: ReadonlyArray<ReadonlyArray<string>>)',
@@ -101,12 +136,37 @@ function rewriteDeclarations(dts) {
     '    maxResults?: number | undefined;',
     '    scoreMode?: KeyScoreMode | undefined;',
     '    matchMode?: KeyMatchMode | undefined;',
+    '    [Symbol.dispose](): void;',
+    '        readonly dispose: unique symbol;',
   ]) {
     if (!rewritten.includes(expected)) {
       throw new Error(`build-wasm-bindgen: expected \`${expected}\` in the declarations`);
     }
   }
   return rewritten;
+}
+
+/**
+ * Declare `SymbolConstructor.dispose`, which the `[Symbol.dispose](): void`
+ * methods of the generated classes need. Only the `esnext.disposable` lib
+ * (TypeScript 5.2+) and @types/node declare it, so the declarations failed to
+ * compile in a browser project with e.g. `lib: ["ES2022", "DOM"]` and no
+ * Node.js types. It is declared the way @types/node declares it, which merges
+ * with that lib; a `/// <reference lib="esnext.disposable" />` would instead
+ * break TypeScript 5.0 and 5.1, which lack the lib.
+ */
+function declareSymbolDispose(dts) {
+  const augmentation = [
+    '// `[Symbol.dispose]()` needs `SymbolConstructor.dispose`, which only the',
+    '// `esnext.disposable` lib (TypeScript 5.2+) and @types/node declare: declared',
+    '// here like @types/node does, so that these declarations compile with any `lib`.',
+    'declare global {',
+    '    interface SymbolConstructor {',
+    '        readonly dispose: unique symbol;',
+    '    }',
+    '}',
+  ];
+  return `${dts.trimEnd()}\n\n${augmentation.join('\n')}\n`;
 }
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wasm-pack-'));
