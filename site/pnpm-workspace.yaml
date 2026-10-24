@@ -9,4 +9,3 @@ allowBuilds:
 minimumReleaseAgeExclude:
   - rapid-fuzzy
   - rapid-fuzzy-*
-  - '@astrojs/starlight@0.42.7'
