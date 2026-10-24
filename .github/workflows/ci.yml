@@ -7,7 +7,7 @@ on:
     # package or feeds a build or test (root *.js/*.mjs/*.d.ts loaders, npm/,
     # scripts/, e2e/, .cargo/, .nvmrc, ...) must trigger CI, including files
     # added later. Only paths that cannot affect any job are skipped. Keep
-    # this list in sync with the pull_request one below.
+    # this list in sync with the plan job's docs-only pattern below.
     paths-ignore:
       - '**/*.md'
       - '.github/ISSUE_TEMPLATE/**'
@@ -16,14 +16,10 @@ on:
       - '.github/FUNDING.yml'
   pull_request:
     branches: [develop]
-    # "labeled" lets the ci-full label re-run the plan job on an open PR.
-    types: [opened, synchronize, reopened, labeled]
-    paths-ignore:
-      - '**/*.md'
-      - '.github/ISSUE_TEMPLATE/**'
-      - '.github/assets/**'
-      - '.github/CODEOWNERS'
-      - '.github/FUNDING.yml'
+    # No paths-ignore here: a required status check that never reports blocks
+    # the PR, so every PR runs the workflow, and the plan job skips the other
+    # jobs when the PR only touches the paths ignored above ("CI Complete"
+    # still reports). Keep the plan job's pattern in sync with the list above.
 
 permissions:
   contents: read
@@ -31,20 +27,20 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  # A label event whose jobs are all skipped must not cancel a run in progress.
-  cancel-in-progress: ${{ github.event.action != 'labeled' }}
+  cancel-in-progress: true
 
 jobs:
-  # Decide how much of the build matrix a run needs. Pushes to develop always
-  # build every target. Pull requests only build the targets the test jobs
-  # consume unless they touch the Rust sources, the Cargo manifests or
-  # config, or this workflow, which keeps dependency-only PRs cheap.
+  # Decide what a run needs. Pull requests that only touch the paths the push
+  # trigger ignores run no other job. Pushes to develop always build every
+  # target. Pull requests only build the targets the test jobs consume unless
+  # they touch the Rust sources, the Cargo manifests or config, or this
+  # workflow, which keeps dependency-only PRs cheap. Add the "ci-full" label to
+  # a PR and re-run the workflow (or push) to build every target.
   plan:
     name: Plan
-    # Label events only matter for ci-full; other labels must not rerun CI.
-    if: ${{ github.event.action != 'labeled' || github.event.label.name == 'ci-full' }}
     runs-on: ubuntu-latest
     outputs:
+      run-ci: ${{ steps.plan.outputs.run-ci }}
       build-matrix: ${{ steps.plan.outputs.build-matrix }}
     steps:
       - id: plan
@@ -70,24 +66,35 @@ jobs:
             {"host":"windows-latest","target":"x86_64-pc-windows-msvc"},
             {"host":"ubuntu-latest","target":"wasm32-wasip1-threads"}
           ]'
+          run_ci=true
           matrix="$full"
           if [ "$EVENT_NAME" = "pull_request" ]; then
             files=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --paginate --jq '.[].filename')
             labels=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.labels[].name')
-            # Add the "ci-full" label to a PR to force every target.
+            # The push trigger's paths-ignore list, as a regular expression.
+            if ! grep -Ev '(\.md$|^\.github/ISSUE_TEMPLATE/|^\.github/assets/|^\.github/CODEOWNERS$|^\.github/FUNDING\.yml$)' <<< "$files" | grep -q .; then
+              run_ci=false
+            fi
             if ! grep -qx 'ci-full' <<< "$labels" \
               && ! grep -Eq '^(crates/|\.cargo/|Cargo\.toml$|Cargo\.lock$|rust-toolchain\.toml$|deny\.toml$|scripts/|\.github/workflows/ci\.yml$)' <<< "$files"; then
               matrix="$reduced"
             fi
           fi
-          echo "Selected build targets:"
-          jq -r '.[].target' <<< "$matrix"
-          echo "build-matrix=$(jq -c . <<< "$matrix")" >> "$GITHUB_OUTPUT"
+          if [ "$run_ci" = true ]; then
+            echo "Selected build targets:"
+            jq -r '.[].target' <<< "$matrix"
+          else
+            echo "Only documentation and repository metadata changed: skipping every other job."
+          fi
+          {
+            echo "run-ci=$run_ci"
+            echo "build-matrix=$(jq -c . <<< "$matrix")"
+          } >> "$GITHUB_OUTPUT"
 
   lint:
     name: Lint
-    # Label events only matter for ci-full; other labels must not rerun CI.
-    if: ${{ github.event.action != 'labeled' || github.event.label.name == 'ci-full' }}
+    needs: plan
+    if: ${{ needs.plan.outputs.run-ci == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -119,8 +126,8 @@ jobs:
 
   workflow-lint:
     name: Workflow Lint
-    # Label events only matter for ci-full; other labels must not rerun CI.
-    if: ${{ github.event.action != 'labeled' || github.event.label.name == 'ci-full' }}
+    needs: plan
+    if: ${{ needs.plan.outputs.run-ci == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -134,8 +141,8 @@ jobs:
 
   audit:
     name: Dependency Audit
-    # Label events only matter for ci-full; other labels must not rerun CI.
-    if: ${{ github.event.action != 'labeled' || github.event.label.name == 'ci-full' }}
+    needs: plan
+    if: ${{ needs.plan.outputs.run-ci == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -157,8 +164,8 @@ jobs:
 
   rust-lint:
     name: Rust Lint
-    # Label events only matter for ci-full; other labels must not rerun CI.
-    if: ${{ github.event.action != 'labeled' || github.event.label.name == 'ci-full' }}
+    needs: plan
+    if: ${{ needs.plan.outputs.run-ci == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -175,8 +182,8 @@ jobs:
 
   rust-test:
     name: Rust Test
-    # Label events only matter for ci-full; other labels must not rerun CI.
-    if: ${{ github.event.action != 'labeled' || github.event.label.name == 'ci-full' }}
+    needs: plan
+    if: ${{ needs.plan.outputs.run-ci == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -188,8 +195,8 @@ jobs:
 
   msrv:
     name: Rust MSRV
-    # Label events only matter for ci-full; other labels must not rerun CI.
-    if: ${{ github.event.action != 'labeled' || github.event.label.name == 'ci-full' }}
+    needs: plan
+    if: ${{ needs.plan.outputs.run-ci == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -223,6 +230,7 @@ jobs:
   build:
     name: Build - ${{ matrix.settings.target }}
     needs: plan
+    if: ${{ needs.plan.outputs.run-ci == 'true' }}
     runs-on: ${{ matrix.settings.host }}
     strategy:
       fail-fast: false
@@ -364,9 +372,9 @@ jobs:
 
   coverage:
     name: Coverage
+    needs: plan
+    if: ${{ needs.plan.outputs.run-ci == 'true' }}
     # Builds its own instrumented addon, so it does not wait for the build job.
-    # Label events only matter for ci-full; other labels must not rerun CI.
-    if: ${{ github.event.action != 'labeled' || github.event.label.name == 'ci-full' }}
     runs-on: ubuntu-latest
     # Job-level permissions replace the workflow-level block, so contents: read
     # is restated.
@@ -445,8 +453,8 @@ jobs:
 
   build-wasm-bindgen:
     name: Build - wasm-bindgen
-    # Label events only matter for ci-full; other labels must not rerun CI.
-    if: ${{ github.event.action != 'labeled' || github.event.label.name == 'ci-full' }}
+    needs: plan
+    if: ${{ needs.plan.outputs.run-ci == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -569,3 +577,48 @@ jobs:
           path: .
       - name: Run Deno WASM tests
         run: pnpm run test:deno
+
+  # The one check to require in branch protection: it reports on every pull
+  # request, fails when any job failed or was cancelled, and passes when the
+  # plan job skipped the rest for a documentation-only change. Add every new
+  # job to `needs`.
+  ci-complete:
+    name: CI Complete
+    needs:
+      - plan
+      - lint
+      - workflow-lint
+      - audit
+      - rust-lint
+      - rust-test
+      - msrv
+      - build
+      - test
+      - coverage
+      - build-wasm-bindgen
+      - test-browser
+      - test-bun
+      - test-deno
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the results of the other jobs
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+          RUN_CI: ${{ needs.plan.outputs.run-ci }}
+        run: |
+          jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<< "$RESULTS"
+          # Skipped jobs only count as passing when the plan job chose to
+          # skip them; anywhere else a skip means an upstream job broke. A
+          # failed plan job leaves RUN_CI empty, so it fails here too.
+          if [ "$RUN_CI" = false ]; then
+            allowed='["success", "skipped"]'
+          else
+            allowed='["success"]'
+          fi
+          failed=$(jq -r --argjson allowed "$allowed" \
+            'to_entries[] | select(.value.result | IN($allowed[]) | not) | .key' <<< "$RESULTS")
+          if [ -n "$failed" ]; then
+            echo "::error::Jobs that did not pass: $(tr '\n' ' ' <<< "$failed")"
+            exit 1
+          fi
