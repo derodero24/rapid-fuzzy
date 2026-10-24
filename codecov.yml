@@ -45,13 +45,13 @@ ignore:
   # the "Build - wasm-bindgen" job requires) and by the browser, Bun, Deno and
   # Cloudflare Workers tests in e2e/.
   - crates/wasm/**
-  # Benchmarks, tests, build and release scripts, examples and the playground.
+  # Benchmarks, tests, build and release scripts, examples and the documentation site.
   - crates/bench/**
   - __test__/**
   - e2e/**
   - scripts/**
   - examples/**
-  - playground/**
+  - site/**
 
 flags:
   rust:

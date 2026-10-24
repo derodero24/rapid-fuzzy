@@ -1,0 +1,16 @@
+/* rapid-fuzzy brand colours: a Rust-inspired orange accent. */
+:root {
+  --sl-color-accent-low: #3d1704;
+  --sl-color-accent: #e8590c;
+  --sl-color-accent-high: #ffd8bf;
+}
+
+:root[data-theme="light"] {
+  --sl-color-accent-low: #ffe3d1;
+  --sl-color-accent: #c2410c;
+  --sl-color-accent-high: #5c1f05;
+}
+
+.hero img {
+  max-width: 10rem;
+}

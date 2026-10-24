@@ -6,7 +6,7 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!playground/public", "!.github/assets"]
+    "includes": ["**", "!site/public", "!.github/assets"]
   },
   "formatter": {
     "enabled": true,
@@ -144,21 +144,22 @@
       }
     },
     {
-      "includes": ["playground/**"],
+      "includes": ["site/**/*.astro"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noUnusedImports": "off",
+            "noUnusedVariables": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["site/astro.config.mjs"],
       "linter": {
         "rules": {
           "style": {
             "noDefaultExport": "off"
-          },
-          "performance": {
-            "noBarrelFile": "off",
-            "noReExportAll": "off"
-          },
-          "correctness": {
-            "noUndeclaredDependencies": "off"
-          },
-          "suspicious": {
-            "noConsole": "off"
           }
         }
       }

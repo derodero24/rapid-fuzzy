@@ -1,0 +1,227 @@
+---
+title: "Migrating from uFuzzy to rapid-fuzzy"
+description: "Switch from uFuzzy to rapid-fuzzy: API mapping, result handling, highlighting and performance."
+sidebar:
+  label: uFuzzy
+---
+
+[uFuzzy](https://github.com/leeoniya/uFuzzy) is a lightweight, fast fuzzy search library written in pure JavaScript using regex-based matching. rapid-fuzzy uses the nucleo fuzzy matching engine (same as the Helix editor) with Rust-powered native bindings, and provides a simpler API with ready-to-use sorted results.
+
+## Installation
+
+```bash
+# Remove uFuzzy
+npm uninstall @leeoniya/ufuzzy
+
+# Install rapid-fuzzy
+npm install rapid-fuzzy
+```
+
+## Quick Start
+
+```typescript
+// Before (uFuzzy) — intraMode: 1 allows one missing letter per term;
+// with the default options 'typscript' finds nothing
+import uFuzzy from '@leeoniya/ufuzzy';
+const uf = new uFuzzy({ intraMode: 1 });
+const haystack = ['TypeScript', 'JavaScript', 'Python'];
+const [idxs, info, order] = uf.search(haystack, 'typscript');
+const results = order.map(i => haystack[info.idx[i]]);
+console.log(results[0]); // 'TypeScript'
+
+// After (rapid-fuzzy)
+import { search } from 'rapid-fuzzy';
+const results = search('typscript', ['TypeScript', 'JavaScript', 'Python']);
+console.log(results[0].item); // 'TypeScript'
+```
+
+## API Mapping
+
+| uFuzzy | rapid-fuzzy | Notes |
+|---|---|---|
+| `new uFuzzy(opts)` + `uf.search(haystack, needle)` | `search(query, items)` | No constructor; returns sorted results directly |
+| `info.idx[order[i]]` → index into haystack | `results[i].item` | No manual mapping needed |
+| `info.ranges` | `results[i].positions` | Use `{ includePositions: true }` |
+| `uFuzzy.highlight()` / `mark()` | `highlight(item, positions, open, close)` | Built-in utility |
+| `opts.intraMode` / `opts.interMode` | Query syntax (`^`, `$`, `'`, `!`) | Different approach to matching control |
+| Manual `order.slice(0, n)` | `{ maxResults: n }` or pass a number | `search(q, items, 5)` |
+| Manual sort + slice + map | Automatic | Results are sorted by relevance |
+
+## Result Structure
+
+uFuzzy returns three separate values that require manual assembly: `idxs` (the indices of the matching items, `[]` when nothing matches), `info` (match details such as `ranges`) and `order` (the ranking, as indices into `info.idx` and `info.ranges`; `info` can leave out some of `idxs`, so map through `info.idx`, as uFuzzy's own README does). All three are `null` for an empty query. `info` and `order` are also `null` when more items match than `infoThresh`, the fourth argument of `search()` (1,000 by default), and `idxs` is then left unranked, so the uFuzzy snippets in this guide pass `Infinity` to always rank. rapid-fuzzy returns ready-to-use sorted results:
+
+```typescript
+// uFuzzy — 3 return values, manual result construction
+const uf = new uFuzzy();
+const [idxs, info, order] = uf.search(haystack, 'query', 0, Infinity);
+
+// Check for no results
+if (idxs == null || idxs.length === 0) {
+  // no matches (idxs is null for an empty query)
+}
+
+// Assemble results manually (order is null for an empty query)
+const results = (order ?? []).map((idx) => ({
+  item: haystack[info.idx[idx]],
+  ranges: info.ranges[idx],
+}));
+
+// rapid-fuzzy — sorted results returned directly
+const results = search('query', items);
+// → [{ item: '…', score: 0.86, index: 3, positions: [] }, ...]
+```
+
+## Common Patterns
+
+### Basic search
+
+```typescript
+// uFuzzy
+const uf = new uFuzzy();
+const [idxs, info, order] = uf.search(haystack, 'query', 0, Infinity);
+const top = order?.length ? haystack[info.idx[order[0]]] : undefined;
+
+// rapid-fuzzy
+const results = search('query', items);
+const top = results[0]?.item;
+```
+
+### Limiting results
+
+```typescript
+// uFuzzy — manual slicing
+const [idxs, info, order] = uf.search(haystack, 'query', 0, Infinity);
+const top5 = (order ?? []).slice(0, 5).map(i => haystack[info.idx[i]]);
+
+// rapid-fuzzy — either form works
+const results = search('query', items, 5);
+const results = search('query', items, { maxResults: 5 });
+```
+
+### Finding the best match
+
+```typescript
+// uFuzzy
+const [idxs, info, order] = uf.search(haystack, 'query', 0, Infinity);
+const best = order?.length ? haystack[info.idx[order[0]]] : null;
+
+// rapid-fuzzy
+import { closest } from 'rapid-fuzzy';
+const best = closest('query', items);
+```
+
+### Match highlighting
+
+```typescript
+// uFuzzy — mark function (assuming at least one match)
+const uf = new uFuzzy();
+const [idxs, info, order] = uf.search(haystack, 'query', 0, Infinity);
+const highlighted = uFuzzy.highlight(
+  haystack[info.idx[order[0]]],
+  info.ranges[order[0]],
+);
+
+// rapid-fuzzy — highlight utility with positions
+import { search, highlight, highlightRanges } from 'rapid-fuzzy';
+const results = search('query', items, { includePositions: true });
+highlight(results[0].item, results[0].positions, '<b>', '</b>');
+
+// Callback form (React, JSX)
+highlight(results[0].item, results[0].positions, (matched) => `<mark>${matched}</mark>`);
+
+// Raw ranges for custom rendering
+highlightRanges(results[0].item, results[0].positions);
+// → [{ start: 0, end: 1, matched: true }, ...]
+```
+
+### Object search
+
+uFuzzy does not have built-in object search — you must extract string values, search them, and map results back manually. rapid-fuzzy provides dedicated object search:
+
+```typescript
+// uFuzzy — manual key extraction
+const names = users.map(u => u.name);
+const [idxs, info, order] = uf.search(names, 'john', 0, Infinity);
+const matchedUsers = (order ?? []).map(i => users[info.idx[i]]);
+
+// rapid-fuzzy — built-in object search with weighted keys
+import { searchObjects } from 'rapid-fuzzy';
+const results = searchObjects('john', users, {
+  keys: [
+    { name: 'name', weight: 2.0 },
+    { name: 'email', weight: 1.0 },
+  ],
+});
+console.log(results[0].item); // { name: 'John Smith', email: '...' }
+```
+
+### Persistent index
+
+```typescript
+// uFuzzy — no persistent index, re-searches the full array each time
+
+// rapid-fuzzy — persistent index with mutation support
+import { FuzzyIndex, FuzzyObjectIndex } from 'rapid-fuzzy';
+
+const index = new FuzzyIndex(items);
+index.search('query', { maxResults: 10 });
+
+// Mutate without rebuilding
+index.add('new item');
+index.remove(2); // swap-remove by index
+
+// Object index with weighted keys
+const userIndex = new FuzzyObjectIndex(users, {
+  keys: [
+    { name: 'name', weight: 2.0 },
+    { name: 'email', weight: 1.0 },
+  ],
+});
+
+// Free Rust-side memory when done
+index.destroy();
+userIndex.destroy();
+```
+
+## Performance
+
+From the [benchmarks](/rapid-fuzzy/benchmarks/) (Node.js 22, Linux x64, Intel Xeon @ 2.10GHz, 4 vCPUs; ops/s, higher is better; uFuzzy with its default options):
+
+| Dataset size | rapid-fuzzy `search()` | `FuzzyIndex` | uFuzzy |
+|---|---:|---:|---:|
+| Small (20 items) | 157,995 ops/s | 208,250 ops/s | **383,890 ops/s** |
+| Medium (1K items) | 3,502 ops/s | **50,318 ops/s** | 16,858 ops/s |
+| Large (10K items) | 508 ops/s | **4,803 ops/s** | 1,404 ops/s |
+| Large (10K items, rotating queries) | 451 ops/s | **4,644 ops/s** | 1,037 ops/s |
+| Huge (100K items) | — | **1,125 ops/s** | 374 ops/s |
+
+uFuzzy was faster than rapid-fuzzy on 20 items (where, with its default options, it found no match for the benchmark query `aple`), and faster than standalone `search()`, which converts every item on each call, at every size. `FuzzyIndex` was about 3-4.5x faster than uFuzzy on 1K-10K items and about 3x faster on 100K items (on 4 threads; about 1.3x on one). The two libraries do not find the same matches, so these numbers compare the cost of a search, not identical work.
+
+## Why Choose rapid-fuzzy Over uFuzzy?
+
+uFuzzy is tiny, has no native addon or WebAssembly module to load, and is fast in the browser. rapid-fuzzy is worth it when you need:
+
+- **Distance functions**: Levenshtein, Damerau-Levenshtein, Hamming, Indel, Jaro, Jaro-Winkler, Sorensen-Dice, and token-based ratios — useful beyond search
+- **Simpler API**: Returns ready-to-use sorted results instead of three arrays requiring manual assembly
+- **Batch APIs**: `levenshteinBatch`, `jaroWinklerMany`, etc. for bulk distance computations
+- **Weighted object search**: `searchObjects()` and `FuzzyObjectIndex` with per-key weights — no manual key extraction needed
+- **Persistent mutable index**: `FuzzyIndex` supports `add()` / `remove()` without rebuilding
+- **Prefix and suffix anchors**: `^term` and `term$`, in addition to exclusions (`!term`) and exact terms (`'term`)
+
+## Additional Capabilities
+
+rapid-fuzzy includes distance/similarity functions that uFuzzy does not offer:
+
+```typescript
+import {
+  levenshtein,           // edit distance
+  normalizedLevenshtein, // 0-1 similarity
+  jaroWinkler,           // name matching
+  sorensenDice,          // text similarity
+  damerauLevenshtein,    // transposition-aware
+} from 'rapid-fuzzy';
+
+// Batch APIs for bulk operations
+import { levenshteinBatch, jaroWinklerMany } from 'rapid-fuzzy';
+```

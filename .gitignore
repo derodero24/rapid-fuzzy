@@ -62,9 +62,13 @@ rust-lcov.info
 .env
 .env.*
 
-# Internal docs (local only, except migration guides)
-docs/*
-!docs/migration/
+# Internal docs (local only)
+/docs/
+
+# Documentation site: Astro build output and caches, and the API reference
+# that starlight-typedoc generates from the published declarations
+site/.astro/
+site/src/content/docs/api/
 
 # Claude Code (local development only)
 CLAUDE.md

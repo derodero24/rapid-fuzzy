@@ -93,12 +93,11 @@ rapid-fuzzy/
 ├── e2e/             ← Browser (Playwright), Bun and Deno tests of the wasm-bindgen build
 ├── npm/             ← Platform-specific binary packages
 ├── examples/        ← Integration examples (CDN, Cloudflare Workers, VitePress)
-├── playground/      ← Interactive demo deployed to GitHub Pages
-├── docs/            ← Migration guides
+├── site/            ← Documentation site and playground (Astro Starlight), deployed to GitHub Pages
 ├── scripts/         ← Build, release and maintenance scripts
 └── .github/
     ├── scripts/     ← Scripts used by the workflows (release smoke test, Renovate tasks)
-    └── workflows/   ← CI, release, CodSpeed, CodeQL, Renovate, playground
+    └── workflows/   ← CI, release, CodSpeed, CodeQL, Renovate, docs site
 ```
 
 ## Workflow
@@ -195,14 +194,30 @@ If your change affects performance, run the benchmarks and include results in th
 ```bash
 pnpm run bench                          # JS benchmarks (vs fuse.js, leven, etc.)
 pnpm run bench:ci                       # JS benchmarks of rapid-fuzzy alone (no competitors)
-pnpm run bench:readme                   # rerun the comparisons and rewrite the README tables
-pnpm run bench:charts                   # redraw the README charts from those tables
+pnpm run bench:readme                   # rerun the comparisons and rewrite the README and website tables
+pnpm run bench:charts                   # redraw the charts from those tables
 cargo bench -p rapid-fuzzy-bench        # Rust benchmarks
 ```
 
 The JS benchmarks (`__test__/*.bench.ts`) measure the native addon, so build it first (`pnpm run build` for release numbers). They use [Vitest's benchmark API](https://vitest.dev/guide/benchmarking): each `test()` takes the `bench` fixture from its context and runs its benchmarks with `bench.compare()` (or `bench().run()` for a single one), and Vitest prints one table per test. Vitest's `hz` column averages the throughput of each sample, which overstates the rate when sample times vary; the README tables use runs ÷ total time instead (see `scripts/update-bench-readme.ts`). The JS benchmarks do not run in CI.
 
 The Rust benchmarks use [codspeed-criterion-compat](https://crates.io/crates/codspeed-criterion-compat), a drop-in replacement for Criterion that CodSpeed also runs on every pull request touching `crates/`. The `core` bench measures rapid-fuzzy-core itself (index build and search, keyed search, the `*_many` distance functions); `distance` and `search` measure the underlying third-party crates as a baseline.
+
+## Documentation site
+
+The website at <https://derodero24.github.io/rapid-fuzzy/> lives in `site/`. It is an [Astro Starlight](https://starlight.astro.build/) site with the guides, the migration guides, the benchmark page, an API reference that [starlight-typedoc](https://github.com/HiDeoo/starlight-typedoc) generates from the package's declarations, and the playground (`site/src/components/playground/`).
+
+`site/` is its own pnpm project with its own lockfile, not a member of the repository's workspace. It installs the **published** `rapid-fuzzy` from npm, so the site always documents and demonstrates the released version; update the guides for a new feature in the same pull request, and they go live with the release.
+
+```bash
+cd site
+pnpm install
+pnpm dev     # http://localhost:4321/rapid-fuzzy/
+pnpm check   # type-check the site
+pnpm build   # build into site/dist and validate every internal link
+```
+
+Pages are Markdown or MDX files in `site/src/content/docs/`. Link to other pages with absolute paths that include the base path (`/rapid-fuzzy/guides/fuzzy-search/`). CI builds the site on pull requests that touch `site/`, and `.github/workflows/docs.yml` deploys it when `site/` changes on `main`.
 
 ## Code style
 

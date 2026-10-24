@@ -1,0 +1,534 @@
+---
+import { DATASETS } from './datasets';
+---
+
+<div class="playground not-content" data-playground>
+  <div class="tabs" role="tablist" aria-label="Playground">
+    <button type="button" role="tab" id="tab-search" aria-controls="panel-search" aria-selected="true">Search</button>
+    <button type="button" role="tab" id="tab-objects" aria-controls="panel-objects" aria-selected="false" tabindex="-1">Objects</button>
+    <button type="button" role="tab" id="tab-similarity" aria-controls="panel-similarity" aria-selected="false" tabindex="-1">Similarity</button>
+  </div>
+
+  <p class="status" data-status role="status">Loading the WebAssembly build…</p>
+
+  <section id="panel-search" role="tabpanel" aria-labelledby="tab-search">
+    <div class="controls">
+      <label>
+        Data
+        <select data-dataset>
+          {DATASETS.map((dataset) => <option value={dataset.id}>{dataset.label}</option>)}
+        </select>
+      </label>
+      <label>
+        Max results
+        <input type="number" data-max-results value="10" min="1" max="100" />
+      </label>
+      <label>
+        Min score
+        <input type="number" data-min-score value="0" min="0" max="1" step="0.05" />
+      </label>
+      <label class="check"><input type="checkbox" data-case-sensitive /> Case-sensitive</label>
+      <label class="check"><input type="checkbox" data-compare /> Compare with fuse.js and fuzzysort</label>
+    </div>
+    <textarea data-custom-items hidden rows="6" placeholder="One item per line" aria-label="Your own items, one per line"></textarea>
+    <input class="query" type="search" data-query placeholder="Type to search…" autocomplete="off" spellcheck="false" aria-label="Search query" />
+    <p class="meta" data-search-meta></p>
+    <div class="columns" data-columns>
+      <div class="column">
+        <h3>rapid-fuzzy <span class="timing" data-time-rapid></span></h3>
+        <ol class="results" data-results-rapid></ol>
+      </div>
+      <div class="column" data-compare-column hidden>
+        <h3>fuzzysort <span class="timing" data-time-fuzzysort></span></h3>
+        <ol class="results" data-results-fuzzysort></ol>
+      </div>
+      <div class="column" data-compare-column hidden>
+        <h3>fuse.js <span class="timing" data-time-fuse></span></h3>
+        <ol class="results" data-results-fuse></ol>
+      </div>
+    </div>
+    <details class="help">
+      <summary>Query syntax</summary>
+      <ul>
+        <li><code>foo bar</code>: every term must match, in any order</li>
+        <li><code>^foo</code>: starts with · <code>foo$</code>: ends with</li>
+        <li><code>'foo</code>: contains exactly · <code>!foo</code>: does not contain</li>
+      </ul>
+    </details>
+  </section>
+
+  <section id="panel-objects" role="tabpanel" aria-labelledby="tab-objects" hidden>
+    <div class="controls">
+      <label>Weight: name <input type="number" data-weight="name" value="2" min="0" step="0.5" /></label>
+      <label>email <input type="number" data-weight="email" value="1" min="0" step="0.5" /></label>
+      <label>city <input type="number" data-weight="city" value="1" min="0" step="0.5" /></label>
+      <label>team <input type="number" data-weight="team" value="1" min="0" step="0.5" /></label>
+      <label>
+        scoreMode
+        <select data-score-mode>
+          <option value="weighted">weighted</option>
+          <option value="matched">matched</option>
+          <option value="max">max</option>
+        </select>
+      </label>
+      <label>
+        matchMode
+        <select data-match-mode>
+          <option value="perKey">perKey</option>
+          <option value="crossKey" selected>crossKey</option>
+        </select>
+      </label>
+    </div>
+    <input class="query" type="search" data-object-query placeholder="Try “akira tokyo”, “garcia search”, “smith !london”" autocomplete="off" spellcheck="false" aria-label="Object search query" />
+    <p class="meta" data-object-meta></p>
+    <div class="table-wrap">
+      <table class="object-results">
+        <thead>
+          <tr><th>Name</th><th>Email</th><th>City</th><th>Team</th><th>Score</th><th>Key scores<br /><small>name · email · city · team</small></th></tr>
+        </thead>
+        <tbody data-object-results></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="panel-similarity" role="tabpanel" aria-labelledby="tab-similarity" hidden>
+    <div class="pair">
+      <label>A <input type="text" data-a value="New York Mets" spellcheck="false" /></label>
+      <label>B <input type="text" data-b value="Mets of New York" spellcheck="false" /></label>
+    </div>
+    <div class="table-wrap">
+      <table class="metrics">
+        <thead><tr><th>Function</th><th>Result</th><th>Kind</th></tr></thead>
+        <tbody data-metrics></tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<script>
+  import { highlight } from 'rapid-fuzzy/highlight';
+  import { DATASETS, PEOPLE, type Person } from './datasets';
+
+  type RapidFuzzy = typeof import('rapid-fuzzy');
+  type FuseIndex = import('fuse.js').default<string>;
+  type FuzzySort = typeof import('fuzzysort').default;
+  type FuzzySortSnapshot = import('fuzzysort').Snapshot;
+
+  const root = document.querySelector<HTMLElement>('[data-playground]');
+  if (root !== null) void setUp(root);
+
+  function element<T extends Element>(scope: ParentNode, selector: string): T {
+    const found = scope.querySelector<T>(selector);
+    if (found === null) throw new Error(`Playground markup is missing ${selector}`);
+    return found;
+  }
+
+  function escapeHtml(text: string): string {
+    return text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+  }
+
+  function formatTime(ms: number): string {
+    if (ms < 1) return `${(ms * 1000).toFixed(0)} µs`;
+    if (ms < 100) return `${ms.toFixed(2)} ms`;
+    return `${ms.toFixed(0)} ms`;
+  }
+
+  /** Mean time of fn, repeated for about 30 ms when a single run is fast. */
+  function measure<T>(fn: () => T): { result: T; ms: number } {
+    let start = performance.now();
+    const result = fn();
+    let elapsed = performance.now() - start;
+    if (elapsed < 5) {
+      const runs = Math.min(500, Math.max(1, Math.floor(30 / Math.max(elapsed, 0.01))));
+      start = performance.now();
+      for (let i = 0; i < runs; i++) fn();
+      elapsed = (performance.now() - start) / runs;
+    }
+    return { result, ms: elapsed };
+  }
+
+  function debounce(fn: () => void, ms: number): () => void {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    return () => {
+      clearTimeout(timer);
+      timer = setTimeout(fn, ms);
+    };
+  }
+
+  function setUpTabs(scope: HTMLElement): void {
+    const tabs = [...scope.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+    const select = (tab: HTMLButtonElement): void => {
+      for (const other of tabs) {
+        const selected = other === tab;
+        other.setAttribute('aria-selected', String(selected));
+        other.tabIndex = selected ? 0 : -1;
+        const panel = document.getElementById(other.getAttribute('aria-controls') ?? '');
+        if (panel !== null) panel.hidden = !selected;
+      }
+    };
+    for (const [i, tab] of tabs.entries()) {
+      tab.addEventListener('click', () => select(tab));
+      tab.addEventListener('keydown', (event) => {
+        const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+        if (step === 0) return;
+        const next = tabs[(i + step + tabs.length) % tabs.length];
+        if (next === undefined) return;
+        select(next);
+        next.focus();
+      });
+    }
+  }
+
+  async function setUp(scope: HTMLElement): Promise<void> {
+    setUpTabs(scope);
+    const status = element<HTMLElement>(scope, '[data-status]');
+    const started = performance.now();
+    const rf: RapidFuzzy = await import('rapid-fuzzy');
+    status.textContent = `WebAssembly build loaded in ${formatTime(performance.now() - started)}. Everything runs in your browser.`;
+    setUpSearch(scope, rf);
+    setUpObjects(scope, rf);
+    setUpSimilarity(scope, rf);
+  }
+
+  function setUpSearch(scope: HTMLElement, rf: RapidFuzzy): void {
+    const datasetSelect = element<HTMLSelectElement>(scope, '[data-dataset]');
+    const customItems = element<HTMLTextAreaElement>(scope, '[data-custom-items]');
+    const query = element<HTMLInputElement>(scope, '[data-query]');
+    const maxResultsInput = element<HTMLInputElement>(scope, '[data-max-results]');
+    const minScoreInput = element<HTMLInputElement>(scope, '[data-min-score]');
+    const caseSensitive = element<HTMLInputElement>(scope, '[data-case-sensitive]');
+    const compare = element<HTMLInputElement>(scope, '[data-compare]');
+    const meta = element<HTMLElement>(scope, '[data-search-meta]');
+    const compareColumns = [...scope.querySelectorAll<HTMLElement>('[data-compare-column]')];
+    const out = {
+      rapid: element<HTMLOListElement>(scope, '[data-results-rapid]'),
+      fuzzysort: element<HTMLOListElement>(scope, '[data-results-fuzzysort]'),
+      fuse: element<HTMLOListElement>(scope, '[data-results-fuse]'),
+    };
+    const time = {
+      rapid: element<HTMLElement>(scope, '[data-time-rapid]'),
+      fuzzysort: element<HTMLElement>(scope, '[data-time-fuzzysort]'),
+      fuse: element<HTMLElement>(scope, '[data-time-fuse]'),
+    };
+
+    let items: readonly string[] = [];
+    let index: InstanceType<RapidFuzzy['FuzzyIndex']> | undefined;
+    let buildMs = 0;
+    let competitors:
+      | { fuse: FuseIndex; fuzzysort: FuzzySort; snapshot: FuzzySortSnapshot }
+      | undefined;
+
+    const loadDataset = (): void => {
+      const dataset = DATASETS.find((d) => d.id === datasetSelect.value) ?? DATASETS[0];
+      if (dataset === undefined) return;
+      customItems.hidden = dataset.id !== 'custom';
+      items = dataset.id === 'custom' ? customItems.value.split('\n').filter((line) => line.trim() !== '') : dataset.items();
+      query.placeholder = dataset.placeholder;
+      index?.destroy();
+      const start = performance.now();
+      index = new rf.FuzzyIndex(items);
+      buildMs = performance.now() - start;
+      competitors = undefined;
+      void run();
+    };
+
+    const loadCompetitors = async (): Promise<NonNullable<typeof competitors>> => {
+      if (competitors !== undefined) return competitors;
+      const [{ default: FuseClass }, { default: fuzzysort }] = await Promise.all([
+        import('fuse.js'),
+        import('fuzzysort'),
+      ]);
+      const loaded = {
+        fuse: new FuseClass(items, { threshold: 0.4 }),
+        fuzzysort,
+        snapshot: fuzzysort.snapshot(items),
+      };
+      competitors = loaded;
+      return loaded;
+    };
+
+    const renderPlain = (list: HTMLOListElement, found: readonly string[]): void => {
+      list.innerHTML = found.length === 0 ? '<li class="empty">No results</li>' : found.map((item) => `<li>${escapeHtml(item)}</li>`).join('');
+    };
+
+    const run = async (): Promise<void> => {
+      if (index === undefined) return;
+      const q = query.value;
+      const maxResults = Math.max(1, Math.min(100, Math.trunc(Number(maxResultsInput.value)) || 10));
+      const minScore = Math.max(0, Math.min(1, Number(minScoreInput.value) || 0));
+      const options = { maxResults, minScore, isCaseSensitive: caseSensitive.checked, includePositions: true };
+      const current = index;
+      const { result, ms } = measure(() => current.search(q, options));
+      time.rapid.textContent = q === '' ? '' : formatTime(ms);
+      meta.textContent = `${items.length.toLocaleString()} items · index built in ${formatTime(buildMs)}`;
+      out.rapid.innerHTML =
+        q === ''
+          ? '<li class="empty">Type a query</li>'
+          : result.length === 0
+            ? '<li class="empty">No results</li>'
+            : result
+                .map(
+                  (r) =>
+                    `<li><span class="item">${highlight(r.item, r.positions, '<mark>', '</mark>', { escapeHtml: true })}</span><span class="score">${r.score.toFixed(2)}</span></li>`,
+                )
+                .join('');
+
+      for (const column of compareColumns) column.hidden = !compare.checked;
+      if (!compare.checked || q === '') {
+        time.fuse.textContent = '';
+        time.fuzzysort.textContent = '';
+        out.fuse.innerHTML = '';
+        out.fuzzysort.innerHTML = '';
+        return;
+      }
+      const c = await loadCompetitors();
+      const sorted = measure(() => c.fuzzysort.go(q, c.snapshot, { limit: maxResults, threshold: 0 }));
+      time.fuzzysort.textContent = formatTime(sorted.ms);
+      renderPlain(out.fuzzysort, [...sorted.result].map((r) => r.target));
+      const fused = measure(() => c.fuse.search(q, { limit: maxResults }));
+      time.fuse.textContent = formatTime(fused.ms);
+      renderPlain(out.fuse, fused.result.map((r) => r.item));
+    };
+
+    const debouncedRun = debounce(() => void run(), 120);
+    datasetSelect.addEventListener('change', loadDataset);
+    customItems.addEventListener('input', debounce(loadDataset, 300));
+    query.addEventListener('input', () => void run());
+    for (const input of [maxResultsInput, minScoreInput, caseSensitive, compare]) {
+      input.addEventListener('change', debouncedRun);
+    }
+    loadDataset();
+  }
+
+  function setUpObjects(scope: HTMLElement, rf: RapidFuzzy): void {
+    const keyNames = ['name', 'email', 'city', 'team'] as const satisfies readonly (keyof Person)[];
+    const weights = keyNames.map((key) => element<HTMLInputElement>(scope, `[data-weight="${key}"]`));
+    const scoreMode = element<HTMLSelectElement>(scope, '[data-score-mode]');
+    const matchMode = element<HTMLSelectElement>(scope, '[data-match-mode]');
+    const query = element<HTMLInputElement>(scope, '[data-object-query]');
+    const meta = element<HTMLElement>(scope, '[data-object-meta]');
+    const body = element<HTMLTableSectionElement>(scope, '[data-object-results]');
+
+    const run = (): void => {
+      const keys = keyNames.map((name, i) => ({ name, weight: Math.max(0, Number(weights[i]?.value) || 0) }));
+      if (keys.every((key) => key.weight === 0)) {
+        meta.textContent = 'Give at least one key a weight above 0.';
+        body.innerHTML = '';
+        return;
+      }
+      const options = {
+        keys,
+        maxResults: 15,
+        returnAllOnEmpty: true,
+        scoreMode: scoreMode.value as 'weighted' | 'matched' | 'max',
+        matchMode: matchMode.value as 'perKey' | 'crossKey',
+      };
+      const { result, ms } = measure(() => rf.searchObjects(query.value, PEOPLE, options));
+      meta.textContent = `${PEOPLE.length} people · ${formatTime(ms)} per search with searchObjects()`;
+      body.innerHTML =
+        result.length === 0
+          ? '<tr><td colspan="6" class="empty">No results</td></tr>'
+          : result
+              .map(
+                (r) =>
+                  `<tr><td>${escapeHtml(r.item.name)}</td><td>${escapeHtml(r.item.email)}</td><td>${escapeHtml(r.item.city)}</td><td>${escapeHtml(r.item.team)}</td><td>${r.score.toFixed(2)}</td><td>${r.keyScores.map((s) => s.toFixed(2)).join(' · ')}</td></tr>`,
+              )
+              .join('');
+    };
+
+    query.addEventListener('input', run);
+    for (const control of [...weights, scoreMode, matchMode]) control.addEventListener('change', run);
+    run();
+  }
+
+  function setUpSimilarity(scope: HTMLElement, rf: RapidFuzzy): void {
+    const a = element<HTMLInputElement>(scope, '[data-a]');
+    const b = element<HTMLInputElement>(scope, '[data-b]');
+    const body = element<HTMLTableSectionElement>(scope, '[data-metrics]');
+    const metrics: readonly [name: string, kind: string, fn: (x: string, y: string) => number | null][] = [
+      ['levenshtein', 'edits', rf.levenshtein],
+      ['damerauLevenshtein', 'edits', rf.damerauLevenshtein],
+      ['indel', 'edits', rf.indel],
+      ['hamming', 'edits (equal length)', rf.hamming],
+      ['normalizedLevenshtein', 'similarity 0–1', rf.normalizedLevenshtein],
+      ['normalizedIndel', 'similarity 0–1', rf.normalizedIndel],
+      ['normalizedHamming', 'similarity 0–1', rf.normalizedHamming],
+      ['jaro', 'similarity 0–1', rf.jaro],
+      ['jaroWinkler', 'similarity 0–1', rf.jaroWinkler],
+      ['sorensenDice', 'similarity 0–1', rf.sorensenDice],
+      ['tokenSortRatio', 'ratio 0–1', rf.tokenSortRatio],
+      ['tokenSetRatio', 'ratio 0–1', rf.tokenSetRatio],
+      ['partialRatio', 'ratio 0–1', rf.partialRatio],
+      ['weightedRatio', 'ratio 0–1', rf.weightedRatio],
+    ];
+    const run = (): void => {
+      const x = a.value.slice(0, 2000);
+      const y = b.value.slice(0, 2000);
+      body.innerHTML = metrics
+        .map(([name, kind, fn]) => {
+          const value = fn(x, y);
+          const shown = value === null ? '<code>null</code> (lengths differ)' : Number.isInteger(value) ? String(value) : value.toFixed(3);
+          return `<tr><td><code>${name}</code></td><td>${shown}</td><td>${kind}</td></tr>`;
+        })
+        .join('');
+    };
+    a.addEventListener('input', run);
+    b.addEventListener('input', run);
+    run();
+  }
+</script>
+
+<style>
+  .playground {
+    margin-top: 1.5rem;
+  }
+  .tabs {
+    display: flex;
+    gap: 0.25rem;
+    border-bottom: 1px solid var(--sl-color-gray-5);
+  }
+  .tabs button {
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--sl-color-gray-2);
+    cursor: pointer;
+    font: inherit;
+    font-weight: 600;
+    padding: 0.5rem 1rem;
+  }
+  .tabs button[aria-selected='true'] {
+    border-bottom-color: var(--sl-color-accent);
+    color: var(--sl-color-white);
+  }
+  .status,
+  .meta {
+    color: var(--sl-color-gray-3);
+    font-size: var(--sl-text-sm);
+    margin: 0.75rem 0;
+  }
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem 1.25rem;
+    align-items: end;
+    margin: 1rem 0;
+    font-size: var(--sl-text-sm);
+  }
+  .controls label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+  .controls label.check {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  input[type='checkbox'] {
+    accent-color: var(--sl-color-accent);
+    margin: 0;
+  }
+  .controls input[type='number'] {
+    width: 5.5rem;
+  }
+  input:not([type='checkbox']),
+  select,
+  textarea {
+    background: var(--sl-color-gray-6);
+    border: 1px solid var(--sl-color-gray-5);
+    border-radius: 0.375rem;
+    color: var(--sl-color-white);
+    font: inherit;
+    padding: 0.4rem 0.6rem;
+  }
+  textarea {
+    width: 100%;
+    font-family: var(--sl-font-mono);
+    margin-bottom: 0.75rem;
+  }
+  .query {
+    width: 100%;
+    font-size: var(--sl-text-lg);
+    padding: 0.6rem 0.9rem;
+  }
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    outline: 2px solid var(--sl-color-accent);
+    outline-offset: 1px;
+  }
+  .columns {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+    gap: 1rem;
+  }
+  .column h3 {
+    font-size: var(--sl-text-base);
+    display: flex;
+    justify-content: space-between;
+    margin: 0 0 0.5rem;
+  }
+  .timing {
+    color: var(--sl-color-accent-high);
+    font-family: var(--sl-font-mono);
+    font-weight: 400;
+  }
+  .results {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-sm);
+  }
+  .results :global(li) {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.3rem 0.5rem;
+    border-bottom: 1px solid var(--sl-color-gray-6);
+    overflow-wrap: anywhere;
+  }
+  .results :global(mark) {
+    background: var(--sl-color-accent-low);
+    color: var(--sl-color-accent-high);
+    border-radius: 2px;
+  }
+  .playground :global(.score) {
+    flex-shrink: 0;
+    color: var(--sl-color-gray-3);
+  }
+  .playground :global(.empty) {
+    color: var(--sl-color-gray-3);
+    font-style: italic;
+  }
+  .help {
+    margin-top: 1rem;
+    font-size: var(--sl-text-sm);
+  }
+  .pair {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+    gap: 1rem;
+    margin: 1rem 0;
+  }
+  .pair label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+  .table-wrap {
+    overflow-x: auto;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--sl-text-sm);
+  }
+  th,
+  table :global(td) {
+    text-align: left;
+    padding: 0.35rem 0.5rem;
+    border-bottom: 1px solid var(--sl-color-gray-6);
+  }
+</style>

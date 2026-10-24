@@ -1,0 +1,106 @@
+---
+title: UI frameworks
+description: Use rapid-fuzzy's FuzzyObjectIndex in React, Vue and Svelte components, building the index once and freeing it on unmount.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Build the index once per data set and search it on every keystroke. `destroy()` frees an index's memory right away; an index you simply drop is freed by the garbage collector. In the browser, bundlers load the WebAssembly build automatically (see [Browsers and bundlers](/rapid-fuzzy/runtimes/browsers/)).
+
+<Tabs syncKey="framework">
+  <TabItem label="React">
+    ```tsx
+    import { useMemo, useState } from 'react';
+    import { FuzzyObjectIndex } from 'rapid-fuzzy/objects';
+
+    interface User {
+      name: string;
+      email: string;
+    }
+
+    export function UserSearch({ users }: { users: User[] }) {
+      const [query, setQuery] = useState('');
+
+      // Rebuild the index only when the data changes. The garbage collector
+      // frees an index that is no longer referenced, so no cleanup is needed
+      // (calling destroy() in an effect cleanup would break under StrictMode,
+      // which runs effects twice on the same memoized index).
+      const index = useMemo(
+        () => new FuzzyObjectIndex(users, { keys: [{ name: 'name', weight: 2 }, 'email'] }),
+        [users],
+      );
+
+      const results = query ? index.search(query, 20).map((r) => r.item) : users;
+
+      return (
+        <>
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search…" />
+          <ul>
+            {results.map((u) => (
+              <li key={u.email}>{u.name}</li>
+            ))}
+          </ul>
+        </>
+      );
+    }
+    ```
+  </TabItem>
+  <TabItem label="Vue">
+    ```vue
+    <script setup lang="ts">
+    import { computed, onUnmounted, ref } from 'vue';
+    import { FuzzyObjectIndex } from 'rapid-fuzzy/objects';
+
+    const props = defineProps<{ users: { name: string; email: string }[] }>();
+    const query = ref('');
+
+    const index = new FuzzyObjectIndex(props.users, {
+      keys: [{ name: 'name', weight: 2 }, 'email'],
+    });
+    onUnmounted(() => index.destroy());
+
+    const results = computed(() =>
+      query.value ? index.search(query.value, 20).map((r) => r.item) : props.users,
+    );
+    </script>
+
+    <template>
+      <input v-model="query" placeholder="Search…" />
+      <ul>
+        <li v-for="u in results" :key="u.email">{{ u.name }}</li>
+      </ul>
+    </template>
+    ```
+  </TabItem>
+  <TabItem label="Svelte">
+    ```svelte
+    <script lang="ts">
+      import { onDestroy } from 'svelte';
+      import { FuzzyObjectIndex } from 'rapid-fuzzy/objects';
+
+      let { users }: { users: { name: string; email: string }[] } = $props();
+      let query = $state('');
+
+      const index = new FuzzyObjectIndex(users, {
+        keys: [{ name: 'name', weight: 2 }, 'email'],
+      });
+      onDestroy(() => index.destroy());
+
+      const results = $derived(query ? index.search(query, 20).map((r) => r.item) : users);
+    </script>
+
+    <input bind:value={query} placeholder="Search…" />
+    <ul>
+      {#each results as u (u.email)}
+        <li>{u.name}</li>
+      {/each}
+    </ul>
+    ```
+  </TabItem>
+</Tabs>
+
+## Tips
+
+- **Highlight matches** with [`highlightRanges()`](/rapid-fuzzy/guides/highlighting/#rendering-ranges-in-react), imported from `rapid-fuzzy/highlight` in components that only render results.
+- **Server-side rendering**: in Next.js and Vite SSR, mark `rapid-fuzzy` as external on the server. See [Node.js and SSR](/rapid-fuzzy/runtimes/node/#server-side-rendering).
+- **Large lists**: pass `maxResults` and render only the results you show. A search over 100,000 items takes about a millisecond with the native addon; the WebAssembly build in the browser is slower and single-threaded, so consider a Web Worker for very large lists.

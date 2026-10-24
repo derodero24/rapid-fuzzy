@@ -1,6 +1,7 @@
 #!/usr/bin/env npx tsx
 /**
- * Run the comparison benchmarks and update the benchmark tables in README.md.
+ * Run the comparison benchmarks and update the benchmark tables in README.md
+ * and on the website's benchmark page (site/src/content/docs/benchmarks.md).
  *
  * Usage:
  *   pnpm bench:readme          # build the native addon in release mode first
@@ -18,7 +19,7 @@
  * costs differ).
  *
  * The tables live between `<!-- bench:<name>:start -->` and
- * `<!-- bench:<name>:end -->` markers in README.md; the `bench:env` block
+ * `<!-- bench:<name>:end -->` markers (the README has a subset); the `bench:env` block
  * records the machine and Node.js version the numbers were measured on.
  * Run `pnpm bench:charts` afterwards to regenerate the SVG charts.
  */
@@ -233,11 +234,8 @@ const machineNote = process.env.BENCH_MACHINE ? `, ${process.env.BENCH_MACHINE}`
 const envText = `Measured on ${date} with Node.js ${process.version} on ${platform()} ${arch()} (${cpuList[0]?.model.trim() ?? 'unknown CPU'}, ${cpuList.length} logical CPUs${machineNote}), using the release build of the native addon and [Vitest bench](https://vitest.dev/guide/benchmarking). Numbers vary by up to about ±10% between runs; treat them as relative, not absolute.`;
 
 // ---------------------------------------------------------------------------
-// 4. Replace the marked blocks in README
+// 4. Replace the marked blocks in README and on the website's benchmark page
 // ---------------------------------------------------------------------------
-
-const readmePath = 'README.md';
-let readme = readFileSync(readmePath, 'utf-8');
 
 function replaceBlock(content: string, name: string, body: string): string {
   const start = `<!-- bench:${name}:start -->`;
@@ -251,12 +249,26 @@ function replaceBlock(content: string, name: string, body: string): string {
   return `${content.slice(0, from + start.length)}\n${body}\n${content.slice(to)}`;
 }
 
-readme = replaceBlock(readme, 'env', envText);
-readme = replaceBlock(readme, 'search', searchLines.join('\n'));
-readme = replaceBlock(readme, 'closest', closestLines.join('\n'));
-readme = replaceBlock(readme, 'distance', distanceLines.join('\n'));
-readme = replaceBlock(readme, 'ratio', ratioLines.join('\n'));
+type Block = 'env' | 'search' | 'closest' | 'distance' | 'ratio';
+const blocks: Readonly<Record<Block, string>> = {
+  env: envText,
+  search: searchLines.join('\n'),
+  closest: closestLines.join('\n'),
+  distance: distanceLines.join('\n'),
+  ratio: ratioLines.join('\n'),
+};
+// The README shows a summary; the website's benchmark page has every table.
+const pages: readonly (readonly [path: string, names: readonly Block[]])[] = [
+  ['README.md', ['env', 'search', 'distance']],
+  ['site/src/content/docs/benchmarks.md', ['env', 'search', 'closest', 'distance', 'ratio']],
+];
 
-writeFileSync(readmePath, readme);
-console.log('✓ README.md updated with the latest benchmark numbers.');
+for (const [path, names] of pages) {
+  let content = readFileSync(path, 'utf-8');
+  for (const name of names) {
+    content = replaceBlock(content, name, blocks[name]);
+  }
+  writeFileSync(path, content);
+  console.log(`✓ ${path} updated with the latest benchmark numbers.`);
+}
 console.log('  Review the prose around the tables (ratios, key takeaways) by hand.');
