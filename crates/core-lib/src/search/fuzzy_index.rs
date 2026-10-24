@@ -151,21 +151,26 @@ impl FuzzyIndexCore {
         query: &str,
         params: SearchParams,
         case_matching: CaseMatching,
+        max_typos: u16,
     ) -> Vec<RankedMatch> {
         let query = normalize_query_whitespace(query);
-        let Some(plan) = with_matcher(|matcher| QueryPlan::new(&query, case_matching, matcher))
-        else {
+        let Some(plan) = with_matcher(|matcher| {
+            QueryPlan::with_typos(&query, case_matching, max_typos, matcher)
+        }) else {
             return Vec::new();
         };
-        if self.union_mask & plan.char_mask != plan.char_mask {
+        if !plan.mask_filter().admits(self.union_mask) {
             // Some character of the query occurs in no item.
             return Vec::new();
         }
 
         // A `min_score` threshold drops items that a longer query could still
         // match, so only unfiltered searches (including `closest` without a
-        // threshold) may refresh the cache.
+        // threshold) may refresh the cache. Neither may searches with typos:
+        // a longer term tolerates more typos, so it may match items the
+        // shorter one did not.
         let unfiltered = params.min_score.is_none_or(|score| score <= 0.0);
+        let cacheable = unfiltered && !plan.allows_typos();
         let corpus = Corpus::Indexed {
             items: &self.items,
             haystacks: &self.haystacks,
@@ -178,13 +183,15 @@ impl FuzzyIndexCore {
             let candidates = cache
                 .as_ref()
                 .filter(|cache| {
-                    cache.case_matching == case_matching && refines(&cache.query, &query)
+                    cacheable
+                        && cache.case_matching == case_matching
+                        && refines(&cache.query, &query)
                 })
                 .map(|cache| cache.matching.as_slice());
-            search_core(&plan, corpus, candidates, params, unfiltered)
+            search_core(&plan, corpus, candidates, params, cacheable)
         };
 
-        if unfiltered {
+        if cacheable {
             *self.cache.borrow_mut() = outcome.all_matching.map(|matching| SearchCache {
                 query: query.into_owned(),
                 case_matching,
@@ -204,12 +211,33 @@ impl FuzzyIndexCore {
         include_positions: bool,
         case_matching: CaseMatching,
     ) -> Vec<SearchResult> {
+        self.search_with_typos(
+            query,
+            max_results,
+            min_score,
+            include_positions,
+            case_matching,
+            0,
+        )
+    }
+
+    /// [`search_impl`](Self::search_impl), allowing up to `max_typos` typos
+    /// per fuzzy term (see [`QueryPlan::with_typos`]).
+    pub fn search_with_typos(
+        &self,
+        query: &str,
+        max_results: Option<u32>,
+        min_score: Option<f64>,
+        include_positions: bool,
+        case_matching: CaseMatching,
+        max_typos: u16,
+    ) -> Vec<SearchResult> {
         let params = SearchParams {
             max_results,
             min_score,
             include_positions,
         };
-        self.search_ranked(query, params, case_matching)
+        self.search_ranked(query, params, case_matching, max_typos)
             .into_iter()
             .map(|m| SearchResult {
                 item: self.items[m.index as usize].clone(),
@@ -230,12 +258,33 @@ impl FuzzyIndexCore {
         include_positions: bool,
         case_matching: CaseMatching,
     ) -> Vec<IndexSearchResult> {
+        self.search_indices_with_typos(
+            query,
+            max_results,
+            min_score,
+            include_positions,
+            case_matching,
+            0,
+        )
+    }
+
+    /// [`search_indices_impl`](Self::search_indices_impl), allowing up to
+    /// `max_typos` typos per fuzzy term (see [`QueryPlan::with_typos`]).
+    pub fn search_indices_with_typos(
+        &self,
+        query: &str,
+        max_results: Option<u32>,
+        min_score: Option<f64>,
+        include_positions: bool,
+        case_matching: CaseMatching,
+        max_typos: u16,
+    ) -> Vec<IndexSearchResult> {
         let params = SearchParams {
             max_results,
             min_score,
             include_positions,
         };
-        self.search_ranked(query, params, case_matching)
+        self.search_ranked(query, params, case_matching, max_typos)
             .into_iter()
             .map(|m| IndexSearchResult {
                 index: m.index,

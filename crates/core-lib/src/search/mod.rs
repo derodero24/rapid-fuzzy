@@ -3,6 +3,7 @@ mod fuzzy_index;
 mod keyed_index;
 mod keys;
 pub mod serialization;
+mod typos;
 
 pub use fuzzy_index::FuzzyIndexCore;
 pub use keyed_index::KeyedFuzzyIndexCore;
@@ -10,6 +11,9 @@ pub use keys::{
     KeyMatchMode, KeyScoreMode, SearchKeysOptions, invalid_match_mode, invalid_score_mode,
     search_keys_impl,
 };
+pub use typos::{check_max_typos, term_typos};
+
+use typos::Typos;
 
 use std::borrow::Cow;
 use std::cell::RefCell;
@@ -258,6 +262,29 @@ pub fn is_empty_query(query: &str) -> bool {
     parse_query(query, CaseMatching::Smart).atoms.is_empty()
 }
 
+/// A character-mask pre-filter: whether an item, by its character mask (see
+/// [`compute_char_mask`]), can match a query or one of its terms.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct MaskFilter {
+    /// The characters the query needs.
+    pub mask: u64,
+    /// How many of them a matching item may lack (typos, see
+    /// [`QueryPlan::with_typos`]).
+    pub allowed_missing: u32,
+}
+
+impl MaskFilter {
+    /// Whether an item whose character mask is `item_mask` can match.
+    #[inline(always)]
+    pub fn admits(self, item_mask: u64) -> bool {
+        if self.allowed_missing == 0 {
+            item_mask & self.mask == self.mask
+        } else {
+            (self.mask & !item_mask).count_ones() <= self.allowed_missing
+        }
+    }
+}
+
 /// A query parsed and prepared for scoring.
 pub struct QueryPlan {
     /// The parsed nucleo pattern.
@@ -266,6 +293,9 @@ pub struct QueryPlan {
     pub max_score: f64,
     /// Character mask every matching item must contain (see [`compute_char_mask`]).
     pub char_mask: u64,
+    /// The terms matched with typos when nucleo does not match them, when
+    /// the search allows typos.
+    typos: Option<Typos>,
 }
 
 impl QueryPlan {
@@ -275,6 +305,18 @@ impl QueryPlan {
     /// search term ([`is_empty_query`]) or when one of its terms is longer
     /// than [`MAX_TERM_CHARS`].
     pub fn new(query: &str, case_matching: CaseMatching, matcher: &mut Matcher) -> Option<Self> {
+        Self::with_typos(query, case_matching, 0, matcher)
+    }
+
+    /// Like [`new`](Self::new), allowing up to `max_typos` typos per fuzzy
+    /// term (fewer in short terms, see [`term_typos`]). Matches without typos
+    /// score exactly as with [`new`](Self::new); see the `typos` module.
+    pub fn with_typos(
+        query: &str,
+        case_matching: CaseMatching,
+        max_typos: u16,
+        matcher: &mut Matcher,
+    ) -> Option<Self> {
         let pattern = parse_query(query, case_matching);
         if pattern.atoms.is_empty()
             || pattern
@@ -286,11 +328,99 @@ impl QueryPlan {
         }
         let max_score = pattern_max_score(&pattern, matcher);
         let char_mask = pattern_char_mask(&pattern);
+        let typos = (max_typos > 0)
+            .then(|| {
+                let caps: Vec<u32> = pattern
+                    .atoms
+                    .iter()
+                    .map(|atom| atom_max_score(atom, matcher))
+                    .collect();
+                Typos::new(&pattern.atoms, &caps, case_matching, max_typos)
+            })
+            .flatten();
         Some(Self {
             pattern,
             max_score,
             char_mask,
+            typos,
         })
+    }
+
+    /// Whether some term of the query may match with typos.
+    pub fn allows_typos(&self) -> bool {
+        self.typos.is_some()
+    }
+
+    /// The pre-filter of the whole query.
+    #[inline(always)]
+    pub(crate) fn mask_filter(&self) -> MaskFilter {
+        MaskFilter {
+            mask: self.char_mask,
+            allowed_missing: self.typos.as_ref().map_or(0, |t| t.allowed_missing),
+        }
+    }
+
+    /// The pre-filter of atom `a` alone, with its needle's character mask
+    /// `mask`.
+    #[inline]
+    pub(crate) fn atom_mask_filter(&self, a: usize, mask: u64) -> MaskFilter {
+        let allowed_missing = self.typos.as_ref().map_or(0, |t| t.allowed_typos(a));
+        MaskFilter {
+            mask,
+            allowed_missing,
+        }
+    }
+
+    /// Raw score of the query on `haystack`, or `None` when it does not
+    /// match: nucleo's [`Pattern::score`], with typos where allowed.
+    #[inline(always)]
+    pub fn score(&self, haystack: Utf32Str<'_>, matcher: &mut Matcher) -> Option<u32> {
+        let Some(typos) = &self.typos else {
+            return self.pattern.score(haystack, matcher);
+        };
+        let mut score: u32 = 0;
+        for (a, atom) in self.pattern.atoms.iter().enumerate() {
+            let atom_score = match atom.score(haystack, matcher) {
+                Some(raw) => u32::from(raw),
+                None => typos.score(a, haystack)?,
+            };
+            score = score.saturating_add(atom_score);
+        }
+        Some(score)
+    }
+
+    /// Raw score of atom `a` on `haystack`, with typos where allowed: what
+    /// `Atom::score` returns for a negative atom, the term's score (or
+    /// `None`) for a positive one.
+    #[inline]
+    pub(crate) fn atom_score(
+        &self,
+        a: usize,
+        haystack: Utf32Str<'_>,
+        matcher: &mut Matcher,
+    ) -> Option<u32> {
+        let atom = &self.pattern.atoms[a];
+        match atom.score(haystack, matcher) {
+            Some(raw) => Some(u32::from(raw)),
+            None => self.typos.as_ref()?.score(a, haystack),
+        }
+    }
+
+    /// Append the positions the query matches in `haystack` to `out`
+    /// (unsorted, possibly with duplicates), like `Pattern::indices`.
+    pub fn indices(&self, haystack: Utf32Str<'_>, matcher: &mut Matcher, out: &mut Vec<u32>) {
+        let Some(typos) = &self.typos else {
+            self.pattern.indices(haystack, matcher, out);
+            return;
+        };
+        for (a, atom) in self.pattern.atoms.iter().enumerate() {
+            if atom.negative {
+                continue;
+            }
+            if atom.indices(haystack, matcher, out).is_none() {
+                typos.indices(a, haystack, out);
+            }
+        }
     }
 
     /// Normalize a raw nucleo score to the 0.0-1.0 range.
@@ -623,7 +753,7 @@ fn score_items(
         let mut buf = Vec::new();
         for &index in indices {
             let haystack = corpus.haystack(index as usize, &mut buf);
-            if let Some(raw_score) = plan.pattern.score(haystack, matcher) {
+            if let Some(raw_score) = plan.score(haystack, matcher) {
                 let score = plan.normalize(raw_score);
                 if score >= threshold {
                     out.push((index, score));
@@ -633,13 +763,12 @@ fn score_items(
     });
 }
 
-/// Ascending indices of the items whose character mask contains every bit of
-/// `query_mask`.
-fn mask_survivors(char_masks: &[u64], query_mask: u64) -> Vec<u32> {
+/// Ascending indices of the items whose character mask `filter` admits.
+fn mask_survivors(char_masks: &[u64], filter: MaskFilter) -> Vec<u32> {
     char_masks
         .iter()
         .enumerate()
-        .filter(|&(_, &mask)| mask & query_mask == query_mask)
+        .filter(|&(_, &mask)| filter.admits(mask))
         .map(|(index, _)| index as u32)
         .collect()
 }
@@ -654,17 +783,17 @@ fn score_corpus(
     candidates: Option<&[u32]>,
     threshold: f64,
 ) -> Vec<(u32, f64)> {
-    let query_mask = plan.char_mask;
-    // The items to score: those whose character mask contains the query's.
+    let filter = plan.mask_filter();
+    // The items to score: those whose character mask the query's admits.
     let to_score: Cow<'_, [u32]> = match (corpus, candidates) {
         (Corpus::Indexed { char_masks, .. }, None) => {
-            Cow::Owned(mask_survivors(char_masks, query_mask))
+            Cow::Owned(mask_survivors(char_masks, filter))
         }
         (Corpus::Indexed { char_masks, .. }, Some(candidates)) => Cow::Owned(
             candidates
                 .iter()
                 .copied()
-                .filter(|&index| char_masks[index as usize] & query_mask == query_mask)
+                .filter(|&index| filter.admits(char_masks[index as usize]))
                 .collect(),
         ),
         (Corpus::Strings(_), Some(candidates)) => Cow::Borrowed(candidates),
@@ -712,7 +841,7 @@ fn matches_with_positions(
         out.extend(scored.iter().map(|&(index, score)| {
             let haystack = corpus.haystack(index as usize, &mut buf);
             let mut positions = Vec::new();
-            plan.pattern.indices(haystack, matcher, &mut positions);
+            plan.indices(haystack, matcher, &mut positions);
             positions.sort_unstable();
             positions.dedup();
             let match_type = classify_match(&positions, haystack.len());
@@ -905,10 +1034,34 @@ pub fn search_over_items(
     include_positions: bool,
     case_matching: CaseMatching,
 ) -> Vec<SearchResult> {
+    search_over_items_with_typos(
+        query,
+        items,
+        max_results,
+        min_score,
+        include_positions,
+        case_matching,
+        0,
+    )
+}
+
+/// [`search_over_items`], allowing up to `max_typos` typos per fuzzy term
+/// (see [`QueryPlan::with_typos`]).
+pub fn search_over_items_with_typos(
+    query: &str,
+    items: &[String],
+    max_results: Option<u32>,
+    min_score: Option<f64>,
+    include_positions: bool,
+    case_matching: CaseMatching,
+    max_typos: u16,
+) -> Vec<SearchResult> {
     if items.is_empty() {
         return Vec::new();
     }
-    let Some(plan) = with_matcher(|matcher| QueryPlan::new(query, case_matching, matcher)) else {
+    let Some(plan) =
+        with_matcher(|matcher| QueryPlan::with_typos(query, case_matching, max_typos, matcher))
+    else {
         return Vec::new();
     };
     search_core(

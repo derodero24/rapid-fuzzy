@@ -149,6 +149,7 @@ impl KeyedFuzzyIndexCore {
                 return_all_on_empty,
                 score_mode,
                 match_mode: KeyMatchMode::PerKey,
+                max_typos: 0,
             },
         )
     }

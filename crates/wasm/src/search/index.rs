@@ -3,7 +3,9 @@ use rapid_fuzzy_core::search::serialization::{deserialize_fuzzy_index, serialize
 use rapid_fuzzy_core::search::{FuzzyIndexCore, is_empty_query};
 use wasm_bindgen::prelude::*;
 
-use super::{IndexSearchResult, SearchOptions, SearchResult, min_score_arg, resolve_case_matching};
+use super::{
+    IndexSearchResult, SearchOptions, SearchResult, min_score_arg, resolve_case_matching, typos_of,
+};
 use crate::convert::{error, or_null, remove_index_from_js, strings_from_js, to_js};
 
 /// A persistent fuzzy search index backed by Rust-side data.
@@ -99,12 +101,13 @@ impl FuzzyIndex {
 
         let results: Vec<SearchResult> = self
             .core
-            .search_impl(
+            .search_with_typos(
                 &query,
                 max_results,
                 min_score,
                 include_positions,
                 case_matching,
+                opts.max_typos.map_or(0, typos_of),
             )
             .into_iter()
             .map(SearchResult::from)
@@ -172,12 +175,13 @@ impl FuzzyIndex {
 
         let results: Vec<IndexSearchResult> = self
             .core
-            .search_indices_impl(
+            .search_indices_with_typos(
                 &query,
                 max_results,
                 min_score,
                 include_positions,
                 case_matching,
+                opts.max_typos.map_or(0, typos_of),
             )
             .into_iter()
             .map(IndexSearchResult::from)

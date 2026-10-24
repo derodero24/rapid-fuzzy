@@ -93,7 +93,8 @@ use nucleo_matcher::{Matcher, Utf32Str, chars};
 
 use super::cross_key::CrossKeyPlan;
 use super::{
-    KeySearchResult, QueryPlan, is_empty_query, resolve_case_matching, utf32_haystack, with_matcher,
+    KeySearchResult, MaskFilter, QueryPlan, is_empty_query, resolve_case_matching, utf32_haystack,
+    with_matcher,
 };
 
 /// How a multi-key search combines the per-key scores of an item into its
@@ -194,6 +195,10 @@ pub struct SearchKeysOptions {
     /// How the query is matched against the keys; `None` means
     /// [`KeyMatchMode::PerKey`].
     pub match_mode: Option<KeyMatchMode>,
+    /// Typos allowed per fuzzy term (see
+    /// [`QueryPlan::with_typos`](super::QueryPlan::with_typos)); `None`
+    /// means 0.
+    pub max_typos: Option<u16>,
 }
 
 /// Validate multi-key search input and return the total weight.
@@ -262,9 +267,10 @@ pub(crate) trait KeyedCorpus {
         self.key_texts()[k][i].len()
     }
 
-    /// Whether key `k` of item `i` can match a query whose character mask is
-    /// `query_mask`. Must never return false for an item nucleo would match.
-    fn may_match(&self, k: usize, i: usize, query_mask: u64) -> bool;
+    /// Whether key `k` of item `i` can match a query (or term) whose
+    /// pre-filter is `filter`. Must never return false for an item nucleo
+    /// (or the typo-tolerant matcher) would match.
+    fn may_match(&self, k: usize, i: usize, filter: MaskFilter) -> bool;
 
     /// Raw nucleo score of key `k` of item `i`.
     fn raw_score(
@@ -286,7 +292,7 @@ pub(crate) trait KeyedCorpus {
         k: usize,
         i: usize,
     ) -> f64 {
-        if !self.may_match(k, i, plan.char_mask) {
+        if !self.may_match(k, i, plan.mask_filter()) {
             return 0.0;
         }
         self.raw_score(plan, matcher, buf, k, i)
@@ -306,9 +312,14 @@ pub(crate) trait KeyedCorpus {
 /// What `Pattern::score` computes — the sum of the atoms' scores, or `None`
 /// when one of them does not match — written out so that it is inlined into
 /// the scoring loops (an out-of-line call per key cost several percent).
-/// The sum saturates instead of overflowing.
+/// The sum saturates instead of overflowing. Searches allowing typos score
+/// with [`QueryPlan::score`] instead.
 #[inline(always)]
-fn pattern_score(pattern: &Pattern, haystack: Utf32Str<'_>, matcher: &mut Matcher) -> Option<u32> {
+fn pattern_score(plan: &QueryPlan, haystack: Utf32Str<'_>, matcher: &mut Matcher) -> Option<u32> {
+    if plan.allows_typos() {
+        return plan.score(haystack, matcher);
+    }
+    let pattern: &Pattern = &plan.pattern;
     let mut score: u32 = 0;
     for atom in &pattern.atoms {
         score = score.saturating_add(u32::from(atom.score(haystack, matcher)?));
@@ -332,7 +343,7 @@ impl KeyedCorpus for KeyTexts<'_> {
     }
 
     #[inline]
-    fn may_match(&self, _k: usize, _i: usize, _query_mask: u64) -> bool {
+    fn may_match(&self, _k: usize, _i: usize, _filter: MaskFilter) -> bool {
         true
     }
 
@@ -345,7 +356,7 @@ impl KeyedCorpus for KeyTexts<'_> {
         k: usize,
         i: usize,
     ) -> Option<u32> {
-        pattern_score(&plan.pattern, utf32_haystack(&self.0[k][i], buf), matcher)
+        pattern_score(plan, utf32_haystack(&self.0[k][i], buf), matcher)
     }
 
     #[inline]
@@ -407,10 +418,11 @@ impl KeyedCorpus for IndexedKeys<'_> {
     }
 
     #[inline]
-    fn may_match(&self, k: usize, i: usize, query_mask: u64) -> bool {
+    fn may_match(&self, k: usize, i: usize, filter: MaskFilter) -> bool {
         // The mask is a superset of the characters nucleo compares, so a
-        // text lacking a bit of the query's mask cannot match.
-        self.char_masks[k][i] & query_mask == query_mask
+        // text lacking a bit of the query's mask cannot match (beyond the
+        // characters typos may account for).
+        filter.admits(self.char_masks[k][i])
     }
 
     #[inline]
@@ -422,7 +434,7 @@ impl KeyedCorpus for IndexedKeys<'_> {
         k: usize,
         i: usize,
     ) -> Option<u32> {
-        pattern_score(&plan.pattern, self.indexed_haystack(k, i), matcher)
+        pattern_score(plan, self.indexed_haystack(k, i), matcher)
     }
 
     #[inline]
@@ -443,6 +455,7 @@ pub(crate) struct KeyedSearchParams {
     pub return_all_on_empty: bool,
     pub score_mode: KeyScoreMode,
     pub match_mode: KeyMatchMode,
+    pub max_typos: u16,
 }
 
 impl From<SearchKeysOptions> for KeyedSearchParams {
@@ -455,6 +468,7 @@ impl From<SearchKeysOptions> for KeyedSearchParams {
             return_all_on_empty: options.return_all_on_empty.unwrap_or(false),
             score_mode: options.score_mode.unwrap_or_default(),
             match_mode: options.match_mode.unwrap_or_default(),
+            max_typos: options.max_typos.unwrap_or(0),
         }
     }
 }
@@ -609,7 +623,8 @@ impl<C: KeyedCorpus> MaskedScan<'_, C> {
         let mut next = 0;
         'items: while next < self.num_items {
             let i = if E::MASK_FIRST {
-                match first_may_match(self.corpus, self.active_keys, self.plan.char_mask, next) {
+                match first_may_match(self.corpus, self.active_keys, self.plan.mask_filter(), next)
+                {
                     Some(i) => i,
                     None => break,
                 }
@@ -636,8 +651,8 @@ impl<C: KeyedCorpus> MaskedScan<'_, C> {
 }
 
 /// The first item from `start` on that one of `active_keys` may match
-/// according to the character masks of `corpus` (all of `query_mask`'s
-/// bits), or `None`.
+/// according to the character masks of `corpus` (as `filter` admits them),
+/// or `None`.
 ///
 /// Most items of a typical search fail this check. It is kept out of line so
 /// that its tight loop gets registers of its own instead of competing with
@@ -647,15 +662,11 @@ impl<C: KeyedCorpus> MaskedScan<'_, C> {
 pub(super) fn first_may_match<C: KeyedCorpus>(
     corpus: &C,
     active_keys: &[usize],
-    query_mask: u64,
+    filter: MaskFilter,
     start: usize,
 ) -> Option<usize> {
     let num_items = corpus.key_texts().first().map_or(0, Vec::len);
-    (start..num_items).find(|&i| {
-        active_keys
-            .iter()
-            .any(|&k| corpus.may_match(k, i, query_mask))
-    })
+    (start..num_items).find(|&i| active_keys.iter().any(|&k| corpus.may_match(k, i, filter)))
 }
 
 /// The items pass 1 selected, in the order it found them, with what pass 2
@@ -773,6 +784,7 @@ pub(crate) fn keyed_search_core<C: KeyedCorpus>(
         return_all_on_empty,
         score_mode,
         match_mode,
+        max_typos,
     } = params;
     let key_texts = corpus.key_texts();
     let num_keys = key_texts.len();
@@ -793,7 +805,7 @@ pub(crate) fn keyed_search_core<C: KeyedCorpus>(
             .collect();
     }
 
-    let Some(plan) = QueryPlan::new(query, case_matching, matcher) else {
+    let Some(plan) = QueryPlan::with_typos(query, case_matching, max_typos, matcher) else {
         return Vec::new();
     };
 
@@ -823,7 +835,7 @@ pub(crate) fn keyed_search_core<C: KeyedCorpus>(
             })
         }
         KeyMatchMode::CrossKey => {
-            let cross = CrossKeyPlan::new(&plan.pattern, matcher);
+            let cross = CrossKeyPlan::new(&plan, matcher);
             let selection = cross.pass(corpus, &keys, score_mode, threshold, matcher);
             selection.into_results(max_results, weights, |k, i| {
                 cross.key_score(corpus, matcher, &mut buf, k, i)

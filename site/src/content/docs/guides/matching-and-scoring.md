@@ -11,9 +11,26 @@ A query term matches an item when all of its characters occur in the item **in o
 
 - `tsc` matches `TypeScript`.
 - `typscript` matches `TypeScript`: the query only leaves out a letter.
-- `tpyescript` (swapped letters) and `typozcript` (a wrong letter) find nothing in `['TypeScript']`.
+- `tpyescript` (swapped letters) and `typozcript` (a wrong letter) find nothing in `['TypeScript']`, unless you set `maxTypos` (see [Typos](#typos)).
 
-To tolerate swapped or substituted letters, compare the strings with a distance function, for example `jaroWinklerMany(query, candidates)` or `levenshteinMany(query, candidates, maxDistance)`. A common pattern is to run `search()` first, and fall back to a distance function when it finds nothing:
+## Typos
+
+With `maxTypos` (since 2.3.0), a term that does not match as a subsequence is matched again with [frizbee](https://github.com/saghen/frizbee), a Smith-Waterman matcher that tolerates wrong, extra and swapped letters:
+
+```ts
+search('tpyescript', ['TypeScript'], { maxTypos: 2 }); // finds TypeScript
+search('typozcript', ['TypeScript'], { maxTypos: 1 }); // finds TypeScript
+```
+
+- A term tolerates at most one typo per four characters, and never more than `maxTypos`: none in terms of up to three characters, one in terms of four to seven, two in terms of eight to eleven. A typo in a two-letter term would match almost anything.
+- Only plain fuzzy terms tolerate typos. `'exact`, `^prefix`, `suffix$` and `!excluded` terms match exactly as without the option.
+- Matches without typos keep exactly the score and positions they have without the option; `maxTypos` only adds matches. A match with typos scores the typo-tolerant matcher's score relative to a perfect match, and always below a perfect match, so it can still outrank a weak subsequence match.
+- Case and diacritics are handled as for other matches: smart case, and `zurihc` finds `Zürich`.
+- `maxTypos: Infinity` allows as many typos as each term's length does.
+
+On a list of 20,000 file paths, a search with `maxTypos: 1` takes about 1.6 times as long as one without (1.2 ms instead of 0.7 ms on four threads), still far below fuse.js (about 100 ms).
+
+To compare whole strings instead, for example to suggest the nearest word, use a distance function, for example `jaroWinklerMany(query, candidates)` or `levenshteinMany(query, candidates, maxDistance)`. A common pattern is to run `search()` first, and fall back to a distance function when it finds nothing:
 
 ```ts
 import { search, levenshteinMany } from 'rapid-fuzzy';

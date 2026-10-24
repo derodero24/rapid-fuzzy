@@ -67,7 +67,7 @@ impl KeyedFuzzyIndex {
     ///
     /// Returns the index of the best match, or null if no match is found:
     /// the index of the first result of
-    /// `search(query, { maxResults: 1, minScore, scoreMode, matchMode })`.
+    /// `search(query, { maxResults: 1, minScore, maxTypos, scoreMode, matchMode })`.
     ///
     /// The second argument accepts either a number (minScore shorthand) or a
     /// KeyClosestOptions object: `minScore` makes it return null when the

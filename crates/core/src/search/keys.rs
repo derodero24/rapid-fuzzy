@@ -230,6 +230,7 @@ mod tests {
                 include_positions: None,
                 is_case_sensitive: None,
                 return_all_on_empty: None,
+                max_typos: None,
             }),
         );
         assert!(results.len() <= 2);
@@ -254,6 +255,7 @@ mod tests {
                 include_positions: None,
                 is_case_sensitive: None,
                 return_all_on_empty: None,
+                max_typos: None,
             }),
         );
         for r in &results {
@@ -327,6 +329,7 @@ mod tests {
                 include_positions: None,
                 is_case_sensitive: Some(true),
                 return_all_on_empty: None,
+                max_typos: None,
             }),
         );
         assert_eq!(results.len(), 1);
@@ -386,6 +389,7 @@ mod tests {
                 include_positions: None,
                 is_case_sensitive: None,
                 return_all_on_empty: Some(true),
+                max_typos: None,
             }),
         );
         assert_eq!(results.len(), 3);
@@ -410,6 +414,7 @@ mod tests {
                 include_positions: None,
                 is_case_sensitive: None,
                 return_all_on_empty: Some(true),
+                max_typos: None,
             }),
         );
         assert_eq!(results.len(), 2);
@@ -430,6 +435,7 @@ mod tests {
                 include_positions: None,
                 is_case_sensitive: None,
                 return_all_on_empty: Some(false),
+                max_typos: None,
             }),
         );
         assert!(results.is_empty());
@@ -491,6 +497,7 @@ mod tests {
                 include_positions: None,
                 is_case_sensitive: None,
                 return_all_on_empty: Some(true),
+                max_typos: None,
             }),
         );
         assert_eq!(results.len(), 2);
