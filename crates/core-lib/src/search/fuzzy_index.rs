@@ -154,15 +154,12 @@ impl FuzzyIndexCore {
         max_typos: u16,
     ) -> Vec<RankedMatch> {
         let query = normalize_query_whitespace(query);
+        // `None` also when some character of the query occurs in no item.
         let Some(plan) = with_matcher(|matcher| {
-            QueryPlan::with_typos(&query, case_matching, max_typos, matcher)
+            QueryPlan::within(&query, case_matching, max_typos, matcher, self.union_mask)
         }) else {
             return Vec::new();
         };
-        if !plan.mask_filter().admits(self.union_mask) {
-            // Some character of the query occurs in no item.
-            return Vec::new();
-        }
 
         // A `min_score` threshold drops items that a longer query could still
         // match, so only unfiltered searches (including `closest` without a

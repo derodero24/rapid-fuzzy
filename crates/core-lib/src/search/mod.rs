@@ -294,8 +294,9 @@ pub struct QueryPlan {
     /// Character mask every matching item must contain (see [`compute_char_mask`]).
     pub char_mask: u64,
     /// The terms matched with typos when nucleo does not match them, when
-    /// the search allows typos.
-    typos: Option<Typos>,
+    /// the search allows typos. Boxed so that plans without typos stay
+    /// small and cheap to drop.
+    typos: Option<Box<Typos>>,
 }
 
 impl QueryPlan {
@@ -305,7 +306,7 @@ impl QueryPlan {
     /// search term ([`is_empty_query`]) or when one of its terms is longer
     /// than [`MAX_TERM_CHARS`].
     pub fn new(query: &str, case_matching: CaseMatching, matcher: &mut Matcher) -> Option<Self> {
-        Self::with_typos(query, case_matching, 0, matcher)
+        Self::build(query, case_matching, 0, matcher, u64::MAX)
     }
 
     /// Like [`new`](Self::new), allowing up to `max_typos` typos per fuzzy
@@ -317,6 +318,33 @@ impl QueryPlan {
         max_typos: u16,
         matcher: &mut Matcher,
     ) -> Option<Self> {
+        Self::build(query, case_matching, max_typos, matcher, u64::MAX)
+    }
+
+    /// Like [`with_typos`](Self::with_typos), but `None` also when no item
+    /// can match because the query needs characters that occur in none of
+    /// them: when the [`mask_filter`](Self::mask_filter) rejects
+    /// `union_mask`, the union of every item's character mask. Without
+    /// typos, this is checked before the plan's scores are computed, so
+    /// that a query that matches nothing costs little.
+    pub(crate) fn within(
+        query: &str,
+        case_matching: CaseMatching,
+        max_typos: u16,
+        matcher: &mut Matcher,
+        union_mask: u64,
+    ) -> Option<Self> {
+        Self::build(query, case_matching, max_typos, matcher, union_mask)
+    }
+
+    #[inline(always)]
+    fn build(
+        query: &str,
+        case_matching: CaseMatching,
+        max_typos: u16,
+        matcher: &mut Matcher,
+        union_mask: u64,
+    ) -> Option<Self> {
         let pattern = parse_query(query, case_matching);
         if pattern.atoms.is_empty()
             || pattern
@@ -326,24 +354,42 @@ impl QueryPlan {
         {
             return None;
         }
-        let max_score = pattern_max_score(&pattern, matcher);
         let char_mask = pattern_char_mask(&pattern);
-        let typos = (max_typos > 0)
-            .then(|| {
-                let caps: Vec<u32> = pattern
-                    .atoms
-                    .iter()
-                    .map(|atom| atom_max_score(atom, matcher))
-                    .collect();
-                Typos::new(&pattern.atoms, &caps, case_matching, max_typos)
-            })
-            .flatten();
-        Some(Self {
+        if max_typos == 0 && union_mask & char_mask != char_mask {
+            return None;
+        }
+        let max_score = pattern_max_score(&pattern, matcher);
+        let mut plan = Self {
             pattern,
             max_score,
             char_mask,
-            typos,
-        })
+            typos: None,
+        };
+        if max_typos > 0 {
+            plan.typos = plan.typos(case_matching, max_typos, matcher);
+            if !plan.mask_filter().admits(union_mask) {
+                return None;
+            }
+        }
+        Some(plan)
+    }
+
+    /// The typo matchers of the plan's terms, kept out of line so that
+    /// searches without typos pay nothing for them.
+    #[inline(never)]
+    fn typos(
+        &self,
+        case_matching: CaseMatching,
+        max_typos: u16,
+        matcher: &mut Matcher,
+    ) -> Option<Box<Typos>> {
+        let caps: Vec<u32> = self
+            .pattern
+            .atoms
+            .iter()
+            .map(|atom| atom_max_score(atom, matcher))
+            .collect();
+        Typos::new(&self.pattern.atoms, &caps, case_matching, max_typos).map(Box::new)
     }
 
     /// Whether some term of the query may match with typos.
