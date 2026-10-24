@@ -1,5 +1,4 @@
 // Shared benchmark test data — deterministic and reusable across bench files.
-// Changes to this file will trigger CodSpeed benchmarks.
 
 // --- String pairs (for distance / similarity / ratio benchmarks) ---
 
@@ -129,3 +128,53 @@ export const xlargeItems = generateSearchItems(50_000);
 
 /** Huge dataset (~100K items) */
 export const hugeItems = generateSearchItems(100_000);
+
+// --- Queries (for search benchmarks) ---
+
+/** Query for the 10K-100K datasets: matches the 5% of items named `handler_repository_<n>`. */
+export const largeQuery = 'handler repo';
+
+/**
+ * Queries cycled through one per iteration, so consecutive searches never
+ * refine each other and every iteration scans the whole dataset. They mix
+ * whole words and abbreviations, and each matches 5-10% of the 10K dataset in
+ * rapid-fuzzy (result counts differ between libraries).
+ */
+export const rotatingQueries = [
+  'handler repo',
+  'middleware type',
+  'observable',
+  'service fac',
+  'ctrl',
+  'prms',
+  'import',
+  'repository',
+];
+
+/**
+ * Returns a function that yields the next of `queries` on every call, wrapping
+ * around at the end. Give each benchmark its own cycle so they all see the same
+ * sequence of queries.
+ */
+export function cycle(queries: readonly string[]): () => string {
+  let next = 0;
+  return () => {
+    const query = queries[next++ % queries.length];
+    if (query === undefined) throw new RangeError('cycle() needs at least one query');
+    return query;
+  };
+}
+
+/** Keystrokes of a user typing `largeQuery`, one search per keystroke. */
+export const typeAheadQueries = Array.from({ length: largeQuery.length }, (_, i) =>
+  largeQuery.slice(0, i + 1),
+);
+
+/** `closest()` query for the 1K dataset; its best match is `utils/index42.ts`. */
+export const mediumClosestQuery = 'utils/index42';
+
+/**
+ * `closest()` query for the 10K dataset with a missing letter; its best match
+ * is `handler_repository_514`.
+ */
+export const largeClosestQuery = 'handler_repositry_514';

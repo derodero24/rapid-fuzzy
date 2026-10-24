@@ -5,10 +5,11 @@ on:
     - cron: '0 19 * * *' # Daily 19:00 UTC (4:00 JST)
   workflow_dispatch:
 
+# Renovate pushes branches and opens PRs and issues with RENOVATE_TOKEN (a
+# personal access token): the action passes the container that token, never
+# the workflow's GITHUB_TOKEN, which only actions/checkout uses.
 permissions:
-  contents: write
-  pull-requests: write
-  issues: write
+  contents: read # actions/checkout
 
 jobs:
   renovate:
@@ -18,9 +19,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - uses: renovatebot/github-action@37beffda261423addd537c33f2d126df7f6ffbab # v46.2.6
+      - uses: renovatebot/github-action@a63d9a7bc606f7336fd20b47f2f32259a35e6213 # v46.3.9
         with:
           token: ${{ secrets.RENOVATE_TOKEN }}
         env:
           RENOVATE_REPOSITORIES: ${{ github.repository }}
+          # Global (self-hosted) allow-list for renovate.json postUpgradeTasks;
+          # a repository config cannot grant this itself. Only the binaryen
+          # checksum refresh is allowed.
+          RENOVATE_ALLOWED_COMMANDS: '["^node \\.github/scripts/update-binaryen-sha256\\.cjs$"]'
           LOG_LEVEL: debug

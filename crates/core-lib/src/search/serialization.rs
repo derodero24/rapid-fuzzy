@@ -1,215 +1,480 @@
-/// Magic bytes identifying a serialized FuzzyIndex.
+//! Compact binary serialization for `FuzzyIndex` and `KeyedFuzzyIndex`.
+//!
+//! All integers are little-endian. Every string is stored as a `u32` byte
+//! length followed by that many bytes of UTF-8.
+//!
+//! `FuzzyIndex`: `[magic 4B] [version u32] [count u32] [count x string]`
+//!
+//! `KeyedFuzzyIndex`:
+//! `[magic 4B] [version u32] [num_keys u32] [num_items u32]`
+//! `[num_keys x f64 weight] [num_keys x num_items strings, column-major]`
+//!
+//! Deserializers treat their input as untrusted. They never panic, never
+//! allocate more than a small multiple of the input length (counts read from
+//! the header are checked against the bytes actually present before any
+//! allocation), use overflow-free bounds checks so 32-bit targets (wasm)
+//! behave like 64-bit ones, and reject truncated data, trailing bytes and
+//! invalid UTF-8 with a message that says what is wrong and where. Every
+//! payload a deserializer accepts re-serializes to exactly the same bytes,
+//! except that a `FuzzyIndex` payload with the legacy [`FUZZY_INDEX_WASM_MAGIC`]
+//! is written back with [`FUZZY_INDEX_MAGIC`].
+
+use std::fmt;
+
+use super::{FuzzyIndexCore, KeyedFuzzyIndexCore};
+
+/// Magic bytes identifying a serialized `FuzzyIndex`.
+///
+/// Both the Node.js (napi) and browser (wasm-bindgen) builds write this.
 pub const FUZZY_INDEX_MAGIC: &[u8; 4] = b"RFZI";
 
-/// Magic bytes identifying a serialized FuzzyIndex (WASM variant).
+/// Legacy magic bytes for a serialized `FuzzyIndex`.
+///
+/// The browser (wasm-bindgen) build of rapid-fuzzy 2.1.1 and earlier wrote
+/// this instead of [`FUZZY_INDEX_MAGIC`]. It is still accepted when reading
+/// (see [`FUZZY_INDEX_ACCEPTED_MAGICS`]) but is no longer written.
 pub const FUZZY_INDEX_WASM_MAGIC: &[u8; 4] = b"RFUZ";
 
-/// Magic bytes identifying a serialized KeyedFuzzyIndex.
+/// Every magic accepted by [`deserialize_fuzzy_index`].
+pub const FUZZY_INDEX_ACCEPTED_MAGICS: &[&[u8; 4]] = &[FUZZY_INDEX_MAGIC, FUZZY_INDEX_WASM_MAGIC];
+
+/// Magic bytes identifying a serialized `KeyedFuzzyIndex`.
 pub const KEYED_INDEX_MAGIC: &[u8; 4] = b"RFKI";
 
 /// Current serialization format version.
 pub const SERIALIZE_VERSION: u32 = 1;
 
-/// Serialize a list of items into a compact binary format.
+/// Magic + version + item count.
+const ITEMS_HEADER_LEN: usize = 12;
+/// Magic + version + key count + item count.
+const KEYED_HEADER_LEN: usize = 16;
+/// Size of the length prefix in front of every string.
+const LEN_PREFIX_SIZE: usize = 4;
+/// Size of one serialized weight.
+const WEIGHT_SIZE: usize = 8;
+
+// ---------------------------------------------------------------------------
+// Index-level API (used by the bindings)
+// ---------------------------------------------------------------------------
+
+/// Serialize a [`FuzzyIndexCore`] under [`FUZZY_INDEX_MAGIC`].
+pub fn serialize_fuzzy_index(index: &FuzzyIndexCore) -> Vec<u8> {
+    serialize_items(index.items(), FUZZY_INDEX_MAGIC)
+}
+
+/// Rebuild a [`FuzzyIndexCore`] from bytes produced by [`serialize_fuzzy_index`].
 ///
-/// Format: `[magic 4B] [version u32 LE] [count u32 LE] [items...]`
-/// Each item: `[len u32 LE] [utf-8 bytes]`
+/// Accepts every magic in [`FUZZY_INDEX_ACCEPTED_MAGICS`], so indexes written
+/// by either the Node.js or the browser build (current or legacy) load in both.
+///
+/// # Errors
+///
+/// Same as [`deserialize_items`], with any accepted magic allowed.
+pub fn deserialize_fuzzy_index(bytes: &[u8]) -> Result<FuzzyIndexCore, String> {
+    parse_items(bytes, FUZZY_INDEX_ACCEPTED_MAGICS).map(FuzzyIndexCore::new)
+}
+
+/// Serialize a [`KeyedFuzzyIndexCore`] under [`KEYED_INDEX_MAGIC`].
+pub fn serialize_keyed_index(index: &KeyedFuzzyIndexCore) -> Vec<u8> {
+    serialize_keyed(index.key_texts(), index.weights(), KEYED_INDEX_MAGIC)
+}
+
+/// Rebuild a [`KeyedFuzzyIndexCore`] from bytes produced by [`serialize_keyed_index`].
+///
+/// Round-trips every state an index can be in, including a destroyed one.
+/// A payload with zero keys (what `destroy()` produced before it kept the
+/// key configuration) loads as an empty index without keys.
+///
+/// # Errors
+///
+/// Everything [`deserialize_keyed`] rejects, plus weights the constructor
+/// would reject (negative, non-finite, or all zero).
+pub fn deserialize_keyed_index(bytes: &[u8]) -> Result<KeyedFuzzyIndexCore, String> {
+    let (key_texts, weights) = deserialize_keyed(bytes, KEYED_INDEX_MAGIC)?;
+
+    if key_texts.is_empty() {
+        // The constructor rejects zero keys. Only `destroy()` before it kept
+        // the key configuration produced this payload; rebuild that state.
+        return Ok(KeyedFuzzyIndexCore::without_keys());
+    }
+
+    // Same rules as `KeyedFuzzyIndexCore::new`, reported with the key index.
+    if let Some((key, weight)) = weights
+        .iter()
+        .enumerate()
+        .find(|(_, w)| !w.is_finite() || **w < 0.0)
+    {
+        return Err(format!(
+            "Invalid data: weight of key {key} is {weight}; weights must be finite non-negative numbers"
+        ));
+    }
+    if weights.iter().sum::<f64>() <= 0.0 {
+        return Err("Invalid data: total weight must be greater than zero".into());
+    }
+
+    KeyedFuzzyIndexCore::new(key_texts, weights).map_err(|e| format!("Invalid data: {e}"))
+}
+
+// ---------------------------------------------------------------------------
+// Format-level API
+// ---------------------------------------------------------------------------
+
+/// Serialize a list of items into the `FuzzyIndex` format under `magic`.
+///
+/// Each item and the item count must fit in a `u32`, which always holds for
+/// strings that came from JavaScript.
 pub fn serialize_items(items: &[String], magic: &[u8; 4]) -> Vec<u8> {
-    let mut buf = Vec::new();
+    let payload_len: usize = items.iter().map(|s| LEN_PREFIX_SIZE + s.len()).sum();
+    let mut buf = Vec::with_capacity(ITEMS_HEADER_LEN + payload_len);
     buf.extend_from_slice(magic);
     buf.extend_from_slice(&SERIALIZE_VERSION.to_le_bytes());
     buf.extend_from_slice(&(items.len() as u32).to_le_bytes());
     for item in items {
-        buf.extend_from_slice(&(item.len() as u32).to_le_bytes());
-        buf.extend_from_slice(item.as_bytes());
+        write_string(&mut buf, item);
     }
     buf
 }
 
-/// Deserialize a list of items from a compact binary format.
+/// Deserialize a list of items written by [`serialize_items`] under exactly `magic`.
 ///
-/// Returns the list of items on success, or an error message on failure.
+/// # Errors
+///
+/// Returns a message describing the first problem found: a short header,
+/// wrong magic, unsupported version, an item count or length that exceeds
+/// the payload, invalid UTF-8, or trailing bytes.
 pub fn deserialize_items(bytes: &[u8], magic: &[u8; 4]) -> Result<Vec<String>, String> {
-    let header_size = magic.len() + 4 + 4; // magic + version + count
-
-    if bytes.len() < header_size {
-        return Err("Invalid data: too short".into());
-    }
-
-    if &bytes[0..4] != magic {
-        return Err("Invalid data: bad magic bytes".into());
-    }
-
-    let version = u32::from_le_bytes(
-        bytes[4..8]
-            .try_into()
-            .map_err(|_| "Invalid data: truncated header".to_string())?,
-    );
-    if version != SERIALIZE_VERSION {
-        return Err(format!(
-            "Unsupported format version: expected {SERIALIZE_VERSION}, got {version}"
-        ));
-    }
-
-    let count = u32::from_le_bytes(
-        bytes[8..12]
-            .try_into()
-            .map_err(|_| "Invalid data: truncated header".to_string())?,
-    ) as usize;
-    let mut offset = header_size;
-
-    // Reject obviously invalid counts before allocating.
-    // Each item needs at least 4 bytes (length field), so count cannot
-    // exceed the remaining payload divided by 4.
-    let max_possible = bytes.len().saturating_sub(header_size) / 4;
-    if count > max_possible {
-        return Err("Invalid data: item count exceeds payload size".into());
-    }
-
-    let mut items = Vec::with_capacity(count);
-
-    for _ in 0..count {
-        if offset + 4 > bytes.len() {
-            return Err("Invalid data: truncated".into());
-        }
-        let len = u32::from_le_bytes(
-            bytes[offset..offset + 4]
-                .try_into()
-                .map_err(|_| "Invalid data: truncated".to_string())?,
-        ) as usize;
-        offset += 4;
-        if offset + len > bytes.len() {
-            return Err("Invalid data: truncated".into());
-        }
-        let s = std::str::from_utf8(&bytes[offset..offset + len])
-            .map_err(|e| format!("Invalid UTF-8: {e}"))?;
-        items.push(s.to_owned());
-        offset += len;
-    }
-
-    if offset != bytes.len() {
-        return Err("Invalid data: trailing bytes".into());
-    }
-
-    Ok(items)
+    parse_items(bytes, &[magic])
 }
 
-/// Serialize a keyed index into a compact binary format.
+/// Serialize keyed-index data into the `KeyedFuzzyIndex` format under `magic`.
 ///
-/// Format:
-///   `[magic 4B] [version u32 LE] [num_keys u32 LE] [num_items u32 LE]`
-///   `[weights: num_keys x f64 LE]`
-///   `[key_texts column-major: for each key, for each item: [len u32 LE][utf-8 bytes]]`
+/// `key_texts` holds one column per key, all of the same length, and
+/// `weights` one entry per key.
 pub fn serialize_keyed(key_texts: &[Vec<String>], weights: &[f64], magic: &[u8; 4]) -> Vec<u8> {
     let num_keys = weights.len();
-    let num_items = key_texts.first().map_or(0, |v| v.len());
+    let num_items = key_texts.first().map_or(0, Vec::len);
+    let payload_len: usize = key_texts
+        .iter()
+        .flatten()
+        .map(|s| LEN_PREFIX_SIZE + s.len())
+        .sum();
 
-    let mut buf = Vec::new();
+    let mut buf = Vec::with_capacity(KEYED_HEADER_LEN + num_keys * WEIGHT_SIZE + payload_len);
     buf.extend_from_slice(magic);
     buf.extend_from_slice(&SERIALIZE_VERSION.to_le_bytes());
     buf.extend_from_slice(&(num_keys as u32).to_le_bytes());
     buf.extend_from_slice(&(num_items as u32).to_le_bytes());
-
     for &w in weights {
         buf.extend_from_slice(&w.to_le_bytes());
     }
-
-    for key_col in key_texts {
-        for item in key_col {
-            buf.extend_from_slice(&(item.len() as u32).to_le_bytes());
-            buf.extend_from_slice(item.as_bytes());
-        }
+    for item in key_texts.iter().flatten() {
+        write_string(&mut buf, item);
     }
-
     buf
 }
 
-/// Deserialize a keyed index from a compact binary format.
+/// Deserialize keyed-index data written by [`serialize_keyed`] under exactly `magic`.
 ///
-/// Returns `(key_texts, weights)` on success, or an error message on failure.
+/// Returns `(key_texts, weights)`. Weights are returned as stored; use
+/// [`deserialize_keyed_index`] to also validate them and build an index.
+///
+/// # Errors
+///
+/// Returns a message describing the first problem found: a short header,
+/// wrong magic, unsupported version, zero keys with a non-zero item count
+/// (only a destroyed index has zero keys, and it has no items), key or item
+/// counts that exceed the payload, a truncated weight or key text, invalid
+/// UTF-8, or trailing bytes.
 pub fn deserialize_keyed(
     bytes: &[u8],
     magic: &[u8; 4],
 ) -> Result<(Vec<Vec<String>>, Vec<f64>), String> {
-    let header_size = 4 + 4 + 4 + 4; // magic + version + num_keys + num_items
+    let mut reader = Reader::new(bytes);
+    read_preamble(&mut reader, KEYED_HEADER_LEN, &[magic])?;
+    let num_keys = reader.count("key count")?;
+    let num_items = reader.count("item count")?;
 
-    if bytes.len() < header_size {
-        return Err("Invalid data: too short".into());
+    if num_keys == 0 && num_items != 0 {
+        return Err(format!(
+            "Invalid data: header declares {num_items} items but no keys"
+        ));
     }
 
-    if &bytes[0..4] != magic {
-        return Err("Invalid data: bad magic bytes".into());
+    // Check the declared sizes against the bytes actually present before
+    // allocating anything sized by them.
+    if num_keys > reader.remaining() / WEIGHT_SIZE {
+        return Err(format!(
+            "Invalid data: truncated weights: {num_keys} keys need {} bytes, but only {} remain",
+            num_keys as u64 * WEIGHT_SIZE as u64,
+            reader.remaining()
+        ));
+    }
+    let mut weights = Vec::with_capacity(num_keys);
+    for key in 0..num_keys {
+        weights.push(reader.weight(key)?);
     }
 
-    let version = u32::from_le_bytes(
-        bytes[4..8]
-            .try_into()
-            .map_err(|_| "Invalid data: truncated header".to_string())?,
-    );
+    // Every key text needs at least its length prefix.
+    let min_text_bytes = num_keys
+        .checked_mul(num_items)
+        .and_then(|n| n.checked_mul(LEN_PREFIX_SIZE));
+    if min_text_bytes.is_none_or(|n| n > reader.remaining()) {
+        return Err(format!(
+            "Invalid data: {num_keys} keys x {num_items} items need at least {} bytes of key text, but only {} remain",
+            num_keys as u128 * num_items as u128 * LEN_PREFIX_SIZE as u128,
+            reader.remaining()
+        ));
+    }
+    let mut key_texts = Vec::with_capacity(num_keys);
+    for key in 0..num_keys {
+        let mut column = Vec::with_capacity(num_items);
+        for item in 0..num_items {
+            column.push(reader.string(Slot::KeyText { key, item })?);
+        }
+        key_texts.push(column);
+    }
+
+    reader.finish("the last key text")?;
+    Ok((key_texts, weights))
+}
+
+// ---------------------------------------------------------------------------
+// Parsing internals
+// ---------------------------------------------------------------------------
+
+fn write_string(buf: &mut Vec<u8>, s: &str) {
+    buf.extend_from_slice(&(s.len() as u32).to_le_bytes());
+    buf.extend_from_slice(s.as_bytes());
+}
+
+fn parse_items(bytes: &[u8], accepted_magics: &[&[u8; 4]]) -> Result<Vec<String>, String> {
+    let mut reader = Reader::new(bytes);
+    read_preamble(&mut reader, ITEMS_HEADER_LEN, accepted_magics)?;
+    let count = reader.count("item count")?;
+
+    // Every item needs at least its length prefix; check before allocating.
+    let max_items = reader.remaining() / LEN_PREFIX_SIZE;
+    if count > max_items {
+        return Err(format!(
+            "Invalid data: item count {count} exceeds the payload: {} remaining bytes hold at most {max_items} items",
+            reader.remaining()
+        ));
+    }
+    let mut items = Vec::with_capacity(count);
+    for item in 0..count {
+        items.push(reader.string(Slot::Item(item))?);
+    }
+
+    reader.finish("the last item")?;
+    Ok(items)
+}
+
+/// Check the header length, magic and version.
+fn read_preamble(
+    reader: &mut Reader<'_>,
+    header_len: usize,
+    accepted_magics: &[&[u8; 4]],
+) -> Result<(), String> {
+    if reader.remaining() < header_len {
+        return Err(format!(
+            "Invalid data: too short: the header needs {header_len} bytes, got {}",
+            reader.remaining()
+        ));
+    }
+    let magic: [u8; 4] = reader
+        .array()
+        .ok_or_else(|| reader.truncated("magic bytes"))?;
+    if !accepted_magics.iter().any(|m| **m == magic) {
+        return Err(bad_magic(magic, accepted_magics));
+    }
+    let version = reader.u32("format version")?;
     if version != SERIALIZE_VERSION {
         return Err(format!(
             "Unsupported format version: expected {SERIALIZE_VERSION}, got {version}"
         ));
     }
+    Ok(())
+}
 
-    let num_keys = u32::from_le_bytes(
-        bytes[8..12]
-            .try_into()
-            .map_err(|_| "Invalid data: truncated header".to_string())?,
-    ) as usize;
+fn bad_magic(found: [u8; 4], accepted_magics: &[&[u8; 4]]) -> String {
+    let expected = accepted_magics
+        .iter()
+        .map(|m| display_magic(**m))
+        .collect::<Vec<_>>()
+        .join(" or ");
+    let hint = if &found == KEYED_INDEX_MAGIC {
+        " (this is a serialized KeyedFuzzyIndex)"
+    } else if &found == FUZZY_INDEX_MAGIC || &found == FUZZY_INDEX_WASM_MAGIC {
+        " (this is a serialized FuzzyIndex)"
+    } else {
+        ""
+    };
+    format!(
+        "Invalid data: bad magic bytes: expected {expected}, got {}{hint}",
+        display_magic(found)
+    )
+}
 
-    let num_items = u32::from_le_bytes(
-        bytes[12..16]
-            .try_into()
-            .map_err(|_| "Invalid data: truncated header".to_string())?,
-    ) as usize;
-
-    let mut offset = header_size;
-
-    // Read weights (num_keys x 8 bytes each)
-    let weights_size = num_keys * 8;
-    if offset + weights_size > bytes.len() {
-        return Err("Invalid data: truncated weights".into());
+/// Show magic bytes as `"RFZI"` when printable, else as `0x52465a00`.
+fn display_magic(magic: [u8; 4]) -> String {
+    if magic.iter().all(u8::is_ascii_graphic) {
+        let text: String = magic.iter().copied().map(char::from).collect();
+        format!("\"{text}\"")
+    } else {
+        format!("0x{:08x}", u32::from_be_bytes(magic))
     }
-    let mut weights = Vec::with_capacity(num_keys);
-    for _ in 0..num_keys {
-        let w = f64::from_le_bytes(
-            bytes[offset..offset + 8]
-                .try_into()
-                .map_err(|_| "Invalid data: truncated weight".to_string())?,
-        );
-        weights.push(w);
-        offset += 8;
-    }
+}
 
-    // Read key_texts column-major
-    let mut key_texts: Vec<Vec<String>> = Vec::with_capacity(num_keys);
-    for _ in 0..num_keys {
-        let mut col = Vec::with_capacity(num_items);
-        for _ in 0..num_items {
-            if offset + 4 > bytes.len() {
-                return Err("Invalid data: truncated".into());
-            }
-            let len = u32::from_le_bytes(
-                bytes[offset..offset + 4]
-                    .try_into()
-                    .map_err(|_| "Invalid data: truncated".to_string())?,
-            ) as usize;
-            offset += 4;
-            if offset + len > bytes.len() {
-                return Err("Invalid data: truncated".into());
-            }
-            let s = std::str::from_utf8(&bytes[offset..offset + len])
-                .map_err(|e| format!("Invalid UTF-8: {e}"))?;
-            col.push(s.to_owned());
-            offset += len;
+/// Convert a `u32` read from the payload to `usize`.
+///
+/// Saturates on targets where `usize` is narrower than 32 bits; the value is
+/// then rejected by the bounds checks that follow.
+fn to_usize(value: u32) -> usize {
+    usize::try_from(value).unwrap_or(usize::MAX)
+}
+
+/// Which string a parse error refers to.
+#[derive(Clone, Copy)]
+enum Slot {
+    Item(usize),
+    KeyText { key: usize, item: usize },
+}
+
+impl fmt::Display for Slot {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Item(item) => write!(f, "item {item}"),
+            Self::KeyText { key, item } => write!(f, "key {key} item {item}"),
         }
-        key_texts.push(col);
+    }
+}
+
+/// Cursor over untrusted bytes.
+///
+/// Reads shrink the remaining slice instead of adding to an offset, so no
+/// bounds check can overflow, whatever the width of `usize`.
+struct Reader<'a> {
+    rest: &'a [u8],
+    total_len: usize,
+}
+
+impl<'a> Reader<'a> {
+    fn new(bytes: &'a [u8]) -> Self {
+        Self {
+            rest: bytes,
+            total_len: bytes.len(),
+        }
     }
 
-    if offset != bytes.len() {
-        return Err("Invalid data: trailing bytes".into());
+    fn remaining(&self) -> usize {
+        self.rest.len()
     }
 
-    Ok((key_texts, weights))
+    fn offset(&self) -> usize {
+        self.total_len - self.rest.len()
+    }
+
+    /// Error for a fixed-size field that is cut off (built lazily, only on failure).
+    fn truncated(&self, what: impl fmt::Display) -> String {
+        format!(
+            "Invalid data: truncated: missing {what} at byte {}",
+            self.offset()
+        )
+    }
+
+    /// Consume the next `n` bytes, or nothing if fewer remain.
+    fn take(&mut self, n: usize) -> Option<&'a [u8]> {
+        let (head, tail) = self.rest.split_at_checked(n)?;
+        self.rest = tail;
+        Some(head)
+    }
+
+    /// Consume the next `N` bytes, or nothing if fewer remain.
+    fn array<const N: usize>(&mut self) -> Option<[u8; N]> {
+        let (head, tail) = self.rest.split_first_chunk::<N>()?;
+        self.rest = tail;
+        Some(*head)
+    }
+
+    fn u32(&mut self, what: &str) -> Result<u32, String> {
+        self.array()
+            .map(u32::from_le_bytes)
+            .ok_or_else(|| self.truncated(what))
+    }
+
+    fn count(&mut self, what: &str) -> Result<usize, String> {
+        self.u32(what).map(to_usize)
+    }
+
+    fn weight(&mut self, key: usize) -> Result<f64, String> {
+        self.array()
+            .map(f64::from_le_bytes)
+            .ok_or_else(|| self.truncated(format_args!("the weight of key {key}")))
+    }
+
+    /// Read one length-prefixed UTF-8 string.
+    fn string(&mut self, slot: Slot) -> Result<String, String> {
+        let at = self.offset();
+        let len = self
+            .array()
+            .map(u32::from_le_bytes)
+            .ok_or_else(|| self.truncated(format_args!("the length of {slot}")))?;
+        let bytes = self.take(to_usize(len)).ok_or_else(|| {
+            format!(
+                "Invalid data: truncated: {slot} at byte {at} declares {len} bytes, but only {} remain",
+                self.remaining()
+            )
+        })?;
+        let text = std::str::from_utf8(bytes)
+            .map_err(|e| format!("Invalid data: {slot} at byte {at} is not valid UTF-8: {e}"))?;
+        Ok(text.to_owned())
+    }
+
+    /// Require that the whole input has been consumed.
+    fn finish(&self, after: &str) -> Result<(), String> {
+        if self.rest.is_empty() {
+            Ok(())
+        } else {
+            Err(format!(
+                "Invalid data: {} trailing bytes after {after} (at byte {})",
+                self.remaining(),
+                self.offset()
+            ))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn take_never_overflows() {
+        let bytes = [1u8, 2, 3, 4, 5];
+        let mut reader = Reader::new(&bytes);
+        assert_eq!(reader.take(2), Some(&[1u8, 2][..]));
+        // On 32-bit targets `offset + len` for these lengths wraps around;
+        // the reader must reject them without consuming anything.
+        for n in [usize::MAX, usize::MAX - 1, usize::MAX - 2, 4] {
+            assert_eq!(reader.take(n), None);
+            assert_eq!(reader.offset(), 2);
+        }
+        assert_eq!(reader.take(3), Some(&[3u8, 4, 5][..]));
+        assert_eq!(reader.take(0), Some(&[][..]));
+        assert_eq!(reader.take(1), None);
+    }
+
+    #[test]
+    fn to_usize_is_lossless_on_32_and_64_bit() {
+        assert_eq!(to_usize(0), 0);
+        assert_eq!(to_usize(u32::MAX) as u64, u64::from(u32::MAX));
+    }
+
+    #[test]
+    fn display_magic_formats() {
+        assert_eq!(display_magic(*b"RFZI"), "\"RFZI\"");
+        assert_eq!(display_magic([0, 1, 0xAB, b'Z']), "0x0001ab5a");
+        // Space is not graphic, so this falls back to hex.
+        assert_eq!(display_magic(*b"RF I"), "0x52462049");
+    }
 }

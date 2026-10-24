@@ -1,6 +1,6 @@
 {
   "name": "rapid-fuzzy-wasm32-wasi",
-  "version": "2.1.1",
+  "version": "2.2.0",
   "main": "rapid-fuzzy.wasi.cjs",
   "files": [
     "rapid-fuzzy.wasm32-wasi.wasm",
@@ -8,9 +8,11 @@
     "rapid-fuzzy.wasi.d.cts",
     "rapid-fuzzy.wasi-browser.js",
     "wasi-worker.mjs",
-    "wasi-worker-browser.mjs"
+    "wasi-worker-browser.mjs",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES"
   ],
-  "description": "Rust-powered fuzzy search and string distance for JavaScript/TypeScript. Up to 15,000x faster than fuse.js with indexed mode.",
+  "description": "Rust-powered fuzzy search and string distance for JavaScript/TypeScript, with native Node.js bindings and a WebAssembly build for browsers, Deno and Workers.",
   "keywords": [
     "fuzzy",
     "fuzzy-search",
@@ -46,7 +48,7 @@
   "type": "module",
   "dependencies": {
     "@napi-rs/wasm-runtime": "~1.2.4",
-    "@emnapi/core": "2.0.0-alpha.5",
-    "@emnapi/runtime": "2.0.0-alpha.5"
+    "@emnapi/core": "2.0.0-alpha.6",
+    "@emnapi/runtime": "2.0.0-alpha.6"
   }
 }

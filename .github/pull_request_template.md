@@ -16,8 +16,8 @@
 - [ ] Lint passes (`pnpm run check`)
 - [ ] TypeScript type-check passes (`pnpm run typecheck`)
 - [ ] JS tests pass (`pnpm test`)
-- [ ] Rust tests pass (`cargo test`)
-- [ ] Clippy passes (`cargo clippy`)
+- [ ] Rust tests pass (`cargo test --workspace`)
+- [ ] Clippy passes (`cargo clippy --workspace --all-targets -- -D warnings`)
 - [ ] Build succeeds (`pnpm run build`)
-- [ ] Changeset included (if `src/` or `crates/` changed)
+- [ ] Changeset included (if a shipped file changed: `crates/`, the root JS/TS entry points, `npm/`)
 - [ ] Benchmarks run for performance-sensitive changes

@@ -4,15 +4,23 @@
   "baseBranchPatterns": ["develop"],
   "minimumReleaseAge": "3 days",
   "prConcurrentLimit": 0,
+  "prHourlyLimit": 0,
   "ignoreDeps": ["string-similarity", "@types/string-similarity"],
   "lockFileMaintenance": {
-    "enabled": false
+    "enabled": true,
+    "automerge": true
   },
   "packageRules": [
     {
       "description": "Automerge non-major devDependency updates",
       "matchDepTypes": ["devDependencies"],
       "matchUpdateTypes": ["minor", "patch", "digest"],
+      "automerge": true
+    },
+    {
+      "description": "Automerge minor/patch updates of the pinned pnpm version (package.json packageManager)",
+      "matchDepTypes": ["packageManager"],
+      "matchUpdateTypes": ["minor", "patch"],
       "automerge": true
     },
     {
@@ -27,6 +35,18 @@
       "matchManagers": ["github-actions"],
       "matchUpdateTypes": ["digest"],
       "minimumReleaseAge": "0 days"
+    },
+    {
+      "description": "The pnpm-workspace.yaml overrides are security floors that must stay within the major their dependents ask for (see the comment there): never propose a major bump",
+      "matchFileNames": ["pnpm-workspace.yaml"],
+      "matchDepTypes": ["pnpm-workspace.overrides"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
+    },
+    {
+      "description": "@types-node-20.11/node and @types-node-22.10/node are older @types/node releases that __test__/types-node-legacy type-checks the declarations against (see main.mts there): an update would test the current release instead",
+      "matchDepNames": ["@types-node-20.11/node", "@types-node-22.10/node"],
+      "enabled": false
     },
     {
       "description": "Group Rust crate updates",
@@ -57,6 +77,15 @@
       "description": "Bump the biome.json $schema URL together with @biomejs/biome",
       "matchPackageNames": ["@biomejs/biome"],
       "groupName": "biome"
+    },
+    {
+      "description": "A binaryen bump must refresh the pinned archive checksum too (the command is allowed in .github/workflows/renovate.yml)",
+      "matchDepNames": ["WebAssembly/binaryen"],
+      "postUpgradeTasks": {
+        "commands": ["node .github/scripts/update-binaryen-sha256.cjs"],
+        "fileFilters": ["scripts/install-binaryen.sh"],
+        "executionMode": "update"
+      }
     }
   ],
   "customManagers": [
@@ -66,6 +95,7 @@
       "managerFilePatterns": ["/^biome\\.json$/"],
       "matchStrings": ["https://biomejs\\.dev/schemas/(?<currentValue>[^/]+)/schema\\.json"],
       "depNameTemplate": "@biomejs/biome",
+      "depTypeTemplate": "devDependencies",
       "datasourceTemplate": "npm"
     },
     {
@@ -76,6 +106,29 @@
       "depNameTemplate": "WebAssembly/binaryen",
       "datasourceTemplate": "github-releases",
       "versioningTemplate": "regex:^version_(?<major>\\d+)$"
+    },
+    {
+      "customType": "regex",
+      "description": "npm CLI pinned in the release workflow (npm trusted publishing needs 11.5.1 or later)",
+      "managerFilePatterns": ["/^\\.github/workflows/release\\.yml$/"],
+      "matchStrings": ["NPM_VERSION: (?<currentValue>\\d+\\.\\d+\\.\\d+)"],
+      "depNameTemplate": "npm",
+      "datasourceTemplate": "npm"
+    },
+    {
+      "customType": "regex",
+      "description": "Codecov CLI release pinned through codecov/codecov-action's version input",
+      "managerFilePatterns": ["/^\\.github/workflows/ci\\.yml$/"],
+      "matchStrings": ["version: (?<currentValue>v\\d+\\.\\d+\\.\\d+) # codecov-cli"],
+      "depNameTemplate": "codecov/codecov-cli",
+      "datasourceTemplate": "github-releases"
+    },
+    {
+      "customType": "regex",
+      "description": "Tool versions installed with taiki-e/install-action in workflows",
+      "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.ya?ml$/"],
+      "matchStrings": ["tool: (?<depName>[a-z0-9-]+)@(?<currentValue>\\d+\\.\\d+\\.\\d+)"],
+      "datasourceTemplate": "crate"
     }
   ]
 }

@@ -10,7 +10,8 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const ASSET_DIR = join(new URL('.', import.meta.url).pathname, '..', '.github', 'assets');
+// Paths are relative to the repository root, where `pnpm bench:charts` runs.
+const ASSET_DIR = join('.github', 'assets');
 mkdirSync(ASSET_DIR, { recursive: true });
 
 // ---------------------------------------------------------------------------
@@ -31,63 +32,70 @@ interface ChartData {
 }
 
 function parseOps(s: string): number | null {
-  const m = s.replace(/\*\*/g, '').match(/([\d,]+)\s*ops\/s/);
-  return m ? Number(m[1].replace(/,/g, '')) : null;
+  const digits = s.replace(/\*\*/g, '').match(/([\d,]+)\s*ops\/s/)?.[1];
+  return digits === undefined ? null : Number(digits.replace(/,/g, ''));
+}
+
+/** The lines between `<!-- bench:<name>:start -->` and `<!-- bench:<name>:end -->`. */
+function blockLines(name: string): string[] {
+  const start = readme.indexOf(`<!-- bench:${name}:start -->`);
+  const end = readme.indexOf(`<!-- bench:${name}:end -->`);
+  if (start === -1 || end === -1 || end < start) {
+    console.warn(`⚠ No bench:${name} block found in README`);
+    return [];
+  }
+  return readme.slice(start, end).split('\n');
+}
+
+const SEARCH_COLUMNS = ['rapid-fuzzy', 'rapid-fuzzy (indexed)', 'fuse.js', 'fuzzysort', 'uFuzzy'];
+const DISTANCE_COLUMNS = ['rapid-fuzzy', 'fastest-levenshtein', 'leven', 'string-similarity'];
+
+/** The bars of one table row: one per column with a value. */
+function rowBars(columns: readonly string[], cells: readonly string[]): BarEntry[] {
+  const bars: BarEntry[] = [];
+  for (const [i, label] of columns.entries()) {
+    const value = parseOps(cells[i] ?? '');
+    if (value !== null) bars.push({ label, value });
+  }
+  return bars;
 }
 
 function parseSearchTable(): ChartData {
   const groups: ChartData['groups'] = [];
-  const lines = readme.split('\n');
 
-  for (const line of lines) {
-    // Match rows: | Small (20 items) | rf | fi | fj | fs | uf |
-    const m = line.match(
-      /\|\s*(Small|Medium|Large|XL)\s*\([^)]+\)\s*\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|/,
-    );
-    if (!m) continue;
-
-    const groupLabel = m[1];
-    const rf = parseOps(m[2]);
-    const fi = parseOps(m[3]);
-    const fj = parseOps(m[4]);
-    const fs = parseOps(m[5]);
-    const uf = parseOps(m[6]);
-
-    const bars: BarEntry[] = [];
-    if (rf !== null) bars.push({ label: 'rapid-fuzzy', value: rf });
-    if (fi !== null) bars.push({ label: 'rapid-fuzzy (indexed)', value: fi });
-    if (fj !== null) bars.push({ label: 'fuse.js', value: fj });
-    if (fs !== null) bars.push({ label: 'fuzzysort', value: fs });
-    if (uf !== null) bars.push({ label: 'uFuzzy', value: uf });
-
-    groups.push({ groupLabel, bars });
+  for (const line of blockLines('search')) {
+    // Rows: | Small (20 items) | rf | fi | fj | fs | uf |
+    const cells = line.split('|').slice(1, -1);
+    const groupLabel = cells[0]?.trim() ?? '';
+    const bars = rowBars(SEARCH_COLUMNS, cells.slice(1));
+    if (bars.length > 1) groups.push({ groupLabel, bars });
   }
 
-  return { title: 'Fuzzy Search Performance', subtitle: 'ops/s (higher is better)', groups };
+  return {
+    title: 'Fuzzy Search Performance',
+    subtitle: 'ops/s (higher is better), Node.js — see README for setup and caveats',
+    groups,
+  };
 }
+
+/** Rows of the distance table drawn in the chart. */
+const DISTANCE_ROWS = new Set([
+  'Levenshtein',
+  'Normalized Levenshtein',
+  'Sorensen-Dice',
+  'Jaro-Winkler',
+  'Damerau-Levenshtein',
+]);
 
 function parseDistanceTable(): ChartData {
   const groups: ChartData['groups'] = [];
-  const lines = readme.split('\n');
 
-  for (const line of lines) {
-    const m = line.match(
-      /\|\s*(Levenshtein|Normalized Levenshtein|Sorensen-Dice|Jaro-Winkler|Damerau-Levenshtein)\s*\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|/,
-    );
-    if (!m) continue;
-
-    const groupLabel = m[1];
-    const rf = parseOps(m[2]);
-    const fl = parseOps(m[3]);
-    const lv = parseOps(m[4]);
-    const ss = parseOps(m[5]);
-
-    const bars: BarEntry[] = [];
-    if (rf !== null) bars.push({ label: 'rapid-fuzzy', value: rf });
-    if (fl !== null) bars.push({ label: 'fastest-levenshtein', value: fl });
-    if (lv !== null) bars.push({ label: 'leven', value: lv });
-    if (ss !== null) bars.push({ label: 'string-similarity', value: ss });
-
+  for (const line of blockLines('distance')) {
+    // Rows: | Levenshtein | rf | fl | lv | ss |
+    const cells = line.split('|').slice(1, -1);
+    const groupLabel = cells[0]?.trim() ?? '';
+    if (!DISTANCE_ROWS.has(groupLabel)) continue;
+    const bars = rowBars(DISTANCE_COLUMNS, cells.slice(1));
     if (bars.length > 1) groups.push({ groupLabel, bars });
   }
 
@@ -134,10 +142,9 @@ function buildValueText(bar: BarEntry, group: { bars: BarEntry[] }): string {
   const isRapidFuzzy = bar.label === 'rapid-fuzzy' || bar.label === 'rapid-fuzzy (indexed)';
   if (!isRapidFuzzy) return text;
 
-  const rfEntry = group.bars.find((b) => b.label === 'rapid-fuzzy');
   const fuseEntry = group.bars.find((b) => b.label === 'fuse.js');
-  if (rfEntry && fuseEntry && fuseEntry.value > 0) {
-    const mult = Math.round(rfEntry.value / fuseEntry.value);
+  if (fuseEntry && fuseEntry.value > 0) {
+    const mult = Math.round(bar.value / fuseEntry.value);
     if (mult >= 2) text += ` — ${mult}x vs fuse.js`;
   }
 

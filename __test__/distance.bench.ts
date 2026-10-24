@@ -1,31 +1,37 @@
-import { bench, describe } from 'vitest';
+import { test } from 'vitest';
 import { damerauLevenshtein, hamming, levenshtein, levenshteinBatch } from '../index.js';
-import { equalLengthPairs, pairs } from './bench-fixtures.js';
+import * as fixtures from './bench-fixtures.js';
 
-describe('Levenshtein Distance', () => {
-  bench('rapid-fuzzy', () => {
-    for (const [a, b] of pairs) {
-      levenshtein(a, b);
-    }
-  });
+// Vitest's module runner turns imported bindings into getters: copy the
+// fixtures into local constants so the measured functions don't call a getter
+// on every iteration.
+const { equalLengthPairs, pairs } = fixtures;
 
-  bench('rapid-fuzzy (batch)', () => {
-    levenshteinBatch(pairs);
-  });
+test('Levenshtein Distance', async ({ bench }) => {
+  await bench.compare(
+    bench('rapid-fuzzy', () => {
+      for (const [a, b] of pairs) {
+        levenshtein(a, b);
+      }
+    }),
+    bench('rapid-fuzzy (batch)', () => {
+      levenshteinBatch(pairs);
+    }),
+  );
 });
 
-describe('Damerau-Levenshtein', () => {
-  bench('rapid-fuzzy', () => {
+test('Damerau-Levenshtein', async ({ bench }) => {
+  await bench('rapid-fuzzy', () => {
     for (const [a, b] of pairs) {
       damerauLevenshtein(a, b);
     }
-  });
+  }).run();
 });
 
-describe('Hamming Distance', () => {
-  bench('rapid-fuzzy', () => {
+test('Hamming Distance', async ({ bench }) => {
+  await bench('rapid-fuzzy', () => {
     for (const [a, b] of equalLengthPairs) {
       hamming(a, b);
     }
-  });
+  }).run();
 });

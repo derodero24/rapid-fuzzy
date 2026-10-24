@@ -3,48 +3,23 @@ name: CI
 on:
   push:
     branches: [develop]
-    paths:
-      - 'crates/**'
-      - '__test__/**'
-      - 'e2e/**'
-      - 'src/**'
-      - 'package.json'
-      - 'pnpm-lock.yaml'
-      - 'pnpm-workspace.yaml'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - 'tsconfig.json'
-      - 'biome.json'
-      - 'playwright.config.ts'
-      - '.github/workflows/ci.yml'
-      - 'deny.toml'
-      - 'rust-toolchain.toml'
-      - 'scripts/**'
-      - 'vitest.config.mts'
-      - 'codecov.yml'
+    # A deny-list rather than an allow-list: every file that ships in the npm
+    # package or feeds a build or test (root *.js/*.mjs/*.d.ts loaders, npm/,
+    # scripts/, e2e/, .cargo/, .nvmrc, ...) must trigger CI, including files
+    # added later. Only paths that cannot affect any job are skipped. Keep
+    # this list in sync with the plan job's docs-only pattern below.
+    paths-ignore:
+      - '**/*.md'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/assets/**'
+      - '.github/CODEOWNERS'
+      - '.github/FUNDING.yml'
   pull_request:
     branches: [develop]
-    # "labeled" lets the ci-full label re-run the plan job on an open PR.
-    types: [opened, synchronize, reopened, labeled]
-    paths:
-      - 'crates/**'
-      - '__test__/**'
-      - 'e2e/**'
-      - 'src/**'
-      - 'package.json'
-      - 'pnpm-lock.yaml'
-      - 'pnpm-workspace.yaml'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - 'tsconfig.json'
-      - 'biome.json'
-      - 'playwright.config.ts'
-      - '.github/workflows/ci.yml'
-      - 'deny.toml'
-      - 'rust-toolchain.toml'
-      - 'scripts/**'
-      - 'vitest.config.mts'
-      - 'codecov.yml'
+    # No paths-ignore here: a required status check that never reports blocks
+    # the PR, so every PR runs the workflow, and the plan job skips the other
+    # jobs when the PR only touches the paths ignored above ("CI Complete"
+    # still reports). Keep the plan job's pattern in sync with the list above.
 
 permissions:
   contents: read
@@ -52,20 +27,20 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  # A label event whose jobs are all skipped must not cancel a run in progress.
-  cancel-in-progress: ${{ github.event.action != 'labeled' }}
+  cancel-in-progress: true
 
 jobs:
-  # Decide how much of the build matrix a run needs. Pushes to develop always
-  # build every target. Pull requests only build the targets the test jobs
-  # consume unless they touch the Rust sources, the Cargo manifests or this
-  # workflow, which keeps dependency-only PRs cheap.
+  # Decide what a run needs. Pull requests that only touch the paths the push
+  # trigger ignores run no other job. Pushes to develop always build every
+  # target. Pull requests only build the targets the test jobs consume unless
+  # they touch the Rust sources, the Cargo manifests or config, or this
+  # workflow, which keeps dependency-only PRs cheap. Add the "ci-full" label to
+  # a PR and re-run the workflow (or push) to build every target.
   plan:
     name: Plan
-    # Label events only matter for ci-full; other labels must not rerun CI.
-    if: ${{ github.event.action != 'labeled' || github.event.label.name == 'ci-full' }}
     runs-on: ubuntu-latest
     outputs:
+      run-ci: ${{ steps.plan.outputs.run-ci }}
       build-matrix: ${{ steps.plan.outputs.build-matrix }}
     steps:
       - id: plan
@@ -91,96 +66,171 @@ jobs:
             {"host":"windows-latest","target":"x86_64-pc-windows-msvc"},
             {"host":"ubuntu-latest","target":"wasm32-wasip1-threads"}
           ]'
+          run_ci=true
           matrix="$full"
           if [ "$EVENT_NAME" = "pull_request" ]; then
             files=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --paginate --jq '.[].filename')
             labels=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.labels[].name')
-            # Add the "ci-full" label to a PR to force every target.
+            # The push trigger's paths-ignore list, as a regular expression.
+            if ! grep -Ev '(\.md$|^\.github/ISSUE_TEMPLATE/|^\.github/assets/|^\.github/CODEOWNERS$|^\.github/FUNDING\.yml$)' <<< "$files" | grep -q .; then
+              run_ci=false
+            fi
             if ! grep -qx 'ci-full' <<< "$labels" \
-              && ! grep -Eq '^(crates/|Cargo\.toml$|Cargo\.lock$|rust-toolchain\.toml$|deny\.toml$|scripts/|\.github/workflows/ci\.yml$)' <<< "$files"; then
+              && ! grep -Eq '^(crates/|\.cargo/|Cargo\.toml$|Cargo\.lock$|rust-toolchain\.toml$|deny\.toml$|scripts/|\.github/workflows/ci\.yml$)' <<< "$files"; then
               matrix="$reduced"
             fi
           fi
-          echo "Selected build targets:"
-          jq -r '.[].target' <<< "$matrix"
-          echo "build-matrix=$(jq -c . <<< "$matrix")" >> "$GITHUB_OUTPUT"
+          if [ "$run_ci" = true ]; then
+            echo "Selected build targets:"
+            jq -r '.[].target' <<< "$matrix"
+          else
+            echo "Only documentation and repository metadata changed: skipping every other job."
+          fi
+          {
+            echo "run-ci=$run_ci"
+            echo "build-matrix=$(jq -c . <<< "$matrix")"
+          } >> "$GITHUB_OUTPUT"
 
   lint:
     name: Lint
-    # Label events only matter for ci-full; other labels must not rerun CI.
-    if: ${{ github.event.action != 'labeled' || github.event.label.name == 'ci-full' }}
+    needs: plan
+    if: ${{ needs.plan.outputs.run-ci == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
-      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
       - run: pnpm install --frozen-lockfile
       - run: pnpm run check
+      - name: Verify THIRD_PARTY_NOTICES is up to date
+        run: |
+          cargo fetch --locked
+          node scripts/third-party-notices.js --check
+      - name: Verify every platform package carries the root LICENSE
+        run: |
+          for dir in npm/*/; do
+            cmp LICENSE "${dir}LICENSE"
+          done
       - run: pnpm run build
       - name: Verify generated binding files are up to date
-        run: git diff --exit-code index.js index.d.ts browser.js
+        run: git diff --exit-code index.js index.d.ts browser.mjs browser.d.mts browser-api.mjs workerd.mjs highlight.browser.mjs objects.browser.mjs objects.browser.d.mts
       - run: pnpm run typecheck
       - run: pnpm run publint
 
+  workflow-lint:
+    name: Workflow Lint
+    needs: plan
+    if: ${{ needs.plan.outputs.run-ci == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      # The image bundles shellcheck, so `run:` scripts are checked as well.
+      - name: actionlint
+        uses: docker://rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: -color
+
   audit:
     name: Dependency Audit
-    # Label events only matter for ci-full; other labels must not rerun CI.
-    if: ${{ github.event.action != 'labeled' || github.event.label.name == 'ci-full' }}
+    needs: plan
+    if: ${{ needs.plan.outputs.run-ci == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # The published package has no runtime dependencies, so `--prod` could
+      # never fail. Audit everything that runs in CI and on contributors'
+      # machines instead; pnpm-workspace.yaml overrides patch transitive ones.
       - name: Audit npm dependencies
-        run: pnpm audit --prod
+        run: pnpm audit --audit-level=high
       - name: Audit Rust dependencies
         uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2
 
   rust-lint:
     name: Rust Lint
-    # Label events only matter for ci-full; other labels must not rerun CI.
-    if: ${{ github.event.action != 'labeled' || github.event.label.name == 'ci-full' }}
+    needs: plan
+    if: ${{ needs.plan.outputs.run-ci == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-      - run: cargo fmt -- --check
-      - run: cargo clippy -- -W clippy::all
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+      - run: cargo fmt --all -- --check
+      # Lint levels live in [workspace.lints] (root Cargo.toml); -D warnings
+      # turns every warning, rustc's included, into a failure.
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
   rust-test:
     name: Rust Test
-    # Label events only matter for ci-full; other labels must not rerun CI.
-    if: ${{ github.event.action != 'labeled' || github.event.label.name == 'ci-full' }}
+    needs: plan
+    if: ${{ needs.plan.outputs.run-ci == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-      - run: cargo test
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+      - run: cargo test --workspace --locked
+
+  msrv:
+    name: Rust MSRV
+    needs: plan
+    if: ${{ needs.plan.outputs.run-ci == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      # Check with exactly the toolchain declared as `rust-version` in the root
+      # Cargo.toml. RUSTUP_TOOLCHAIN overrides rust-toolchain.toml (which pins
+      # stable) for every later step, the cache key included.
+      - name: Read MSRV from Cargo.toml
+        id: msrv
+        run: |
+          msrv=$(sed -n 's/^rust-version = "\(.*\)"$/\1/p' Cargo.toml)
+          if [ -z "$msrv" ]; then
+            echo "::error::rust-version not found in Cargo.toml"
+            exit 1
+          fi
+          echo "MSRV: $msrv"
+          echo "version=$msrv" >> "$GITHUB_OUTPUT"
+          echo "RUSTUP_TOOLCHAIN=$msrv" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: ${{ steps.msrv.outputs.version }}
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          shared-key: msrv
+      - name: Check the workspace with the MSRV toolchain
+        run: |
+          rustc --version
+          cargo check --workspace --all-targets --locked
 
   build:
     name: Build - ${{ matrix.settings.target }}
     needs: plan
+    if: ${{ needs.plan.outputs.run-ci == 'true' }}
     runs-on: ${{ matrix.settings.host }}
     strategy:
       fail-fast: false
@@ -192,14 +242,14 @@ jobs:
         with:
           persist-credentials: false
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
-      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           targets: ${{ matrix.settings.target }}
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           shared-key: build-${{ matrix.settings.target }}
       - run: pnpm install --frozen-lockfile
@@ -210,7 +260,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu
-          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
 
       - name: Install cross-compilation tools (x86_64-musl)
         if: matrix.settings.target == 'x86_64-unknown-linux-musl'
@@ -223,7 +273,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu musl-tools
-          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
 
       - name: Build native
         if: matrix.settings.target != 'wasm32-wasip1-threads'
@@ -242,7 +292,7 @@ jobs:
         run: pnpm run optimize:wasm
 
       - name: Upload artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: bindings-${{ matrix.settings.target }}
           path: |
@@ -254,7 +304,7 @@ jobs:
 
       - name: Upload WASM artifact
         if: matrix.settings.target == 'wasm32-wasip1-threads'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: bindings-wasm32
           path: |
@@ -296,13 +346,13 @@ jobs:
         with:
           persist-credentials: false
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ matrix.node }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Download build artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: ${{ matrix.artifact }}
           path: .
@@ -310,7 +360,7 @@ jobs:
       # silently when the binary is absent, so require it here.
       - name: Download WASI artifact
         if: runner.os == 'Linux'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: bindings-wasm32
           path: .
@@ -322,76 +372,135 @@ jobs:
 
   coverage:
     name: Coverage
-    needs: [build]
+    needs: plan
+    if: ${{ needs.plan.outputs.run-ci == 'true' }}
+    # Builds its own instrumented addon, so it does not wait for the build job.
     runs-on: ubuntu-latest
+    # Job-level permissions replace the workflow-level block, so contents: read
+    # is restated.
+    permissions:
+      contents: read # actions/checkout
+      id-token: write # the Codecov upload authenticates with a GitHub OIDC token (no CODECOV_TOKEN secret)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-
-      # Rust coverage
-      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
-        with:
-          components: llvm-tools-preview
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-      - uses: taiki-e/install-action@f8b8d555f84da49ac7e1e22379742eb1b8ded407
-        with:
-          tool: cargo-llvm-cov
-      - name: Rust coverage
-        run: cargo llvm-cov --lcov --output-path rust-lcov.info
-
-      # JS coverage
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - name: Download x86_64 linux artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
-          name: bindings-x86_64-unknown-linux-gnu
-          path: .
-      - name: JS coverage
-        run: pnpm test -- --coverage
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          # A cache of its own: the builds below go to target/<host triple>/,
+          # not to the target/llvm-cov-target/ of a plain `cargo llvm-cov` run,
+          # and an exact hit on the old cache would never be replaced.
+          key: instrumented
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        with:
+          tool: cargo-llvm-cov
+      - run: pnpm install --frozen-lockfile
 
-      # Upload to Codecov
+      # One Rust report for the Rust tests and the JS test suite together. The
+      # suite runs against a debug addon built with the same instrumentation,
+      # so the napi bindings in crates/core, which only JavaScript calls, are
+      # measured too. `show-env` prints what `cargo llvm-cov` itself would set
+      # (a RUSTC_WRAPPER that instruments the workspace crates, and
+      # LLVM_PROFILE_FILE, a path in target/): the plain cargo and napi builds
+      # then produce instrumented binaries, and every process that loads one
+      # writes a .profraw file there when it exits, which `report` merges.
+      # - Both builds target the host triple: `napi build` passes --target, so
+      #   `cargo test` does too, and they share target/<triple>/ (and its
+      #   dependency builds), which `report --target` reads.
+      # - vitest runs on worker threads: the default forks pool stops each
+      #   fork with SIGTERM, so the forks would never write their profiles.
+      #   The threads share the vitest process, which writes one when it
+      #   exits; the Node.js children some specs spawn write their own.
+      # - The JS (V8) coverage of the same run goes to coverage/lcov.info.
+      - name: Collect coverage
+        run: |
+          host=$(rustc -vV | sed -n 's/^host: //p')
+          # Through a file rather than `source <(...)`, so that a failing
+          # show-env stops the step instead of leaving the builds uninstrumented.
+          cargo llvm-cov show-env --sh > "$RUNNER_TEMP/llvm-cov-env.sh"
+          source "$RUNNER_TEMP/llvm-cov-env.sh"
+          cargo llvm-cov clean --workspace
+          cargo test --workspace --locked --target "$host"
+          pnpm run build:debug
+          node scripts/patch-binding.js
+          pnpm test --coverage --pool=threads
+          cargo llvm-cov report --target "$host" --lcov --output-path rust-lcov.info
+
+      # Upload to Codecov. Pull requests from forks get no OIDC token; the
+      # action detects them and falls back to a tokenless upload.
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7
         with:
           files: rust-lcov.info,coverage/lcov.info
           flags: rust,javascript
-          fail_ci_if_error: false
+          use_oidc: true
+          # The Codecov CLI release the action downloads (it defaults to the
+          # latest one). Renovate updates it through the custom manager in
+          # renovate.json, which matches the trailing comment.
+          version: v11.3.1 # codecov-cli
+          # Uploads reach codecov.io now (the repository is activated), so a
+          # broken upload on develop turns the job red, while a Codecov outage
+          # does not block pull requests.
+          fail_ci_if_error: ${{ github.event_name == 'push' }}
 
   build-wasm-bindgen:
     name: Build - wasm-bindgen
-    # Label events only matter for ci-full; other labels must not rerun CI.
-    if: ${{ github.event.action != 'labeled' || github.event.label.name == 'ci-full' }}
+    needs: plan
+    if: ${{ needs.plan.outputs.run-ci == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
-      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           targets: wasm32-unknown-unknown
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           shared-key: build-wasm-bindgen
       - run: pnpm install --frozen-lockfile
       - name: Install wasm-pack
-        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        with:
+          tool: wasm-pack@0.15.0
       - name: Install binaryen
         run: bash scripts/install-binaryen.sh
       - name: Build wasm-bindgen
         run: pnpm run build:wasm-bindgen
+      # Same check as release.yml, so stale glue fails the PR instead of the release.
+      - name: Verify generated wasm-bindgen glue is up to date
+        run: git diff --exit-code rapid-fuzzy-wasm-bindgen.mjs rapid-fuzzy-wasm-bindgen.d.mts browser.mjs browser.d.mts browser-api.mjs workerd.mjs highlight.browser.mjs objects.browser.mjs objects.browser.d.mts
+      # The wasm-bindgen specs compare results against the native binding.
+      - name: Build native binding (debug)
+        run: pnpm run build:debug && node scripts/patch-binding.js
+      # The whole suite, not a list of files: every spec that tests the
+      # wasm-bindgen build (wasm-bindgen, browser-packaging, review-fixes, and
+      # any added later) skips without the binary, which only this job builds,
+      # and RAPID_FUZZY_REQUIRE_WASM_BINDGEN turns that skip into a failure.
+      # Only wasm.spec.ts (the WASI binding, covered by the test job) skips here.
+      - name: Test wasm-bindgen build
+        run: pnpm exec vitest run
+        env:
+          RAPID_FUZZY_REQUIRE_WASM_BINDGEN: '1'
+      # Runs the Cloudflare Workers entry (workerd.mjs) and the example worker
+      # in Node.js, loading the .wasm?module import as Wrangler does.
+      - name: Test Cloudflare Workers entry
+        run: pnpm run test:workerd
       - name: Upload wasm-bindgen artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: bindings-wasm-bindgen
           path: rapid-fuzzy-wasm-bindgen_bg.wasm
@@ -406,13 +515,13 @@ jobs:
         with:
           persist-credentials: false
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Download WASM artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: bindings-wasm-bindgen
           path: .
@@ -430,14 +539,14 @@ jobs:
         with:
           persist-credentials: false
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
       - run: pnpm install --frozen-lockfile
       - name: Download WASM artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: bindings-wasm-bindgen
           path: .
@@ -453,7 +562,7 @@ jobs:
         with:
           persist-credentials: false
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -462,9 +571,54 @@ jobs:
           deno-version: v2.x
       - run: pnpm install --frozen-lockfile
       - name: Download WASM artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: bindings-wasm-bindgen
           path: .
       - name: Run Deno WASM tests
         run: pnpm run test:deno
+
+  # The one check to require in branch protection: it reports on every pull
+  # request, fails when any job failed or was cancelled, and passes when the
+  # plan job skipped the rest for a documentation-only change. Add every new
+  # job to `needs`.
+  ci-complete:
+    name: CI Complete
+    needs:
+      - plan
+      - lint
+      - workflow-lint
+      - audit
+      - rust-lint
+      - rust-test
+      - msrv
+      - build
+      - test
+      - coverage
+      - build-wasm-bindgen
+      - test-browser
+      - test-bun
+      - test-deno
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the results of the other jobs
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+          RUN_CI: ${{ needs.plan.outputs.run-ci }}
+        run: |
+          jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<< "$RESULTS"
+          # Skipped jobs only count as passing when the plan job chose to
+          # skip them; anywhere else a skip means an upstream job broke. A
+          # failed plan job leaves RUN_CI empty, so it fails here too.
+          if [ "$RUN_CI" = false ]; then
+            allowed='["success", "skipped"]'
+          else
+            allowed='["success"]'
+          fi
+          failed=$(jq -r --argjson allowed "$allowed" \
+            'to_entries[] | select(.value.result | IN($allowed[]) | not) | .key' <<< "$RESULTS")
+          if [ -n "$failed" ]; then
+            echo "::error::Jobs that did not pass: $(tr '\n' ' ' <<< "$failed")"
+            exit 1
+          fi

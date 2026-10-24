@@ -1,14 +1,16 @@
 {
   "name": "rapid-fuzzy-linux-x64-gnu",
-  "version": "2.1.1",
+  "version": "2.2.0",
   "cpu": [
     "x64"
   ],
   "main": "rapid-fuzzy.linux-x64-gnu.node",
   "files": [
-    "rapid-fuzzy.linux-x64-gnu.node"
+    "rapid-fuzzy.linux-x64-gnu.node",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES"
   ],
-  "description": "Rust-powered fuzzy search and string distance for JavaScript/TypeScript. Up to 15,000x faster than fuse.js with indexed mode.",
+  "description": "Rust-powered fuzzy search and string distance for JavaScript/TypeScript, with native Node.js bindings and a WebAssembly build for browsers, Deno and Workers.",
   "keywords": [
     "fuzzy",
     "fuzzy-search",

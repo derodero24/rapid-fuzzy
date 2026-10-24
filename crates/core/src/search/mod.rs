@@ -10,14 +10,16 @@ pub use keys::search_keys;
 pub(crate) use rapid_fuzzy_core::search::resolve_case_matching;
 
 #[cfg(test)]
-pub(crate) use rapid_fuzzy_core::search::{
-    BigramIndex, PrecomputedSearch, bigram_key, compute_char_mask, extract_bigrams,
-    extract_query_bigrams, intersect_sorted, search_over_precomputed,
-};
+pub(crate) use rapid_fuzzy_core::search::compute_char_mask;
 
-use napi::Either;
+use napi::bindgen_prelude::{FromNapiValue, Object, TypeName, Unknown, ValidateNapiValue, sys};
+use napi::{Env, Status, ValueType};
 use napi_derive::napi;
 use nucleo_matcher::pattern::CaseMatching;
+use rapid_fuzzy_core::search::{
+    KeyMatchMode, KeyScoreMode, SearchKeysOptions, check_max_results, check_min_score,
+    check_remove_index, invalid_index_type, invalid_match_mode, invalid_score_mode, is_empty_query,
+};
 
 // -------------------------
 // Napi-specific types
@@ -53,14 +55,21 @@ impl From<rapid_fuzzy_core::search::MatchType> for MatchType {
 /// A single fuzzy search result with the matched item and its score.
 #[napi(object)]
 pub struct SearchResult {
-    /// The original string that matched.
+    /// The matched item. Strings are converted to UTF-8 on the way into
+    /// Rust, so this is the same string as `items[index]` unless that one
+    /// contains a lone UTF-16 surrogate (for example from slicing an emoji in
+    /// half), which becomes U+FFFD; `index` always identifies your string.
     pub item: String,
     /// The match score normalized to 0.0-1.0 range (1.0 is a perfect match).
     pub score: f64,
     /// The index of the item in the original input array.
     pub index: u32,
-    /// Indices of matched characters in the item string.
-    /// Empty unless `includePositions` is set to true in SearchOptions.
+    /// Indices of the matched characters of the item, in ascending order.
+    /// An ASCII item is counted by character; any other item by grapheme
+    /// cluster (a user-perceived character, such as an emoji with its
+    /// modifiers or a letter with its combining marks), so these are not
+    /// UTF-16 string offsets. `highlight()` and `highlightRanges()` convert
+    /// them. Empty unless `includePositions` is set to true in SearchOptions.
     pub positions: Vec<u32>,
     /// How the query matched this item (Exact, Prefix, Contains, or Fuzzy).
     /// Only present when `includePositions` is set to true in SearchOptions.
@@ -90,8 +99,12 @@ pub struct IndexSearchResult {
     pub index: u32,
     /// The match score normalized to 0.0-1.0 range (1.0 is a perfect match).
     pub score: f64,
-    /// Indices of matched characters in the item string.
-    /// Empty unless `includePositions` is set to true in SearchOptions.
+    /// Indices of the matched characters of the item, in ascending order.
+    /// An ASCII item is counted by character; any other item by grapheme
+    /// cluster (a user-perceived character, such as an emoji with its
+    /// modifiers or a letter with its combining marks), so these are not
+    /// UTF-16 string offsets. `highlight()` and `highlightRanges()` convert
+    /// them. Empty unless `includePositions` is set to true in SearchOptions.
     pub positions: Vec<u32>,
     /// How the query matched this item (Exact, Prefix, Contains, or Fuzzy).
     /// Only present when `includePositions` is set to true in SearchOptions.
@@ -111,21 +124,546 @@ impl From<rapid_fuzzy_core::search::IndexSearchResult> for IndexSearchResult {
 }
 
 /// Options for the search function.
-#[napi(object)]
+#[napi(object, object_from_js = false)]
 pub struct SearchOptions {
-    /// Maximum number of results to return.
+    /// Maximum number of results to return: a non-negative integer, or
+    /// `Infinity` for no limit. NaN, negative and fractional values throw.
     pub max_results: Option<u32>,
-    /// Minimum normalized score (0.0-1.0) to include in results.
+    /// Minimum normalized score (0.0-1.0) to include in results. NaN throws.
     pub min_score: Option<f64>,
     /// If true, include matched character positions in results.
     pub include_positions: Option<bool>,
-    /// If true, matching is case-sensitive. Default is smart case
-    /// (case-insensitive unless the query contains uppercase characters).
+    /// If true, matching is case-sensitive. When false or omitted, matching
+    /// is smart case: case-insensitive while the query is all lower-case, and
+    /// case-sensitive once it contains an upper-case letter. `false` does not
+    /// force case-insensitive matching; lower-case the query for that.
     pub is_case_sensitive: Option<bool>,
-    /// If true, return all items when the query is empty (or whitespace-only).
-    /// Useful for filter-as-you-type UIs where the full list should appear
-    /// before the user starts typing. Default is false.
+    /// If true, return all items when the query has no search term: empty,
+    /// whitespace-only, or only query syntax such as `^` or `!`. They come in
+    /// index order, each with score 1 (`maxResults` then keeps the first
+    /// ones). Useful for filter-as-you-type UIs where the full list should
+    /// appear before the user starts typing. Default is false.
     pub return_all_on_empty: Option<bool>,
+}
+
+/// Validate a `maxResults` value coming from JavaScript.
+///
+/// napi's `u32` conversion wraps numbers modulo 2^32 (`Infinity`, `NaN` and
+/// `0.5` became 0, `-1` became 4294967295), so the value is read as a double
+/// and checked instead: non-negative integers are accepted (values beyond
+/// `u32::MAX` exceed any array length and mean "no limit"), `Infinity` means
+/// no limit, and NaN, negative or fractional values are rejected.
+///
+/// The check itself is [`check_max_results`], shared with the WebAssembly
+/// binding.
+pub(crate) fn resolve_max_results(value: f64) -> napi::Result<Option<u32>> {
+    check_max_results(value).map_err(|message| napi::Error::new(Status::InvalidArg, message))
+}
+
+/// Validate a `minScore` value coming from JavaScript (see
+/// [`check_min_score`], shared with the WebAssembly binding): NaN, which
+/// used to filter out every match silently, is rejected with an `InvalidArg`
+/// error.
+pub(crate) fn resolve_min_score(value: Option<f64>) -> napi::Result<Option<f64>> {
+    check_min_score(value).map_err(|message| napi::Error::new(Status::InvalidArg, message))
+}
+
+/// The class of a JavaScript error thrown by [`throw_error`].
+#[derive(Clone, Copy)]
+pub(crate) enum ErrorClass {
+    TypeError,
+    RangeError,
+}
+
+/// Throw a `TypeError` or `RangeError` with the code `InvalidArg` (the code
+/// of the binding's other argument errors), returning the error that tells
+/// napi-rs the exception is already pending. A plain `napi::Error` always
+/// becomes an `Error`.
+pub(crate) fn throw_error<T>(env: Env, class: ErrorClass, message: &str) -> napi::Result<T> {
+    let code = Some(Status::InvalidArg.as_ref());
+    match class {
+        ErrorClass::TypeError => env.throw_type_error(message, code)?,
+        ErrorClass::RangeError => env.throw_range_error(message, code)?,
+    }
+    Err(napi::Error::new(Status::PendingException, message))
+}
+
+/// The `typeof` of a JavaScript value of type `value_type`.
+fn type_of(value_type: ValueType) -> &'static str {
+    match value_type {
+        ValueType::Undefined => "undefined",
+        ValueType::Boolean => "boolean",
+        ValueType::Number => "number",
+        ValueType::String => "string",
+        ValueType::Symbol => "symbol",
+        ValueType::Function => "function",
+        ValueType::BigInt => "bigint",
+        // `typeof null` is "object", as are externals.
+        _ => "object",
+    }
+}
+
+/// Read the `index` argument of `FuzzyIndex.remove()` and
+/// `KeyedFuzzyIndex.remove()` exactly like `FuzzyObjectIndex.remove()` reads
+/// its own (see [`check_remove_index`]): a `TypeError` for a value that is
+/// not a number, a `RangeError` for a number that is not an integer, and
+/// `None` (nothing to remove) for an integer out of range.
+pub(crate) fn read_remove_index(env: Env, index: Unknown<'_>) -> napi::Result<Option<u32>> {
+    let value_type = index.get_type()?;
+    if value_type != ValueType::Number {
+        return throw_error(
+            env,
+            ErrorClass::TypeError,
+            &invalid_index_type(type_of(value_type)),
+        );
+    }
+    match check_remove_index(f64::from_unknown(index)?) {
+        Ok(index) => Ok(index),
+        Err(message) => throw_error(env, ErrorClass::RangeError, &message),
+    }
+}
+
+/// Read an optional property of the options object `type_name`, treating
+/// `undefined` (or a missing property) as `None`, like the conversion
+/// `#[napi(object)]` generates.
+fn optional_field<T: FromNapiValue>(
+    obj: &Object<'_>,
+    type_name: &str,
+    field: &str,
+) -> napi::Result<Option<T>> {
+    obj.get::<T>(field).map_err(|err| {
+        napi::Error::new(err.status, format!("{} on {type_name}.{field}", err.reason))
+    })
+}
+
+/// An options object read from JavaScript by hand (`object_from_js = false`),
+/// so that its fields are validated.
+pub(crate) trait OptionsObject: Sized {
+    /// The TypeScript name of the options type.
+    const NAME: &'static str;
+    /// The TypeScript type of a `number | options` argument.
+    const ARG_TYPE: &'static str;
+
+    fn read(obj: &Object<'_>) -> napi::Result<Self>;
+}
+
+/// Convert a `number | options` argument: a number with `from_number`, an
+/// options object `T` with `from_options`. Any other value is rejected with
+/// an `InvalidArg` error naming `shorthand`, the option a number sets.
+///
+/// # Safety
+///
+/// `env` and `napi_val` must be valid, as for [`FromNapiValue::from_napi_value`].
+unsafe fn number_or_options<T: OptionsObject, R>(
+    env: sys::napi_env,
+    napi_val: sys::napi_value,
+    shorthand: &str,
+    from_number: impl FnOnce(f64) -> napi::Result<R>,
+    from_options: impl FnOnce(T) -> R,
+) -> napi::Result<R> {
+    let value_type = unsafe { Unknown::from_napi_value(env, napi_val)? }.get_type()?;
+    match value_type {
+        ValueType::Number => from_number(unsafe { f64::from_napi_value(env, napi_val)? }),
+        ValueType::Object => Ok(from_options(T::read(&unsafe {
+            Object::from_napi_value(env, napi_val)?
+        })?)),
+        _ => Err(napi::Error::new(
+            Status::InvalidArg,
+            format!(
+                "Expected a number ({shorthand}) or a {} object, got {value_type}",
+                T::NAME
+            ),
+        )),
+    }
+}
+
+/// Read the `SearchOptions` fields of `obj`, an options object `type_name`.
+fn read_search_options(obj: &Object<'_>, type_name: &str) -> napi::Result<SearchOptions> {
+    let max_results = match optional_field::<f64>(obj, type_name, "maxResults")? {
+        Some(value) => resolve_max_results(value)?,
+        None => None,
+    };
+    Ok(SearchOptions {
+        max_results,
+        min_score: resolve_min_score(optional_field(obj, type_name, "minScore")?)?,
+        include_positions: optional_field(obj, type_name, "includePositions")?,
+        is_case_sensitive: optional_field(obj, type_name, "isCaseSensitive")?,
+        return_all_on_empty: optional_field(obj, type_name, "returnAllOnEmpty")?,
+    })
+}
+
+impl OptionsObject for SearchOptions {
+    const NAME: &'static str = "SearchOptions";
+    const ARG_TYPE: &'static str = "number | SearchOptions";
+
+    fn read(obj: &Object<'_>) -> napi::Result<Self> {
+        read_search_options(obj, Self::NAME)
+    }
+}
+
+impl FromNapiValue for SearchOptions {
+    unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> napi::Result<Self> {
+        Self::read(&unsafe { Object::from_napi_value(env, napi_val)? })
+    }
+}
+
+impl ValidateNapiValue for SearchOptions {}
+
+/// Options for multi-key search: `searchKeys()`, `KeyedFuzzyIndex.search()`
+/// and the object search built on them (`searchObjects()`,
+/// `FuzzyObjectIndex.search()`). The `SearchOptions` fields, plus
+/// `scoreMode` and `matchMode`.
+#[napi(object, object_from_js = false, object_to_js = false)]
+pub struct KeySearchOptions {
+    /// Maximum number of results to return: a non-negative integer, or
+    /// `Infinity` for no limit. NaN, negative and fractional values throw.
+    pub max_results: Option<u32>,
+    /// Minimum combined score (0.0-1.0, see `scoreMode`) to include in
+    /// results. NaN throws.
+    pub min_score: Option<f64>,
+    /// Accepted for compatibility with `SearchOptions`, but has no effect:
+    /// multi-key results have no match positions.
+    pub include_positions: Option<bool>,
+    /// If true, matching is case-sensitive. When false or omitted, matching
+    /// is smart case: case-insensitive while the query is all lower-case, and
+    /// case-sensitive once it contains an upper-case letter. `false` does not
+    /// force case-insensitive matching; lower-case the query for that.
+    pub is_case_sensitive: Option<bool>,
+    /// If true, return all items when the query has no search term: empty,
+    /// whitespace-only, or only query syntax such as `^` or `!`. Every item
+    /// then scores 1, in every `scoreMode`, and they come in index order.
+    /// Default is false.
+    pub return_all_on_empty: Option<bool>,
+    /// How the per-key scores (`keyScores`) of an item are combined into its
+    /// `score`. Only keys with a positive weight take part:
+    ///
+    /// - `'weighted'` (default): the weighted mean over all keys,
+    ///   `sum(weight * keyScore) / sum(weight)`. A key that does not match
+    ///   counts as 0, so an exact match on one key out of several scores only
+    ///   that key's share of the total weight.
+    /// - `'matched'`: the weighted mean over the keys that match
+    ///   (`keyScore > 0`) only. An item whose only matching key matches
+    ///   exactly scores 1.
+    /// - `'max'`: the highest score of any key. Weights then only select the
+    ///   keys that take part (weight > 0).
+    ///
+    /// `keyScores` are the same in every mode; `minScore` and `maxResults`
+    /// apply to the combined score. Equal scores are ordered by the UTF-8
+    /// byte length of the best-matching key's text (the key contributing
+    /// most to the score: highest `weight * keyScore`, or highest `keyScore`
+    /// in `'max'` mode; the first one on a tie), then by index. Any other
+    /// value throws an `InvalidArg` error.
+    ///
+    /// With `matchMode: 'crossKey'`, `'matched'` counts the weight of each
+    /// key in proportion to the share of the query it matches, and `'max'`
+    /// scores each term by the key it matches best (see `matchMode`).
+    #[napi(ts_type = "KeyScoreMode")]
+    pub score_mode: Option<KeyScoreMode>,
+    /// How the query is matched against the keys of an item:
+    ///
+    /// - `'perKey'` (default): every key is matched against the whole query,
+    ///   like `search()` matches an item. A key scores 0 unless it matches
+    ///   every term of the query and none of its `!term` exclusions.
+    /// - `'crossKey'`: every term is matched against the keys on its own, so
+    ///   the terms may match different keys: `'john tokyo'` finds an item
+    ///   whose name is "John Smith" and whose city is "Tokyo". Every term
+    ///   must match at least one key, and a `!term` matching any key
+    ///   excludes the item. A key's score (`keyScores`) is the share of the
+    ///   query it matches: the scores of the terms it matches, each counting
+    ///   in proportion to the score of a perfect match of the term (which
+    ///   grows with its length), so a key matching every term perfectly
+    ///   scores 1. `scoreMode` combines these key scores: `'weighted'` as
+    ///   `sum(weight * keyScore) / sum(weight)`, as in `'perKey'` mode;
+    ///   `'matched'` as `sum(weight * keyScore) / sum(weight * coverage)`,
+    ///   where a key's coverage is the share of the query made up by the
+    ///   terms it matches (in `'perKey'` mode, 1 for a key that matches and
+    ///   0 otherwise); `'max'` by taking each term's score on the key it
+    ///   matches best. In `'max'` mode, an item whose every term matches some
+    ///   key perfectly scores 1. In `'matched'` mode, only an item whose
+    ///   every term matches perfectly each key it matches scores 1: a term
+    ///   that also matches another key partially lowers the score, so
+    ///   `'john tokyo'` scores 0.89 on an item whose name is "John Smith",
+    ///   whose city is "Tokyo" and whose email "jtokyo@example.com" matches
+    ///   `tokyo` partially.
+    ///
+    /// Only keys with a positive weight take part in either mode; keys whose
+    /// weight is 0 still get `keyScores`. For a query of a single term
+    /// without exclusions, both modes return the same results. Any other
+    /// value throws an `InvalidArg` error.
+    #[napi(ts_type = "KeyMatchMode")]
+    pub match_mode: Option<KeyMatchMode>,
+}
+
+impl OptionsObject for KeySearchOptions {
+    const NAME: &'static str = "KeySearchOptions";
+    const ARG_TYPE: &'static str = "number | KeySearchOptions";
+
+    fn read(obj: &Object<'_>) -> napi::Result<Self> {
+        let base = read_search_options(obj, Self::NAME)?;
+        Ok(Self {
+            score_mode: read_score_mode(obj)?,
+            match_mode: read_match_mode(obj)?,
+            ..base.into()
+        })
+    }
+}
+
+/// Read the `scoreMode` field of a multi-key options object.
+fn read_score_mode(obj: &Object<'_>) -> napi::Result<Option<KeyScoreMode>> {
+    Ok(obj.get::<ScoreModeArg>("scoreMode")?.map(|arg| arg.0))
+}
+
+/// Read the `matchMode` field of a multi-key options object.
+fn read_match_mode(obj: &Object<'_>) -> napi::Result<Option<KeyMatchMode>> {
+    Ok(obj.get::<MatchModeArg>("matchMode")?.map(|arg| arg.0))
+}
+
+/// Options for `KeyedFuzzyIndex.closest()` and `FuzzyObjectIndex.closest()`:
+/// the `KeySearchOptions` fields that apply to finding the best match. The
+/// result is the first result of `search()` with these options and
+/// `maxResults: 1`. Other `KeySearchOptions` fields are not read.
+#[napi(object, object_from_js = false, object_to_js = false)]
+#[derive(Default)]
+pub struct KeyClosestOptions {
+    /// Minimum combined score (0.0-1.0, see `scoreMode`): `closest()`
+    /// returns null when the best match scores below it. NaN throws.
+    pub min_score: Option<f64>,
+    /// How the per-key scores of an item are combined into its score:
+    /// `'weighted'` (default), `'matched'` or `'max'`, as in
+    /// `KeySearchOptions.scoreMode`. Any other value throws an `InvalidArg`
+    /// error.
+    #[napi(ts_type = "KeyScoreMode")]
+    pub score_mode: Option<KeyScoreMode>,
+    /// How the query is matched against the keys of an item: `'perKey'`
+    /// (default) or `'crossKey'`, as in `KeySearchOptions.matchMode`. Any
+    /// other value throws an `InvalidArg` error.
+    #[napi(ts_type = "KeyMatchMode")]
+    pub match_mode: Option<KeyMatchMode>,
+}
+
+impl OptionsObject for KeyClosestOptions {
+    const NAME: &'static str = "KeyClosestOptions";
+    const ARG_TYPE: &'static str = "number | KeyClosestOptions";
+
+    /// Read the fields like [`KeySearchOptions`] reads them, in the same order.
+    fn read(obj: &Object<'_>) -> napi::Result<Self> {
+        Ok(Self {
+            min_score: resolve_min_score(optional_field(obj, Self::NAME, "minScore")?)?,
+            score_mode: read_score_mode(obj)?,
+            match_mode: read_match_mode(obj)?,
+        })
+    }
+}
+
+impl KeyClosestOptions {
+    /// The options of the search whose first result `closest()` returns.
+    pub(crate) fn to_core(&self) -> SearchKeysOptions {
+        SearchKeysOptions {
+            max_results: Some(1),
+            min_score: self.min_score,
+            score_mode: self.score_mode,
+            match_mode: self.match_mode,
+            ..SearchKeysOptions::default()
+        }
+    }
+}
+
+/// The `options` argument of `KeyedFuzzyIndex.closest`: a `KeyClosestOptions`
+/// object, or a number as a shorthand for `{ minScore }`.
+pub struct KeyClosestOptionsArg(pub KeyClosestOptions);
+
+impl TypeName for KeyClosestOptionsArg {
+    fn type_name() -> &'static str {
+        KeyClosestOptions::ARG_TYPE
+    }
+
+    fn value_type() -> ValueType {
+        ValueType::Unknown
+    }
+}
+
+impl FromNapiValue for KeyClosestOptionsArg {
+    unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> napi::Result<Self> {
+        let options = unsafe {
+            number_or_options(
+                env,
+                napi_val,
+                "minScore",
+                |min_score| {
+                    Ok(KeyClosestOptions {
+                        min_score: resolve_min_score(Some(min_score))?,
+                        ..KeyClosestOptions::default()
+                    })
+                },
+                |options| options,
+            )
+        }?;
+        Ok(Self(options))
+    }
+}
+
+impl From<SearchOptions> for KeySearchOptions {
+    fn from(opts: SearchOptions) -> Self {
+        Self {
+            max_results: opts.max_results,
+            min_score: opts.min_score,
+            include_positions: opts.include_positions,
+            is_case_sensitive: opts.is_case_sensitive,
+            return_all_on_empty: opts.return_all_on_empty,
+            score_mode: None,
+            match_mode: None,
+        }
+    }
+}
+
+/// A `scoreMode` value: `'weighted'`, `'matched'` or `'max'`. Anything else
+/// (including other types) is rejected with an `InvalidArg` error.
+pub struct ScoreModeArg(pub KeyScoreMode);
+
+impl TypeName for ScoreModeArg {
+    fn type_name() -> &'static str {
+        "KeyScoreMode"
+    }
+
+    fn value_type() -> ValueType {
+        ValueType::String
+    }
+}
+
+impl FromNapiValue for ScoreModeArg {
+    unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> napi::Result<Self> {
+        let mode = match unsafe { Unknown::from_napi_value(env, napi_val)? }.get_type()? {
+            ValueType::String => {
+                KeyScoreMode::from_name(&unsafe { String::from_napi_value(env, napi_val)? })
+            }
+            // `typeof`-style names: number, null, object, ...
+            other => Err(invalid_score_mode(&other.to_string().to_lowercase())),
+        };
+        mode.map(Self)
+            .map_err(|message| napi::Error::new(Status::InvalidArg, message))
+    }
+}
+
+/// A `matchMode` value: `'perKey'` or `'crossKey'`. Anything else (including
+/// other types) is rejected with an `InvalidArg` error.
+pub struct MatchModeArg(pub KeyMatchMode);
+
+impl TypeName for MatchModeArg {
+    fn type_name() -> &'static str {
+        "KeyMatchMode"
+    }
+
+    fn value_type() -> ValueType {
+        ValueType::String
+    }
+}
+
+impl FromNapiValue for MatchModeArg {
+    unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> napi::Result<Self> {
+        let mode = match unsafe { Unknown::from_napi_value(env, napi_val)? }.get_type()? {
+            ValueType::String => {
+                KeyMatchMode::from_name(&unsafe { String::from_napi_value(env, napi_val)? })
+            }
+            // `typeof`-style names: number, null, object, ...
+            other => Err(invalid_match_mode(&other.to_string().to_lowercase())),
+        };
+        mode.map(Self)
+            .map_err(|message| napi::Error::new(Status::InvalidArg, message))
+    }
+}
+
+/// The `options` argument of the search functions: a `maxResults` number or
+/// an options object `T`.
+pub enum OptionsArg<T> {
+    MaxResults(Option<u32>),
+    Options(T),
+}
+
+/// The `options` argument of `search`, `FuzzyIndex.search` and
+/// `FuzzyIndex.searchIndices`: a `maxResults` number or a `SearchOptions`.
+pub type SearchOptionsArg = OptionsArg<SearchOptions>;
+
+/// The `options` argument of `searchKeys` and `KeyedFuzzyIndex.search`: a
+/// `maxResults` number or a `KeySearchOptions`.
+pub type KeySearchOptionsArg = OptionsArg<KeySearchOptions>;
+
+impl<T: OptionsObject> TypeName for OptionsArg<T> {
+    fn type_name() -> &'static str {
+        T::ARG_TYPE
+    }
+
+    fn value_type() -> ValueType {
+        ValueType::Unknown
+    }
+}
+
+impl<T: OptionsObject> FromNapiValue for OptionsArg<T> {
+    unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> napi::Result<Self> {
+        unsafe {
+            number_or_options(
+                env,
+                napi_val,
+                "maxResults",
+                |value| resolve_max_results(value).map(Self::MaxResults),
+                Self::Options,
+            )
+        }
+    }
+}
+
+impl KeySearchOptionsArg {
+    /// The core-lib options of a `number | KeySearchOptions` argument.
+    pub(crate) fn resolve(options: Option<Self>) -> SearchKeysOptions {
+        match options {
+            Some(OptionsArg::Options(opts)) => SearchKeysOptions {
+                max_results: opts.max_results,
+                min_score: opts.min_score,
+                is_case_sensitive: opts.is_case_sensitive,
+                return_all_on_empty: opts.return_all_on_empty,
+                score_mode: opts.score_mode,
+                match_mode: opts.match_mode,
+            },
+            Some(OptionsArg::MaxResults(max_results)) => SearchKeysOptions {
+                max_results,
+                ..SearchKeysOptions::default()
+            },
+            None => SearchKeysOptions::default(),
+        }
+    }
+}
+
+/// Options resolved from a `number | SearchOptions` argument.
+pub(crate) struct ResolvedSearchOptions {
+    pub max_results: Option<u32>,
+    pub min_score: Option<f64>,
+    pub include_positions: bool,
+    pub case_matching: CaseMatching,
+    pub return_all_on_empty: bool,
+}
+
+impl ResolvedSearchOptions {
+    pub(crate) fn new(options: Option<SearchOptionsArg>) -> Self {
+        match options {
+            Some(SearchOptionsArg::Options(opts)) => Self {
+                max_results: opts.max_results,
+                min_score: opts.min_score,
+                include_positions: opts.include_positions.unwrap_or(false),
+                case_matching: resolve_case_matching(opts.is_case_sensitive),
+                return_all_on_empty: opts.return_all_on_empty.unwrap_or(false),
+            },
+            Some(SearchOptionsArg::MaxResults(max_results)) => Self {
+                max_results,
+                ..Self::new(None)
+            },
+            None => Self {
+                max_results: None,
+                min_score: None,
+                include_positions: false,
+                case_matching: CaseMatching::Smart,
+                return_all_on_empty: false,
+            },
+        }
+    }
 }
 
 /// Internal search implementation wrapping the core-lib algorithm.
@@ -155,32 +693,38 @@ pub(crate) fn search_impl(
 ///
 /// Returns matches sorted by score (best match first).
 /// Scores are normalized to a 0.0-1.0 range where 1.0 is a perfect match.
-/// Uses the nucleo algorithm (same as Helix editor), which is
-/// significantly faster than fzf/skim for large datasets.
+/// Uses the nucleo matcher (the one in the Helix editor): every character of
+/// each query term must occur in the item in order, so letters missing from
+/// the query are tolerated but substituted or swapped letters are not. Matches
+/// at the start of the item, at word boundaries and in consecutive runs score
+/// higher. Matching is smart case by default (see `SearchOptions`).
+///
+/// Terms are separated by any whitespace (including the ideographic space
+/// U+3000). A query without any search term (empty, whitespace-only or only
+/// syntax such as `^`) returns no results, and so does a query containing a
+/// single term longer than 2,520 characters, which cannot be scored.
 ///
 /// The third argument accepts either a number (maxResults for backward
 /// compatibility) or a SearchOptions object with maxResults and minScore.
+/// `maxResults` must be a non-negative integer or `Infinity`.
 #[napi]
 pub fn search(
     query: String,
     items: Vec<String>,
-    options: Option<Either<u32, SearchOptions>>,
+    #[napi(ts_arg_type = "number | SearchOptions | undefined | null")] options: Option<
+        SearchOptionsArg,
+    >,
 ) -> Vec<SearchResult> {
-    let (max_results, min_score, include_positions, case_matching, return_all_on_empty) =
-        match options {
-            Some(Either::A(max)) => (Some(max), None, false, CaseMatching::Smart, false),
-            Some(Either::B(opts)) => (
-                opts.max_results,
-                opts.min_score,
-                opts.include_positions.unwrap_or(false),
-                resolve_case_matching(opts.is_case_sensitive),
-                opts.return_all_on_empty.unwrap_or(false),
-            ),
-            None => (None, None, false, CaseMatching::Smart, false),
-        };
+    let ResolvedSearchOptions {
+        max_results,
+        min_score,
+        include_positions,
+        case_matching,
+        return_all_on_empty,
+    } = ResolvedSearchOptions::new(options);
 
-    if return_all_on_empty && query.trim().is_empty() {
-        let limit = max_results.unwrap_or(items.len() as u32) as usize;
+    if return_all_on_empty && is_empty_query(&query) {
+        let limit = max_results.unwrap_or(u32::MAX) as usize;
         return items
             .iter()
             .enumerate()
@@ -207,12 +751,20 @@ pub fn search(
 
 /// Find the closest matching string from a list.
 ///
-/// Returns the best match, or null if no match is found.
-/// If minScore is provided, returns null when the best match scores below the threshold.
+/// Returns the best match, or null if no match is found. Like
+/// `SearchResult.item`, the returned string is converted to UTF-8: a lone
+/// UTF-16 surrogate in it becomes U+FFFD.
+/// If minScore is provided, returns null when the best match scores below the
+/// threshold. A NaN minScore throws an `InvalidArg` error.
 #[napi]
-pub fn closest(query: String, items: Vec<String>, min_score: Option<f64>) -> Option<String> {
+pub fn closest(
+    query: String,
+    items: Vec<String>,
+    min_score: Option<f64>,
+) -> napi::Result<Option<String>> {
+    let min_score = resolve_min_score(min_score)?;
     let results = search_impl(query, items, Some(1), min_score, false, CaseMatching::Smart);
-    results.into_iter().next().map(|r| r.item)
+    Ok(results.into_iter().next().map(|r| r.item))
 }
 
 #[cfg(test)]
@@ -222,11 +774,37 @@ mod tests {
     #[test]
     fn test_prefilters_fold_diacritics_like_the_matcher() {
         // nucleo matches "cafe" against "café" (Normalization::Smart), so the
-        // char-mask and bigram prefilters must not reject folded characters.
-        assert_eq!(compute_char_mask("café"), compute_char_mask("cafe"));
-        assert_eq!(compute_char_mask("Ärger"), compute_char_mask("arger"));
-        assert_eq!(bigram_key('é', 'x'), bigram_key('e', 'x'));
-        assert_eq!(extract_bigrams("naïve"), extract_bigrams("naive"));
+        // char-mask prefilter must not reject folded characters.
+        let cafe = compute_char_mask("cafe");
+        assert_eq!(compute_char_mask("café") & cafe, cafe);
+        let arger = compute_char_mask("arger");
+        assert_eq!(compute_char_mask("Ärger") & arger, arger);
+    }
+
+    #[test]
+    fn test_check_max_results() {
+        assert_eq!(check_max_results(0.0), Ok(Some(0)));
+        assert_eq!(check_max_results(-0.0), Ok(Some(0)));
+        assert_eq!(check_max_results(5.0), Ok(Some(5)));
+        assert_eq!(check_max_results(f64::INFINITY), Ok(None));
+        assert_eq!(check_max_results(4_294_967_296.0), Ok(Some(u32::MAX)));
+        assert_eq!(check_max_results(1e300), Ok(Some(u32::MAX)));
+        for (invalid, shown) in [
+            (f64::NAN, "NaN"),
+            (-1.0, "-1"),
+            (0.5, "0.5"),
+            (-0.5, "-0.5"),
+            (f64::NEG_INFINITY, "-Infinity"),
+            (1e-7, "1e-7"),
+            (-1e21, "-1e+21"),
+        ] {
+            assert_eq!(
+                check_max_results(invalid),
+                Err(format!(
+                    "maxResults must be a non-negative integer or Infinity, got {shown}"
+                ))
+            );
+        }
     }
 
     #[test]
@@ -270,7 +848,7 @@ mod tests {
             "application".to_string(),
             "banana".to_string(),
         ];
-        let result = closest("app".to_string(), items, None);
+        let result = closest("app".to_string(), items, None).unwrap();
         assert!(result.is_some());
     }
 
@@ -441,7 +1019,7 @@ mod tests {
     fn test_closest_with_min_score() {
         let items = vec!["xyz".to_string(), "abc".to_string()];
         // With a very high threshold, closest should return None
-        let result = closest("hello".to_string(), items, Some(0.99));
+        let result = closest("hello".to_string(), items, Some(0.99)).unwrap();
         assert!(result.is_none());
     }
 
@@ -526,7 +1104,7 @@ mod tests {
     #[test]
     fn test_closest_without_min_score() {
         let items = vec!["apple".to_string(), "banana".to_string()];
-        let result = closest("app".to_string(), items, None);
+        let result = closest("app".to_string(), items, None).unwrap();
         assert!(result.is_some());
     }
 
@@ -767,155 +1345,6 @@ mod tests {
         }
     }
 
-    mod bigram_tests {
-        use super::*;
-
-        #[test]
-        fn test_bigram_key_ascii_case_folding() {
-            assert_eq!(bigram_key('a', 'b'), bigram_key('A', 'B'));
-            assert_eq!(bigram_key('a', 'b'), bigram_key('A', 'b'));
-            assert_eq!(bigram_key('Z', 'a'), bigram_key('z', 'A'));
-        }
-
-        #[test]
-        fn test_bigram_key_digits() {
-            assert_ne!(bigram_key('a', '0'), bigram_key('a', 'b'));
-            assert_eq!(bigram_key('0', '1'), bigram_key('0', '1'));
-        }
-
-        #[test]
-        fn test_extract_bigrams_basic() {
-            let bg = extract_bigrams("abc");
-            assert_eq!(bg.len(), 2); // "ab", "bc"
-        }
-
-        #[test]
-        fn test_extract_bigrams_case_insensitive() {
-            let lower = extract_bigrams("abc");
-            let upper = extract_bigrams("ABC");
-            assert_eq!(lower, upper);
-        }
-
-        #[test]
-        fn test_extract_bigrams_single_char() {
-            assert!(extract_bigrams("a").is_empty());
-        }
-
-        #[test]
-        fn test_extract_bigrams_empty() {
-            assert!(extract_bigrams("").is_empty());
-        }
-
-        #[test]
-        fn test_extract_bigrams_unicode() {
-            let bg = extract_bigrams("東京都");
-            assert_eq!(bg.len(), 2); // "東京", "京都"
-        }
-
-        #[test]
-        fn test_extract_query_bigrams_skips_inverted() {
-            let bg = extract_query_bigrams("hello !world");
-            let plain = extract_bigrams("hello");
-            assert_eq!(bg, plain);
-        }
-
-        #[test]
-        fn test_extract_query_bigrams_strips_syntax() {
-            let bg = extract_query_bigrams("^hello$");
-            let plain = extract_bigrams("hello");
-            assert_eq!(bg, plain);
-        }
-
-        #[test]
-        fn test_extract_query_bigrams_single_char_terms() {
-            // Single-char terms produce no bigrams
-            let bg = extract_query_bigrams("a b");
-            assert!(bg.is_empty());
-        }
-
-        #[test]
-        fn test_intersect_sorted_basic() {
-            let result = intersect_sorted(&[1, 3, 5, 7], &[2, 3, 5, 8]);
-            assert_eq!(result, vec![3, 5]);
-        }
-
-        #[test]
-        fn test_intersect_sorted_no_overlap() {
-            let result = intersect_sorted(&[1, 3], &[2, 4]);
-            assert!(result.is_empty());
-        }
-
-        #[test]
-        fn test_intersect_sorted_empty() {
-            let result = intersect_sorted(&[], &[1, 2]);
-            assert!(result.is_empty());
-        }
-
-        #[test]
-        fn test_bigram_index_basic() {
-            let items: Vec<String> = vec!["hello".into(), "world".into(), "help".into()];
-            let idx = BigramIndex::new(&items);
-            // "he" appears in "hello" and "help"
-            let bg = extract_query_bigrams("he");
-            let candidates = idx.candidates(&bg);
-            assert!(candidates.is_some());
-            let cands = candidates.unwrap();
-            assert!(cands.contains(&0)); // hello
-            assert!(cands.contains(&2)); // help
-            assert!(!cands.contains(&1)); // world
-        }
-
-        #[test]
-        fn test_bigram_index_no_match() {
-            let items: Vec<String> = vec!["hello".into(), "world".into()];
-            let idx = BigramIndex::new(&items);
-            let bg = extract_query_bigrams("zz");
-            let candidates = idx.candidates(&bg);
-            assert_eq!(candidates, Some(vec![]));
-        }
-
-        #[test]
-        fn test_bigram_index_add_item() {
-            // Add enough items so matching ones are below the 80% skip threshold.
-            let mut idx = BigramIndex::new(&[]);
-            idx.add_item(0, "hello");
-            idx.add_item(1, "help");
-            idx.add_item(2, "world");
-            idx.add_item(3, "rust");
-            idx.add_item(4, "code");
-            // "he" matches only items 0,1 = 2/5 = 40% < 80%
-            let bg = extract_query_bigrams("he");
-            let candidates = idx.candidates(&bg);
-            assert!(candidates.is_some());
-            let cands = candidates.unwrap();
-            assert!(cands.contains(&0));
-            assert!(cands.contains(&1));
-            assert!(!cands.contains(&2));
-        }
-
-        #[test]
-        fn test_bigram_index_remove_and_swap() {
-            let items: Vec<String> = vec!["abc".into(), "def".into(), "abx".into()];
-            let mut idx = BigramIndex::new(&items);
-            // Remove item 0 ("abc"), swapping in item 2 ("abx")
-            idx.remove_item(0, 2, "abc", Some("abx"));
-            // "abx" should now be at index 0
-            let bg = extract_query_bigrams("ab");
-            let candidates = idx.candidates(&bg);
-            assert!(candidates.is_some());
-            let cands = candidates.unwrap();
-            assert!(cands.contains(&0)); // "abx" was swapped to index 0
-            assert!(!cands.contains(&2)); // old index 2 no longer valid
-        }
-
-        #[test]
-        fn test_bigram_index_empty_query() {
-            let items: Vec<String> = vec!["hello".into()];
-            let idx = BigramIndex::new(&items);
-            assert_eq!(idx.candidates(&[]), None);
-        }
-    }
-
     mod proptest_search {
         use super::*;
         use proptest::prelude::*;
@@ -967,7 +1396,7 @@ mod tests {
                 query in "[a-z]{1,5}",
                 items in prop::collection::vec("[a-z]{1,10}", 1..20),
             ) {
-                let closest_result = closest(query.clone(), items.clone(), None);
+                let closest_result = closest(query.clone(), items.clone(), None).unwrap();
                 let search_results = search_impl(query, items, None, None, false, CaseMatching::Smart);
 
                 match (closest_result, search_results.first()) {
@@ -1096,7 +1525,7 @@ mod tests {
         #[test]
         fn test_closest_cjk() {
             let items = vec!["大阪".to_string(), "京都".to_string(), "東京都".to_string()];
-            let result = closest("東京".to_string(), items, None);
+            let result = closest("東京".to_string(), items, None).unwrap();
             assert!(result.is_some());
         }
 
@@ -1111,9 +1540,7 @@ mod tests {
             // using .len() (byte length) correctly differentiates them.
             // Both items contain the query's ASCII letters (h,e,l,o)
             // so the bitmask pre-filter in the indexed path matches both.
-            use std::cell::RefCell;
-
-            use nucleo_matcher::{Config, Matcher, Utf32String};
+            use rapid_fuzzy_core::search::FuzzyIndexCore;
 
             let items = vec!["hello世界".to_string(), "helloab".to_string()];
 
@@ -1126,29 +1553,15 @@ mod tests {
                 CaseMatching::Smart,
             );
 
-            // Build precomputed context to test the indexed path.
-            let utf32_items: Vec<Utf32String> = items
-                .iter()
-                .map(|s| Utf32String::from(s.as_str()))
-                .collect();
-            let char_masks: Vec<u64> = items.iter().map(|s| compute_char_mask(s)).collect();
-            let matcher = RefCell::new(Matcher::new(Config::DEFAULT));
-            let ctx = PrecomputedSearch {
-                items: &items,
-                utf32_items: &utf32_items,
-                char_masks: &char_masks,
-                candidate_indices: None,
-                matcher: &matcher,
-            };
-            let indexed =
-                search_over_precomputed("hello", &ctx, None, None, false, CaseMatching::Smart);
+            let index = FuzzyIndexCore::new(items);
+            let indexed = index.search_impl("hello", None, None, false, CaseMatching::Smart);
 
             assert_eq!(
                 standalone.len(),
-                indexed.results.len(),
+                indexed.len(),
                 "result count differs between standalone and indexed search"
             );
-            for (s, i) in standalone.iter().zip(indexed.results.iter()) {
+            for (s, i) in standalone.iter().zip(indexed.iter()) {
                 assert_eq!(
                     s.item, i.item,
                     "ordering differs between standalone and indexed search"

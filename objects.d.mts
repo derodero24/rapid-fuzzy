@@ -1,5 +1,6 @@
 export type {
   KeyConfig,
+  KeyPath,
   ObjectIndexOptions,
   ObjectIndexSearchOptions,
   ObjectSearchOptions,

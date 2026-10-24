@@ -27,6 +27,7 @@ interface Window {
     indelMany: number[];
     normalizedIndelMany: number[];
     normalizedHammingMany: (number | null)[];
+    thresholdTypeErrors: Array<string | null>;
     tokenSortRatio: number;
     tokenSetRatio: number;
     partialRatio: number;
@@ -40,7 +41,20 @@ interface Window {
     indexClosest: string | null;
     indexSizeAfterAdd: number;
     indexSizeAfterDestroy: number;
-    missingExports: string[];
-    allExportsPresent: boolean;
+    levenshteinManyU32: { typed: boolean; values: number[] };
+    hammingManyU32: number[];
+    matchType: string | undefined;
+    matchTypeEnum: Record<string, string>;
+    highlight: string;
+    highlightSubpath: string;
+    highlightRanges: Array<{ start: number; end: number; matched: boolean }>;
+    searchObjects: string[];
+    objectIndexSearch: string[];
+    objectIndexClosest: string | null;
+    objectIndexClosestOptions: Array<string | null>;
+    objectIndexSize: number;
+    objectsFromMainEntry: boolean;
+    exports: string[];
+    wasmRequests: string[];
   };
 }

@@ -1,16 +1,18 @@
-use napi::bindgen_prelude::{AsyncTask, Buffer};
-use napi::{Either, Task};
+use napi::bindgen_prelude::{AsyncTask, Buffer, ObjectFinalize, Unknown};
+use napi::{Env, Task};
 use napi_derive::napi;
 use nucleo_matcher::pattern::CaseMatching;
-use rapid_fuzzy_core::search::FuzzyIndexCore;
-use rapid_fuzzy_core::search::serialization::{
-    FUZZY_INDEX_MAGIC, deserialize_items, serialize_items,
+use rapid_fuzzy_core::search::serialization::{deserialize_fuzzy_index, serialize_fuzzy_index};
+use rapid_fuzzy_core::search::{FuzzyIndexCore, is_empty_query};
+
+use super::{
+    IndexSearchResult, ResolvedSearchOptions, SearchOptionsArg, SearchResult, read_remove_index,
+    resolve_min_score,
 };
 
-use super::{IndexSearchResult, SearchOptions, SearchResult, resolve_case_matching};
-
 pub struct BuildFuzzyIndexTask {
-    items: Vec<String>,
+    /// The converted items, or the conversion error to reject the Promise with.
+    items: napi::Result<Vec<String>>,
 }
 
 impl Task for BuildFuzzyIndexTask {
@@ -18,11 +20,12 @@ impl Task for BuildFuzzyIndexTask {
     type JsValue = FuzzyIndex;
 
     fn compute(&mut self) -> napi::Result<Self::Output> {
-        Ok(FuzzyIndexCore::new(std::mem::take(&mut self.items)))
+        let items = std::mem::replace(&mut self.items, Ok(Vec::new()))?;
+        Ok(FuzzyIndexCore::new(items))
     }
 
-    fn resolve(&mut self, _env: napi::Env, output: Self::Output) -> napi::Result<Self::JsValue> {
-        Ok(FuzzyIndex { core: output })
+    fn resolve(&mut self, env: Env, output: Self::Output) -> napi::Result<Self::JsValue> {
+        FuzzyIndex::from_core(output).with_reported_memory(env)
     }
 }
 
@@ -30,31 +33,87 @@ impl Task for BuildFuzzyIndexTask {
 ///
 /// Holds items in memory on the Rust side, avoiding repeated FFI overhead
 /// for applications that search the same dataset multiple times.
-/// Pre-computes Utf32String representations for each item, eliminating
-/// per-search string conversion overhead.
+/// Pre-computes the search representation of each item (a character mask,
+/// plus the UTF-32 text of non-ASCII items), eliminating per-search string
+/// conversion overhead.
 /// Memory is freed when the JavaScript garbage collector collects the instance
 /// or when `destroy()` is called explicitly.
-#[napi]
+#[napi(custom_finalize)]
 pub struct FuzzyIndex {
     core: FuzzyIndexCore,
+    /// Native heap bytes currently reported to the JavaScript engine (see
+    /// [`FuzzyIndex::report_memory`]).
+    reported_bytes: i64,
+}
+
+impl FuzzyIndex {
+    fn from_core(core: FuzzyIndexCore) -> Self {
+        Self {
+            core,
+            reported_bytes: 0,
+        }
+    }
+
+    /// Create an index of `items` without reporting its memory (see
+    /// [`FuzzyIndex::report_memory`]).
+    pub fn new(items: Vec<String>) -> Self {
+        Self::from_core(FuzzyIndexCore::new(items))
+    }
+
+    fn with_reported_memory(mut self, env: Env) -> napi::Result<Self> {
+        self.report_memory(env)?;
+        Ok(self)
+    }
+
+    /// Tell the JavaScript engine how much native memory this index holds.
+    ///
+    /// The engine only sees the small wrapper object, so without this its
+    /// garbage collector does not know that collecting an unreachable index
+    /// frees memory, and indexes that are never `destroy()`ed pile up.
+    /// Called whenever the index's size changes; the finalizer releases the
+    /// amount again.
+    fn report_memory(&mut self, env: Env) -> napi::Result<()> {
+        let bytes = i64::try_from(self.core.heap_size()).unwrap_or(i64::MAX);
+        let delta = bytes - self.reported_bytes;
+        if delta != 0 {
+            env.adjust_external_memory(delta)?;
+            self.reported_bytes = bytes;
+        }
+        Ok(())
+    }
+}
+
+impl ObjectFinalize for FuzzyIndex {
+    fn finalize(self, env: Env) -> napi::Result<()> {
+        if self.reported_bytes != 0 {
+            env.adjust_external_memory(-self.reported_bytes)?;
+        }
+        Ok(())
+    }
 }
 
 #[napi]
 impl FuzzyIndex {
     /// Create a new FuzzyIndex from an array of strings.
     #[napi(constructor)]
-    pub fn new(items: Vec<String>) -> Self {
-        Self {
-            core: FuzzyIndexCore::new(items),
-        }
+    pub fn create(env: Env, items: Vec<String>) -> napi::Result<Self> {
+        Self::new(items).with_reported_memory(env)
     }
 
     /// Construct a FuzzyIndex on the libuv thread pool, returning a Promise.
     ///
     /// For large datasets this keeps the JavaScript event loop unblocked during
     /// index construction. The synchronous constructor is fine for small datasets.
+    ///
+    /// Invalid input (such as an array containing a non-string) rejects the
+    /// returned Promise instead of throwing synchronously.
     #[napi(ts_return_type = "Promise<FuzzyIndex>")]
-    pub fn from_async(items: Vec<String>) -> AsyncTask<BuildFuzzyIndexTask> {
+    pub fn from_async(
+        #[napi(ts_arg_type = "Array<string>")] items: napi::bindgen_prelude::Unknown<'_>,
+    ) -> AsyncTask<BuildFuzzyIndexTask> {
+        // JS values can only be read on the calling thread, so convert here and
+        // hand a conversion error to the task, which rejects the Promise with it.
+        let items = <Vec<String> as napi::bindgen_prelude::FromNapiValue>::from_unknown(items);
         AsyncTask::new(BuildFuzzyIndexTask { items })
     }
 
@@ -69,30 +128,31 @@ impl FuzzyIndex {
     /// Returns matches sorted by score (best match first).
     /// Scores are normalized to a 0.0-1.0 range where 1.0 is a perfect match.
     ///
+    /// Results are identical to `search(query, items, options)` over the same
+    /// items, including the query syntax and whitespace rules.
+    ///
     /// The second argument accepts either a number (maxResults shorthand) or a
-    /// SearchOptions object.
+    /// SearchOptions object. `maxResults` must be a non-negative integer or
+    /// `Infinity`.
     #[napi]
     pub fn search(
         &self,
         query: String,
-        options: Option<Either<u32, SearchOptions>>,
+        #[napi(ts_arg_type = "number | SearchOptions | undefined | null")] options: Option<
+            SearchOptionsArg,
+        >,
     ) -> Vec<SearchResult> {
-        let (max_results, min_score, include_positions, case_matching, return_all_on_empty) =
-            match options {
-                Some(Either::A(max)) => (Some(max), None, false, CaseMatching::Smart, false),
-                Some(Either::B(opts)) => (
-                    opts.max_results,
-                    opts.min_score,
-                    opts.include_positions.unwrap_or(false),
-                    resolve_case_matching(opts.is_case_sensitive),
-                    opts.return_all_on_empty.unwrap_or(false),
-                ),
-                None => (None, None, false, CaseMatching::Smart, false),
-            };
+        let ResolvedSearchOptions {
+            max_results,
+            min_score,
+            include_positions,
+            case_matching,
+            return_all_on_empty,
+        } = ResolvedSearchOptions::new(options);
 
-        if return_all_on_empty && query.trim().is_empty() {
+        if return_all_on_empty && is_empty_query(&query) {
             let items = self.core.items();
-            let limit = max_results.unwrap_or(items.len() as u32) as usize;
+            let limit = max_results.unwrap_or(u32::MAX) as usize;
             return items
                 .iter()
                 .enumerate()
@@ -118,12 +178,15 @@ impl FuzzyIndex {
 
     /// Find the closest matching string in the index.
     ///
-    /// Returns the best match, or null if no match is found.
-    /// If minScore is provided, returns null when the best match scores below the threshold.
+    /// Returns the best match, or null if no match is found: the index's
+    /// copy of the item, converted to UTF-8 like `SearchResult.item`.
+    /// If minScore is provided, returns null when the best match scores below
+    /// the threshold. A NaN minScore throws an `InvalidArg` error.
     #[napi]
-    pub fn closest(&self, query: String, min_score: Option<f64>) -> Option<String> {
+    pub fn closest(&self, query: String, min_score: Option<f64>) -> napi::Result<Option<String>> {
+        let min_score = resolve_min_score(min_score)?;
         let results = self.search_impl(&query, Some(1), min_score, false, CaseMatching::Smart);
-        results.into_iter().next().map(|r| r.item)
+        Ok(results.into_iter().next().map(|r| r.item))
     }
 
     /// Search the index, returning only indices and scores (no item strings).
@@ -133,29 +196,27 @@ impl FuzzyIndex {
     /// String cloning overhead for each result.
     ///
     /// The second argument accepts either a number (maxResults shorthand) or a
-    /// SearchOptions object.
+    /// SearchOptions object. `maxResults` must be a non-negative integer or
+    /// `Infinity`.
     #[napi]
     pub fn search_indices(
         &self,
         query: String,
-        options: Option<Either<u32, SearchOptions>>,
+        #[napi(ts_arg_type = "number | SearchOptions | undefined | null")] options: Option<
+            SearchOptionsArg,
+        >,
     ) -> Vec<IndexSearchResult> {
-        let (max_results, min_score, include_positions, case_matching, return_all_on_empty) =
-            match options {
-                Some(Either::A(max)) => (Some(max), None, false, CaseMatching::Smart, false),
-                Some(Either::B(opts)) => (
-                    opts.max_results,
-                    opts.min_score,
-                    opts.include_positions.unwrap_or(false),
-                    resolve_case_matching(opts.is_case_sensitive),
-                    opts.return_all_on_empty.unwrap_or(false),
-                ),
-                None => (None, None, false, CaseMatching::Smart, false),
-            };
+        let ResolvedSearchOptions {
+            max_results,
+            min_score,
+            include_positions,
+            case_matching,
+            return_all_on_empty,
+        } = ResolvedSearchOptions::new(options);
 
-        if return_all_on_empty && query.trim().is_empty() {
+        if return_all_on_empty && is_empty_query(&query) {
             let num_items = self.core.size() as usize;
-            let limit = max_results.unwrap_or(num_items as u32) as usize;
+            let limit = max_results.unwrap_or(u32::MAX) as usize;
             return (0..num_items)
                 .take(limit)
                 .map(|i| IndexSearchResult {
@@ -178,28 +239,47 @@ impl FuzzyIndex {
 
     /// Add a single item to the index.
     #[napi]
-    pub fn add(&mut self, item: String) {
+    pub fn add(&mut self, env: Env, item: String) -> napi::Result<()> {
         self.core.add(item);
+        self.report_memory(env)
     }
 
     /// Add multiple items to the index at once.
     #[napi]
-    pub fn add_many(&mut self, items: Vec<String>) {
+    pub fn add_many(&mut self, env: Env, items: Vec<String>) -> napi::Result<()> {
         self.core.add_many(items);
+        self.report_memory(env)
     }
 
     /// Remove the item at the given index.
     ///
-    /// Uses swap-remove for O(1) performance. Returns false if out of bounds.
+    /// Uses swap-remove for O(1) performance: the last item moves into the
+    /// freed slot. Returns false, removing nothing, if `index` is out of
+    /// range (negative, or not less than `size`). Throws a `TypeError` if
+    /// `index` is not a number and a `RangeError` if it is not an integer
+    /// (`NaN`, `±Infinity` or a fraction), like `FuzzyObjectIndex.remove()`.
     #[napi]
-    pub fn remove(&mut self, index: u32) -> bool {
-        self.core.remove(index)
+    pub fn remove(
+        &mut self,
+        env: Env,
+        #[napi(ts_arg_type = "number")] index: Unknown<'_>,
+    ) -> napi::Result<bool> {
+        let Some(index) = read_remove_index(env, index)? else {
+            return Ok(false);
+        };
+        let removed = self.core.remove(index);
+        self.report_memory(env)?;
+        Ok(removed)
     }
 
     /// Free the internal data. After calling this, the index is empty.
+    ///
+    /// The index stays usable: it behaves as an empty index (searches
+    /// return no results) and `add()` / `addMany()` work as before.
     #[napi]
-    pub fn destroy(&mut self) {
+    pub fn destroy(&mut self, env: Env) -> napi::Result<()> {
         self.core.destroy();
+        self.report_memory(env)
     }
 
     /// Serialize the index to a compact binary format.
@@ -207,27 +287,42 @@ impl FuzzyIndex {
     /// The returned Buffer can be written to disk, stored in IndexedDB,
     /// or transferred over the network. Use `FuzzyIndex.deserialize()` to
     /// reconstruct the index.
-    #[napi]
+    ///
+    /// The format stores the item strings (UTF-8, each with a 4-byte length)
+    /// after a small header, not the precomputed search data:
+    /// `deserialize()` recomputes it, so loading takes about as long as
+    /// building the index from an array. The format is versioned; data
+    /// written by a different format version is rejected.
+    #[napi(ts_return_type = "NodeBuffer")]
     pub fn serialize(&self) -> Buffer {
         self.serialize_impl().into()
     }
 
-    /// Reconstruct a FuzzyIndex from a previously serialized Buffer.
+    /// Reconstruct a FuzzyIndex from a previously serialized Buffer, or any
+    /// other Uint8Array holding the same bytes (such as the output of the
+    /// browser build's `serialize()`).
     ///
-    /// Pre-computes Utf32String and character masks from the stored items,
+    /// Pre-computes the search representation of the stored items,
     /// so the returned index is immediately ready for searching.
     #[napi(factory)]
-    pub fn deserialize(data: Buffer) -> napi::Result<Self> {
-        Self::deserialize_impl(&data).map_err(napi::Error::from_reason)
+    pub fn deserialize(
+        env: Env,
+        // Read as a Buffer, which napi-rs accepts any Uint8Array for.
+        // `NodeBuffer` keeps a Buffer valid where it is not a `Uint8Array` to
+        // TypeScript 5.7+ (the non-generic Buffer of older @types/node).
+        #[napi(ts_arg_type = "Uint8Array | NodeBuffer")] data: Buffer,
+    ) -> napi::Result<Self> {
+        Self::deserialize_impl(&data)
+            .map_err(napi::Error::from_reason)?
+            .with_reported_memory(env)
     }
 
     fn serialize_impl(&self) -> Vec<u8> {
-        serialize_items(self.core.items(), FUZZY_INDEX_MAGIC)
+        serialize_fuzzy_index(&self.core)
     }
 
     fn deserialize_impl(bytes: &[u8]) -> Result<Self, String> {
-        let items = deserialize_items(bytes, FUZZY_INDEX_MAGIC)?;
-        Ok(Self::new(items))
+        deserialize_fuzzy_index(bytes).map(Self::from_core)
     }
 
     fn search_impl(
@@ -334,14 +429,14 @@ mod tests {
     #[test]
     fn test_closest() {
         let index = FuzzyIndex::new(vec!["apple".into(), "banana".into()]);
-        let result = index.closest("app".into(), None);
+        let result = index.closest("app".into(), None).unwrap();
         assert_eq!(result, Some("apple".into()));
     }
 
     #[test]
     fn test_closest_with_min_score() {
         let index = FuzzyIndex::new(vec!["xyz".into()]);
-        let result = index.closest("hello".into(), Some(0.99));
+        let result = index.closest("hello".into(), Some(0.99)).unwrap();
         assert!(result.is_none());
     }
 
@@ -349,31 +444,33 @@ mod tests {
     fn test_add() {
         let mut index = FuzzyIndex::new(vec!["apple".into()]);
         assert_eq!(index.size(), 1);
-        index.add("banana".into());
+        index.core.add("banana".into());
         assert_eq!(index.size(), 2);
-        let result = index.closest("banana".into(), None);
+        let result = index.closest("banana".into(), None).unwrap();
         assert_eq!(result, Some("banana".into()));
     }
 
     #[test]
     fn test_add_many() {
         let mut index = FuzzyIndex::new(vec![]);
-        index.add_many(vec!["apple".into(), "banana".into(), "grape".into()]);
+        index
+            .core
+            .add_many(vec!["apple".into(), "banana".into(), "grape".into()]);
         assert_eq!(index.size(), 3);
     }
 
     #[test]
     fn test_remove() {
         let mut index = FuzzyIndex::new(vec!["apple".into(), "banana".into(), "grape".into()]);
-        assert!(index.remove(1)); // remove "banana"
+        assert!(index.core.remove(1)); // remove "banana"
         assert_eq!(index.size(), 2);
-        assert!(!index.remove(10)); // out of bounds
+        assert!(!index.core.remove(10)); // out of bounds
     }
 
     #[test]
     fn test_remove_swap_semantics() {
         let mut index = FuzzyIndex::new(vec!["a".into(), "b".into(), "c".into()]);
-        index.remove(0); // removes "a", swaps "c" into position 0
+        index.core.remove(0); // removes "a", swaps "c" into position 0
         assert_eq!(index.size(), 2);
         // After swap_remove(0): ["c", "b"]
         let results = index.search_impl("c", None, None, false, CaseMatching::Smart);
@@ -383,7 +480,7 @@ mod tests {
     #[test]
     fn test_destroy() {
         let mut index = FuzzyIndex::new(vec!["apple".into(), "banana".into()]);
-        index.destroy();
+        index.core.destroy();
         assert_eq!(index.size(), 0);
         let results = index.search_impl("apple", None, None, false, CaseMatching::Smart);
         assert!(results.is_empty());

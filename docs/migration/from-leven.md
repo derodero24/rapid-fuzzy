@@ -1,6 +1,6 @@
 # Migrating from leven / fastest-levenshtein to rapid-fuzzy
 
-[leven](https://www.npmjs.com/package/leven) and [fastest-levenshtein](https://www.npmjs.com/package/fastest-levenshtein) are single-purpose Levenshtein distance libraries. rapid-fuzzy provides the same Levenshtein distance plus six additional algorithms, batch APIs, and fuzzy search — all from a single package.
+[leven](https://www.npmjs.com/package/leven) and [fastest-levenshtein](https://www.npmjs.com/package/fastest-levenshtein) are single-purpose Levenshtein distance libraries. rapid-fuzzy provides the same Levenshtein distance (for text in the Basic Multilingual Plane, see [Emoji and other non-BMP characters](#emoji-and-other-non-bmp-characters)) plus other distance metrics (Damerau-Levenshtein, Hamming, Indel, Jaro, Jaro-Winkler, Sorensen-Dice), token-based ratios, batch APIs, and fuzzy search — all from a single package.
 
 ## Installation
 
@@ -37,32 +37,48 @@ levenshtein('kitten', 'sitting'); // 3
 | fastest-levenshtein | rapid-fuzzy |
 |---|---|
 | `distance(a, b)` | `levenshtein(a, b)` |
-| `closest(s, targets)` | `closest(s, targets)` |
+| `closest(s, targets)` | `levenshteinMany(s, targets)` + pick the minimum (see below) |
 
 ```typescript
 // Before (fastest-levenshtein)
 import { distance, closest } from 'fastest-levenshtein';
-distance('kitten', 'sitting');                  // 3
-closest('fast', ['slow', 'faster', 'fastest']); // 'faster'
+distance('kitten', 'sitting');                    // 3
+closest('kitten', ['sitting', 'mitten', 'kitchen']); // 'mitten'
 
 // After (rapid-fuzzy)
-import { levenshtein, closest } from 'rapid-fuzzy';
-levenshtein('kitten', 'sitting');                  // 3
-closest('fast', ['slow', 'faster', 'fastest']);     // 'faster'
+import { levenshtein, levenshteinMany } from 'rapid-fuzzy';
+levenshtein('kitten', 'sitting'); // 3
+
+const targets = ['sitting', 'mitten', 'kitchen'];
+const distances = levenshteinMany('kitten', targets); // [3, 1, 2]
+const best = targets[distances.indexOf(Math.min(...distances))]; // 'mitten'
+```
+
+> **rapid-fuzzy's `closest()` is not an edit-distance search.** It returns the best *fuzzy search* match: an item that contains the query's characters in order, ranked by the nucleo matcher. `closest('kitten', ['sitting', 'mitten', 'kitchen'])` returns `null`, because no target contains `k`, `i`, `t`, `t`, `e`, `n` in that order. Use `levenshteinMany` as above to keep fastest-levenshtein's behaviour.
+
+### Emoji and other non-BMP characters
+
+rapid-fuzzy counts Unicode code points, while leven and fastest-levenshtein count UTF-16 code units. The two are the same for text in the Basic Multilingual Plane (Latin, Cyrillic, Greek, CJK, combining marks and so on), and the distances agreed on every pair in our differential tests of such text. An emoji or another character outside the BMP is one code point but two UTF-16 code units, so distances involving one can differ, and so can the best match:
+
+```typescript
+levenshtein('😀', 'a');        // 1 (leven and fastest-levenshtein's distance(): 2)
+levenshtein('café 😀', 'cafe'); // 3 (leven and distance(): 4)
+
+// fastest-levenshtein's closest('😀', ['ab', 'a']) returns 'ab' (distance 2 to both)
+levenshteinMany('😀', ['ab', 'a']); // [2, 1]: the recipe above picks 'a'
 ```
 
 ## What You Gain
-
-By switching to rapid-fuzzy, you get access to a broader set of tools without adding extra dependencies:
 
 ### Multiple algorithms
 
 ```typescript
 import {
-  levenshtein,           // Same as leven / fastest-levenshtein
+  levenshtein,           // Same as leven / fastest-levenshtein (for BMP text)
   normalizedLevenshtein, // 0.0-1.0 similarity (length-independent)
   damerauLevenshtein,    // Handles transpositions (ab → ba = 1 edit)
   hamming,               // Positional differences (equal-length strings)
+  indel,                 // Insertions and deletions only
   jaroWinkler,           // Prefix-weighted, great for names
   sorensenDice,          // Bigram-based text similarity
   jaro,                  // Base Jaro similarity
@@ -71,7 +87,7 @@ import {
 
 ### Batch APIs
 
-Process multiple pairs in a single FFI call for better performance:
+Process many pairs in a single call:
 
 ```typescript
 import { levenshteinBatch, levenshteinMany } from 'rapid-fuzzy';
@@ -86,7 +102,11 @@ const distances = levenshteinBatch([
 
 // Compare one string against many
 const scores = levenshteinMany('hello', ['help', 'held', 'world']);
-// [1, 2, 4]
+// [2, 2, 4]
+
+// Stop early above a maximum distance (exceeding candidates get maxDistance + 1)
+levenshteinMany('hello', ['help', 'held', 'world'], 2);
+// [2, 2, 3]
 ```
 
 ### Fuzzy search
@@ -94,48 +114,31 @@ const scores = levenshteinMany('hello', ['help', 'held', 'world']);
 ```typescript
 import { search, closest } from 'rapid-fuzzy';
 
-// Find the best match
+// Find the best fuzzy match
 const best = closest('typscript', ['TypeScript', 'JavaScript', 'Python']);
 // 'TypeScript'
 
 // Search with ranked results
 const results = search('type', ['TypeScript', 'JavaScript', 'Python']);
-// [{ item: 'TypeScript', score: 1.0, index: 0 }, ...]
+// [{ item: 'TypeScript', score: 1, index: 0, positions: [] }]
 ```
 
 ## Performance Considerations
 
-For single-pair Levenshtein distance, fastest-levenshtein is still faster due to zero FFI overhead, but the gap has narrowed significantly with v0.5.0's bit-parallel algorithm:
+From the [README benchmarks](../../README.md#benchmarks) (Node.js 22, Linux x64, Intel Xeon @ 2.10GHz; 6 string pairs per operation; ops/s, higher is better):
 
 | Operation | rapid-fuzzy | fastest-levenshtein | leven |
 |---|---:|---:|---:|
-| Single pair | 545,338 ops/s | **741,195 ops/s** | 225,457 ops/s |
+| Single pairs (`levenshtein` / `distance` / `leven`) | 333,490 ops/s | **400,349 ops/s** | 131,383 ops/s |
+| 1 vs 1,000 short candidates | 3,752 ops/s (`levenshteinMany`) | **10,458 ops/s** (loop over `distance`) | — |
 
-rapid-fuzzy is 2.4x faster than leven and within 1.4x of fastest-levenshtein.
+fastest-levenshtein is a highly optimized pure-JS implementation, and every rapid-fuzzy call has to cross the JS/Rust boundary and convert its strings: for short strings fastest-levenshtein was about 1.2x faster per pair, and about 2.8x faster than `levenshteinMany` over 1,000 short candidates. rapid-fuzzy was about 2.5x faster than leven. On long strings the native bit-parallel implementation is fast (two 100,000-character strings take about 0.5 s).
 
-For closest-match scenarios, rapid-fuzzy pulls ahead — especially with `FuzzyIndex` for repeated searches:
-
-| Closest match | rapid-fuzzy | FuzzyIndex | fastest-levenshtein |
-|---|---:|---:|---:|
-| 1,000 items | 7,690 ops/s | **906,274 ops/s** | 3,536 ops/s |
-| 10,000 items | 611 ops/s | **352,688 ops/s** | 620 ops/s |
-
-`FuzzyIndex` pre-computes internal data structures, making it **256x faster** than fastest-levenshtein for closest-match on 1K items. For repeated searches against the same dataset, always prefer `FuzzyIndex`:
-
-```typescript
-import { FuzzyIndex } from 'rapid-fuzzy';
-
-const index = new FuzzyIndex(['slow', 'faster', 'fastest', /* ... */]);
-const best = index.closest('fast'); // 'faster' — uses pre-built index
-```
-
-**When to choose rapid-fuzzy over fastest-levenshtein**:
-- You need more than just Levenshtein (similarity scores, other algorithms)
-- You process batches of string pairs
-- You need fuzzy search / closest match on medium-to-large datasets
-- You search the same dataset repeatedly (`FuzzyIndex` is 256x faster for closest-match)
-- You want a single dependency for all string distance needs
+**When to choose rapid-fuzzy**:
+- You need more than Levenshtein (normalized similarities, Damerau-Levenshtein, Jaro-Winkler, token ratios)
+- You need fuzzy search, object search or a persistent search index in the same package
+- You want a single dependency for string distance and search
 
 **When to keep fastest-levenshtein**:
-- You only need Levenshtein distance for individual pairs
-- Maximum single-pair throughput is critical
+- You only need Levenshtein distance on short strings
+- Maximum per-pair throughput, or the smallest bundle (no native addon or WebAssembly), matters most
