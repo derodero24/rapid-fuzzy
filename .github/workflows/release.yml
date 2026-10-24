@@ -167,7 +167,7 @@ jobs:
         if: ${{ matrix.settings.use-zig }}
         uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
         with:
-          tool: cargo-zigbuild@0.23.4
+          tool: cargo-zigbuild@0.24.0
 
       - name: Build
         run: >-
