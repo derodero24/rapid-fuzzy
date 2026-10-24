@@ -1,0 +1,70 @@
+---
+title: rapid-fuzzy
+description: Fuzzy search and string similarity for JavaScript and TypeScript, powered by Rust. Native in Node.js, WebAssembly in browsers, Deno, Bun and Cloudflare Workers.
+template: splash
+hero:
+  tagline: Fuzzy search and string similarity for JavaScript, powered by Rust. Native in Node.js, WebAssembly everywhere else, with one API.
+  image:
+    file: ../../assets/logo.svg
+  actions:
+    - text: Get started
+      link: /rapid-fuzzy/getting-started/
+      icon: right-arrow
+    - text: Try the playground
+      link: /rapid-fuzzy/playground/
+      variant: minimal
+    - text: View on GitHub
+      link: https://github.com/derodero24/rapid-fuzzy
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+```ts
+import { FuzzyIndex, searchObjects, levenshtein } from 'rapid-fuzzy';
+
+const users = [
+  { name: 'John Smith', city: 'Tokyo' },
+  { name: 'Jane Doe', city: 'Osaka' },
+];
+
+const index = new FuzzyIndex(['TypeScript', 'JavaScript', 'Python', 'Rust']);
+index.search('typscript'); // → [{ item: 'TypeScript', score: 0.86, index: 0, … }]
+
+searchObjects('john tokyo', users, { keys: ['name', 'city'], matchMode: 'crossKey' });
+
+levenshtein('kitten', 'sitting'); // → 3
+```
+
+## Features
+
+<CardGrid stagger>
+  <Card title="Fast on large lists" icon="rocket">
+    A persistent `FuzzyIndex` answers a query over 10,000 items in about 0.2 ms: 180x faster than fuse.js and 1.6x faster than fuzzysort in our [benchmarks](/rapid-fuzzy/benchmarks/). Large searches use every CPU core in Node.js.
+  </Card>
+  <Card title="Runs everywhere" icon="laptop">
+    A native addon for Node.js on macOS, Linux and Windows, and a WebAssembly build for browsers, Deno, Bun and Cloudflare Workers. Bundlers pick the right one on their own.
+  </Card>
+  <Card title="Search that feels like fzf" icon="magnifier">
+    The matcher from the Helix editor, with smart case, diacritic folding, `^prefix`, `suffix$`, `'exact` and `!exclude` terms in any order, and match positions for highlighting.
+  </Card>
+  <Card title="Objects with weighted keys" icon="list-format">
+    Search records across nested keys with weights, and choose how key scores combine and whether terms may match different keys.
+  </Card>
+  <Card title="String similarity built in" icon="puzzle">
+    Levenshtein, Damerau-Levenshtein, Jaro-Winkler, Sørensen-Dice, Hamming, Indel and RapidFuzz-style token ratios, with batch and typed-array variants.
+  </Card>
+  <Card title="Strictly typed" icon="seti:typescript">
+    Complete TypeScript declarations, with key paths checked against your item type and separate declarations for the browser build.
+  </Card>
+</CardGrid>
+
+## Learn more
+
+<CardGrid>
+  <LinkCard title="Getting started" href="/rapid-fuzzy/getting-started/" description="Install the package and run your first search." />
+  <LinkCard title="Why rapid-fuzzy?" href="/rapid-fuzzy/comparison/" description="How it compares with fuse.js, fuzzysort and others, and when to choose them instead." />
+  <LinkCard title="Playground" href="/rapid-fuzzy/playground/" description="Search your own data in the browser and time it against fuse.js and fuzzysort." />
+  <LinkCard title="API reference" href="/rapid-fuzzy/api/readme/" description="Every function, class and option, generated from the type declarations." />
+</CardGrid>

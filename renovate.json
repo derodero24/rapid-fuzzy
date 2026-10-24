@@ -49,6 +49,29 @@
       "enabled": false
     },
     {
+      "description": "Documentation site (site/, its own pnpm project): group its updates and automerge non-major ones, since CI builds the site and validates its links",
+      "matchFileNames": ["site/package.json"],
+      "groupName": "docs site"
+    },
+    {
+      "matchFileNames": ["site/package.json"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "automerge": true
+    },
+    {
+      "description": "The docs site documents the latest rapid-fuzzy release: take it as soon as it is published",
+      "matchFileNames": ["site/package.json"],
+      "matchPackageNames": ["rapid-fuzzy"],
+      "minimumReleaseAge": "0 days"
+    },
+    {
+      "description": "TypeDoc (starlight-typedoc) does not support TypeScript 7 yet: keep the docs site on TypeScript 6",
+      "matchFileNames": ["site/package.json"],
+      "matchPackageNames": ["typescript"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
+    },
+    {
       "description": "Group Rust crate updates",
       "matchManagers": ["cargo"],
       "groupName": "rust-dependencies"

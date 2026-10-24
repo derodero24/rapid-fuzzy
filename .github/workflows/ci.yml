@@ -14,6 +14,9 @@ on:
       - '.github/assets/**'
       - '.github/CODEOWNERS'
       - '.github/FUNDING.yml'
+      # The documentation site installs the published package from npm, so
+      # it cannot affect the package. Pull requests build it (the site job).
+      - 'site/**'
   pull_request:
     branches: [develop]
     # No paths-ignore here: a required status check that never reports blocks
@@ -35,12 +38,14 @@ jobs:
   # target. Pull requests only build the targets the test jobs consume unless
   # they touch the Rust sources, the Cargo manifests or config, or this
   # workflow, which keeps dependency-only PRs cheap. Add the "ci-full" label to
-  # a PR and re-run the workflow (or push) to build every target.
+  # a PR and re-run the workflow (or push) to build every target. The site job
+  # only runs for pull requests that touch site/ or this workflow.
   plan:
     name: Plan
     runs-on: ubuntu-latest
     outputs:
       run-ci: ${{ steps.plan.outputs.run-ci }}
+      run-site: ${{ steps.plan.outputs.run-site }}
       build-matrix: ${{ steps.plan.outputs.build-matrix }}
     steps:
       - id: plan
@@ -67,13 +72,17 @@ jobs:
             {"host":"ubuntu-latest","target":"wasm32-wasip1-threads"}
           ]'
           run_ci=true
+          run_site=false
           matrix="$full"
           if [ "$EVENT_NAME" = "pull_request" ]; then
             files=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --paginate --jq '.[].filename')
             labels=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.labels[].name')
             # The push trigger's paths-ignore list, as a regular expression.
-            if ! grep -Ev '(\.md$|^\.github/ISSUE_TEMPLATE/|^\.github/assets/|^\.github/CODEOWNERS$|^\.github/FUNDING\.yml$)' <<< "$files" | grep -q .; then
+            if ! grep -Ev '(\.md$|^\.github/ISSUE_TEMPLATE/|^\.github/assets/|^\.github/CODEOWNERS$|^\.github/FUNDING\.yml$|^site/)' <<< "$files" | grep -q .; then
               run_ci=false
+            fi
+            if grep -Eq '^(site/|\.github/workflows/ci\.yml$)' <<< "$files"; then
+              run_site=true
             fi
             if ! grep -qx 'ci-full' <<< "$labels" \
               && ! grep -Eq '^(crates/|\.cargo/|Cargo\.toml$|Cargo\.lock$|rust-toolchain\.toml$|deny\.toml$|scripts/|\.github/workflows/ci\.yml$)' <<< "$files"; then
@@ -86,8 +95,10 @@ jobs:
           else
             echo "Only documentation and repository metadata changed: skipping every other job."
           fi
+          echo "Build the documentation site: $run_site"
           {
             echo "run-ci=$run_ci"
+            echo "run-site=$run_site"
             echo "build-matrix=$(jq -c . <<< "$matrix")"
           } >> "$GITHUB_OUTPUT"
 
@@ -582,6 +593,40 @@ jobs:
   # request, fails when any job failed or was cancelled, and passes when the
   # plan job skipped the rest for a documentation-only change. Add every new
   # job to `needs`.
+  # The documentation site (site/) is its own pnpm project that installs the
+  # published rapid-fuzzy from npm. docs.yml deploys it from main.
+  site:
+    name: Docs Site
+    needs: plan
+    if: ${{ needs.plan.outputs.run-site == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            site/pnpm-lock.yaml
+      # Biome for the site's sources comes from the root project; the lint job
+      # skips pull requests that only touch site/.
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec biome ci site
+      - run: pnpm install --frozen-lockfile
+        working-directory: site
+      - name: Audit npm dependencies
+        run: pnpm audit --audit-level=high
+        working-directory: site
+      - run: pnpm run check
+        working-directory: site
+      # Also validates every internal link (starlight-links-validator).
+      - run: pnpm run build
+        working-directory: site
+
   ci-complete:
     name: CI Complete
     needs:
@@ -599,6 +644,7 @@ jobs:
       - test-browser
       - test-bun
       - test-deno
+      - site
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
@@ -606,18 +652,20 @@ jobs:
         env:
           RESULTS: ${{ toJSON(needs) }}
           RUN_CI: ${{ needs.plan.outputs.run-ci }}
+          RUN_SITE: ${{ needs.plan.outputs.run-site }}
         run: |
           jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<< "$RESULTS"
           # Skipped jobs only count as passing when the plan job chose to
           # skip them; anywhere else a skip means an upstream job broke. A
           # failed plan job leaves RUN_CI empty, so it fails here too.
-          if [ "$RUN_CI" = false ]; then
-            allowed='["success", "skipped"]'
-          else
-            allowed='["success"]'
-          fi
-          failed=$(jq -r --argjson allowed "$allowed" \
-            'to_entries[] | select(.value.result | IN($allowed[]) | not) | .key' <<< "$RESULTS")
+          # The site job follows its own flag, RUN_SITE.
+          allowed() {
+            if [ "$1" = false ]; then echo '["success", "skipped"]'; else echo '["success"]'; fi
+          }
+          failed=$(jq -r --argjson allowed "$(allowed "$RUN_CI")" --argjson site "$(allowed "$RUN_SITE")" \
+            'to_entries[] | . as $job
+              | select($job.value.result | IN((if $job.key == "site" then $site else $allowed end)[]) | not)
+              | .key' <<< "$RESULTS")
           if [ -n "$failed" ]; then
             echo "::error::Jobs that did not pass: $(tr '\n' ' ' <<< "$failed")"
             exit 1
