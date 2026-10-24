@@ -11,7 +11,7 @@ allowBuilds:
 # never proposes a major bump of these (see renovate.json). CI runs
 # `pnpm audit --audit-level=high` over all dependencies.
 overrides:
-  fast-uri: ^3.1.2
+  fast-uri: ^3.1.9
   js-yaml@4: ^4.2.0
   js-yaml@5: ^5.4.1
   shell-quote: ^1.11.0
