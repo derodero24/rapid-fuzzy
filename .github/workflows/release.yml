@@ -429,20 +429,14 @@ jobs:
       # package.json. GitHub release creation is left to the github-release
       # job, which only runs once everything is on npm.
       #
-      # Authentication: for each package, `npm publish` first tries npm trusted
-      # publishing (an OIDC token exchange, using `id-token: write`) and falls
-      # back to NODE_AUTH_TOKEN (the long-lived NPM_TOKEN) when the exchange
-      # fails, e.g. because the package has no trusted publisher for this
-      # workflow yet. npm logs that failure only at verbose level, so the
-      # fallback stays until a release has been confirmed to publish every
-      # package through OIDC. CONTRIBUTING.md ("Releasing") lists the cut-over
-      # steps, which end with removing NODE_AUTH_TOKEN from both steps below.
+      # Authentication: npm trusted publishing only (an OIDC token exchange,
+      # using `id-token: write`). There is no npm token: every package needs a
+      # trusted publisher for this workflow (CONTRIBUTING.md, "npm trusted
+      # publishing").
       - name: Publish platform packages
         run: |
           npm config set provenance true
           pnpm exec napi prepublish -t npm --no-gh-release
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       # Without these the root package installs no native binary at all. The
       # WASI package is deliberately not an optionalDependency (napi-rs only
@@ -468,8 +462,6 @@ jobs:
       # --ignore-scripts: prepublishOnly would run `napi prepublish` again.
       - name: Publish rapid-fuzzy
         run: npm publish --access public --provenance --ignore-scripts
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   # ──── Tag the released commit and create the GitHub release ────
   # Runs only after every package is on npm, so a failed publish never leaves
