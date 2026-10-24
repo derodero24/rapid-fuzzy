@@ -1,6 +1,6 @@
 {
   "name": "rapid-fuzzy",
-  "version": "2.1.1",
+  "version": "2.2.0",
   "description": "Rust-powered fuzzy search and string distance for JavaScript/TypeScript, with native Node.js bindings and a WebAssembly build for browsers, Deno and Workers.",
   "license": "MIT",
   "author": "derodero24",
