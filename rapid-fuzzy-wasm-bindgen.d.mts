@@ -121,6 +121,11 @@ export interface KeyClosestOptions {
      */
     minScore?: number | undefined;
     /**
+     * Typos tolerated per query term, as in `KeySearchOptions.maxTypos`.
+     * NaN, negative and fractional values throw.
+     */
+    maxTypos?: number | undefined;
+    /**
      * How the per-key scores of an item are combined into its score:
      * `"weighted"` (default), `"matched"` or `"max"`, as in
      * `KeySearchOptions.scoreMode`. Any other value throws a `TypeError`.
@@ -170,6 +175,19 @@ export interface KeySearchOptions {
      * Default is false.
      */
     returnAllOnEmpty?: boolean | undefined;
+    /**
+     * Typos tolerated per query term, on top of the missing characters
+     * fuzzy matching always tolerates: substituted, extra or swapped
+     * characters (`tpyescript` finds "TypeScript"). A non-negative integer,
+     * or `Infinity` for as many as each term allows; default 0. A term
+     * tolerates at most one typo per four characters (so none in terms of
+     * up to three characters), and only plain fuzzy terms tolerate typos,
+     * not `'exact`, `^prefix`, `suffix$` or `!negated` ones. Matches without
+     * typos keep the score they have without this option; matches with
+     * typos score below a perfect match. NaN, negative and fractional values
+     * throw.
+     */
+    maxTypos?: number | undefined;
     /**
      * How the per-key scores (`keyScores`) of an item are combined into its
      * `score`. Only keys with a positive weight take part:
@@ -264,6 +282,19 @@ export interface SearchOptions {
      * appear before the user starts typing. Default is false.
      */
     returnAllOnEmpty?: boolean | undefined;
+    /**
+     * Typos tolerated per query term, on top of the missing characters
+     * fuzzy matching always tolerates: substituted, extra or swapped
+     * characters (`tpyescript` finds "TypeScript"). A non-negative integer,
+     * or `Infinity` for as many as each term allows; default 0. A term
+     * tolerates at most one typo per four characters (so none in terms of
+     * up to three characters), and only plain fuzzy terms tolerate typos,
+     * not `'exact`, `^prefix`, `suffix$` or `!negated` ones. Matches without
+     * typos keep the score they have without this option; matches with
+     * typos score below a perfect match. NaN, negative and fractional values
+     * throw.
+     */
+    maxTypos?: number | undefined;
 }
 
 
@@ -385,7 +416,7 @@ export class KeyedFuzzyIndex {
      *
      * Returns the index of the best match, or null if no match is found:
      * the index of the first result of
-     * `search(query, { maxResults: 1, minScore, scoreMode, matchMode })`.
+     * `search(query, { maxResults: 1, minScore, maxTypos, scoreMode, matchMode })`.
      *
      * The second argument accepts either a number (minScore shorthand) or a
      * KeyClosestOptions object: `minScore` makes it return null when the

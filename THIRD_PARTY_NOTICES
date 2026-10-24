@@ -41,46 +41,50 @@ either (MIT OR Apache-2.0)
   https://github.com/rayon-rs/either
   License texts: [1] LICENSE-APACHE, [7] LICENSE-MIT
 
+frizbee (MIT)
+  https://github.com/saghen/frizbee
+  License texts: [8] LICENSE
+
 futures (MIT OR Apache-2.0)
   https://github.com/rust-lang/futures-rs
-  License texts: [8] LICENSE-APACHE, [9] LICENSE-MIT
+  License texts: [9] LICENSE-APACHE, [10] LICENSE-MIT
 
 futures-channel (MIT OR Apache-2.0)
   https://github.com/rust-lang/futures-rs
-  License texts: [8] LICENSE-APACHE, [9] LICENSE-MIT
+  License texts: [9] LICENSE-APACHE, [10] LICENSE-MIT
 
 futures-core (MIT OR Apache-2.0)
   https://github.com/rust-lang/futures-rs
-  License texts: [8] LICENSE-APACHE, [9] LICENSE-MIT
+  License texts: [9] LICENSE-APACHE, [10] LICENSE-MIT
 
 futures-executor (MIT OR Apache-2.0)
   https://github.com/rust-lang/futures-rs
-  License texts: [8] LICENSE-APACHE, [9] LICENSE-MIT
+  License texts: [9] LICENSE-APACHE, [10] LICENSE-MIT
 
 futures-io (MIT OR Apache-2.0)
   https://github.com/rust-lang/futures-rs
-  License texts: [8] LICENSE-APACHE, [9] LICENSE-MIT
+  License texts: [9] LICENSE-APACHE, [10] LICENSE-MIT
 
 futures-sink (MIT OR Apache-2.0)
   https://github.com/rust-lang/futures-rs
-  License texts: [8] LICENSE-APACHE, [9] LICENSE-MIT
+  License texts: [9] LICENSE-APACHE, [10] LICENSE-MIT
 
 futures-task (MIT OR Apache-2.0)
   https://github.com/rust-lang/futures-rs
-  License texts: [8] LICENSE-APACHE, [9] LICENSE-MIT
+  License texts: [9] LICENSE-APACHE, [10] LICENSE-MIT
 
 futures-util (MIT OR Apache-2.0)
   https://github.com/rust-lang/futures-rs
-  License texts: [8] LICENSE-APACHE, [9] LICENSE-MIT
+  License texts: [9] LICENSE-APACHE, [10] LICENSE-MIT
 
 gloo-utils (MIT OR Apache-2.0)
   https://github.com/rustwasm/gloo/tree/master/crates/utils
   The crate package ships no license file; texts taken from its repository.
-  License texts: [1] LICENSE-APACHE, [10] LICENSE-MIT
+  License texts: [1] LICENSE-APACHE, [11] LICENSE-MIT
 
 itoa (MIT OR Apache-2.0)
   https://github.com/dtolnay/itoa
-  License texts: [11] LICENSE-APACHE, [12] LICENSE-MIT
+  License texts: [12] LICENSE-APACHE, [13] LICENSE-MIT
 
 js-sys (MIT OR Apache-2.0)
   https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/js-sys
@@ -88,92 +92,92 @@ js-sys (MIT OR Apache-2.0)
 
 libc (MIT OR Apache-2.0)
   https://github.com/rust-lang/libc
-  License texts: [11] LICENSE-APACHE, [13] LICENSE-MIT
+  License texts: [12] LICENSE-APACHE, [14] LICENSE-MIT
 
 libloading (ISC)
   https://github.com/nagisa/rust_libloading/
-  License texts: [14] LICENSE
+  License texts: [15] LICENSE
 
 memchr (Unlicense OR MIT)
   https://github.com/BurntSushi/memchr
-  License texts: [15] COPYING, [16] LICENSE-MIT, [17] UNLICENSE
+  License texts: [16] COPYING, [17] LICENSE-MIT, [18] UNLICENSE
 
 napi (MIT)
   https://github.com/napi-rs/napi-rs
   The crate package ships no license file; texts taken from its repository.
-  License texts: [18] LICENSE
+  License texts: [19] LICENSE
 
 napi-sys (MIT)
   https://github.com/napi-rs/napi-rs
   The crate package ships no license file; texts taken from its repository.
-  License texts: [18] LICENSE
+  License texts: [19] LICENSE
 
 nohash-hasher (Apache-2.0 OR MIT)
   https://github.com/paritytech/nohash-hasher
-  License texts: [19] LICENSE-APACHE, [20] LICENSE-MIT
+  License texts: [20] LICENSE-APACHE, [21] LICENSE-MIT
 
 nucleo-matcher (MPL-2.0)
   https://github.com/helix-editor/nucleo
   MPL-2.0: rapid-fuzzy uses nucleo-matcher unmodified, in the version listed in the Cargo.lock
   of the rapid-fuzzy release. Its Source Code Form is available at
   https://crates.io/crates/nucleo-matcher and https://github.com/helix-editor/nucleo.
-  License texts: [21] LICENSE
+  License texts: [22] LICENSE
 
 once_cell (MIT OR Apache-2.0)
   https://github.com/matklad/once_cell
-  License texts: [1] LICENSE-APACHE, [12] LICENSE-MIT
+  License texts: [1] LICENSE-APACHE, [13] LICENSE-MIT
 
 pin-project-lite (Apache-2.0 OR MIT)
   https://github.com/taiki-e/pin-project-lite
-  License texts: [22] LICENSE-APACHE, [12] LICENSE-MIT
+  License texts: [23] LICENSE-APACHE, [13] LICENSE-MIT
 
 rapidfuzz (MIT)
   https://github.com/maxbachmann/rapidfuzz-rs
-  License texts: [11] LICENSE-APACHE, [23] LICENSE-MIT
+  License texts: [12] LICENSE-APACHE, [24] LICENSE-MIT
 
 rayon (MIT OR Apache-2.0)
   https://github.com/rayon-rs/rayon
-  License texts: [1] LICENSE-APACHE, [24] LICENSE-MIT
+  License texts: [1] LICENSE-APACHE, [25] LICENSE-MIT
 
 rayon-core (MIT OR Apache-2.0)
   https://github.com/rayon-rs/rayon
-  License texts: [1] LICENSE-APACHE, [24] LICENSE-MIT
+  License texts: [1] LICENSE-APACHE, [25] LICENSE-MIT
 
 rustc-hash (Apache-2.0 OR MIT)
   https://github.com/rust-lang/rustc-hash
-  License texts: [11] LICENSE-APACHE, [12] LICENSE-MIT
+  License texts: [12] LICENSE-APACHE, [13] LICENSE-MIT
 
 serde (MIT OR Apache-2.0)
   https://github.com/serde-rs/serde
-  License texts: [11] LICENSE-APACHE, [12] LICENSE-MIT
+  License texts: [12] LICENSE-APACHE, [13] LICENSE-MIT
 
 serde-wasm-bindgen (MIT)
   https://github.com/RReverser/serde-wasm-bindgen
-  License texts: [25] LICENSE
+  License texts: [26] LICENSE
 
 serde_core (MIT OR Apache-2.0)
   https://github.com/serde-rs/serde
-  License texts: [11] LICENSE-APACHE, [12] LICENSE-MIT
+  License texts: [12] LICENSE-APACHE, [13] LICENSE-MIT
 
 serde_json (MIT OR Apache-2.0)
   https://github.com/serde-rs/json
-  License texts: [11] LICENSE-APACHE, [12] LICENSE-MIT
+  License texts: [12] LICENSE-APACHE, [13] LICENSE-MIT
 
 slab (MIT)
   https://github.com/tokio-rs/slab
-  License texts: [26] LICENSE
+  License texts: [27] LICENSE
 
 tsify (MIT OR Apache-2.0)
   https://github.com/madonoharu/tsify
-  License texts: [11] LICENSE_APACHE, [27] LICENSE_MIT
+  License texts: [12] LICENSE_APACHE, [28] LICENSE_MIT
 
 unicode-ident ((MIT OR Apache-2.0) AND Unicode-3.0)
   https://github.com/dtolnay/unicode-ident
-  License texts: [11] LICENSE-APACHE, [12] LICENSE-MIT, [28] LICENSE-UNICODE
+  License texts: [12] LICENSE-APACHE, [13] LICENSE-MIT, [29] LICENSE-UNICODE
 
 unicode-segmentation (MIT OR Apache-2.0)
   https://github.com/unicode-rs/unicode-segmentation
-  License texts: [29] COPYRIGHT, [1] LICENSE-APACHE, [30] LICENSE-MIT
+  License texts: [30] COPYRIGHT, [1] LICENSE-APACHE, [31] LICENSE-MIT
 
 wasm-bindgen (MIT OR Apache-2.0)
   https://github.com/wasm-bindgen/wasm-bindgen
@@ -189,11 +193,11 @@ web-sys (MIT OR Apache-2.0)
 
 windows-link (MIT OR Apache-2.0)
   https://github.com/microsoft/windows-rs
-  License texts: [31] license-apache-2.0, [32] license-mit
+  License texts: [32] license-apache-2.0, [33] license-mit
 
 zmij (MIT)
   https://github.com/dtolnay/zmij
-  License texts: [12] LICENSE-MIT
+  License texts: [13] LICENSE-MIT
 
 Toolchain components
 --------------------
@@ -203,19 +207,19 @@ Rust standard library (MIT OR Apache-2.0)
   core, alloc and std, and the crates they bundle, are compiled into every binary.
   The notices of the crates the standard library depends on are listed in
   share/doc/rust/COPYRIGHT-library.html of every Rust toolchain.
-  License texts: [33] COPYRIGHT, [11] LICENSE-APACHE, [34] LICENSE-MIT, [35] LICENSE-Unicode-3.0
+  License texts: [34] COPYRIGHT, [12] LICENSE-APACHE, [35] LICENSE-MIT, [36] LICENSE-Unicode-3.0
 
 wasi-libc (Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT)
   https://github.com/WebAssembly/wasi-libc
   WASI build only: linked by the Rust wasm32-wasip1-threads target. Portions are
   derived from dlmalloc (CC0), emmalloc (MIT), cloudlibc (BSD-2-Clause), musl (MIT)
   and musl-fts (BSD-3-Clause), whose notices are included below.
-  License texts: [36] LICENSE, [12] LICENSE-MIT, [37] cloudlibc-LICENSE, [38] dlmalloc-NOTICE, [39] emmalloc-LICENSE, [40] musl-COPYRIGHT, [41] musl-fts-COPYING
+  License texts: [37] LICENSE, [13] LICENSE-MIT, [38] cloudlibc-LICENSE, [39] dlmalloc-NOTICE, [40] emmalloc-LICENSE, [41] musl-COPYRIGHT, [42] musl-fts-COPYING
 
 emnapi (MIT)
   https://github.com/toyobayashi/emnapi
   WASI build only: its C library implements Node-API inside the WebAssembly module.
-  License texts: [42] LICENSE
+  License texts: [43] LICENSE
 
 License texts
 -------------
@@ -759,6 +763,31 @@ DEALINGS IN THE SOFTWARE.
 
 [8]
 --------------------------------------------------------------------------------
+MIT License
+
+Copyright (c) 2024 Liam Dyer
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+--------------------------------------------------------------------------------
+
+[9]
+--------------------------------------------------------------------------------
                               Apache License
                         Version 2.0, January 2004
                      http://www.apache.org/licenses/
@@ -963,7 +992,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 --------------------------------------------------------------------------------
 
-[9]
+[10]
 --------------------------------------------------------------------------------
 Copyright (c) 2016 Alex Crichton
 Copyright (c) 2017 The Tokio Authors
@@ -993,7 +1022,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 --------------------------------------------------------------------------------
 
-[10]
+[11]
 --------------------------------------------------------------------------------
 Copyright (c) 2019 Rust and WebAssembly Working Group
 
@@ -1022,7 +1051,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 --------------------------------------------------------------------------------
 
-[11]
+[12]
 --------------------------------------------------------------------------------
                               Apache License
                         Version 2.0, January 2004
@@ -1202,7 +1231,7 @@ TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
 END OF TERMS AND CONDITIONS
 --------------------------------------------------------------------------------
 
-[12]
+[13]
 --------------------------------------------------------------------------------
 Permission is hereby granted, free of charge, to any
 person obtaining a copy of this software and associated
@@ -1229,7 +1258,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 --------------------------------------------------------------------------------
 
-[13]
+[14]
 --------------------------------------------------------------------------------
 Copyright (c) The Rust Project Developers
 
@@ -1258,7 +1287,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 --------------------------------------------------------------------------------
 
-[14]
+[15]
 --------------------------------------------------------------------------------
 Copyright © 2015, Simonas Kazlauskas
 
@@ -1274,14 +1303,14 @@ NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE US
 THIS SOFTWARE.
 --------------------------------------------------------------------------------
 
-[15]
+[16]
 --------------------------------------------------------------------------------
 This project is dual-licensed under the Unlicense and MIT licenses.
 
 You may use this code under the terms of either license.
 --------------------------------------------------------------------------------
 
-[16]
+[17]
 --------------------------------------------------------------------------------
 The MIT License (MIT)
 
@@ -1306,7 +1335,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 --------------------------------------------------------------------------------
 
-[17]
+[18]
 --------------------------------------------------------------------------------
 This is free and unencumbered software released into the public domain.
 
@@ -1334,7 +1363,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 For more information, please refer to <http://unlicense.org/>
 --------------------------------------------------------------------------------
 
-[18]
+[19]
 --------------------------------------------------------------------------------
 MIT License
 
@@ -1381,7 +1410,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 --------------------------------------------------------------------------------
 
-[19]
+[20]
 --------------------------------------------------------------------------------
 
                                  Apache License
@@ -1587,7 +1616,7 @@ SOFTWARE.
    limitations under the License.
 --------------------------------------------------------------------------------
 
-[20]
+[21]
 --------------------------------------------------------------------------------
 Copyright 2018 Parity Technologies (UK) Ltd.
 
@@ -1609,7 +1638,7 @@ WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 --------------------------------------------------------------------------------
 
-[21]
+[22]
 --------------------------------------------------------------------------------
 Mozilla Public License Version 2.0
 ==================================
@@ -1986,7 +2015,7 @@ Exhibit B - "Incompatible With Secondary Licenses" Notice
   defined by the Mozilla Public License, v. 2.0.
 --------------------------------------------------------------------------------
 
-[22]
+[23]
 --------------------------------------------------------------------------------
 
                                  Apache License
@@ -2167,7 +2196,7 @@ Exhibit B - "Incompatible With Secondary Licenses" Notice
    END OF TERMS AND CONDITIONS
 --------------------------------------------------------------------------------
 
-[23]
+[24]
 --------------------------------------------------------------------------------
 Permission is hereby granted, free of charge, to any person obtaining
 a copy of this software and associated documentation files (the
@@ -2189,7 +2218,7 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 --------------------------------------------------------------------------------
 
-[24]
+[25]
 --------------------------------------------------------------------------------
 Copyright (c) 2010 The Rust Project Developers
 
@@ -2218,7 +2247,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 --------------------------------------------------------------------------------
 
-[25]
+[26]
 --------------------------------------------------------------------------------
 MIT License
 
@@ -2243,7 +2272,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 --------------------------------------------------------------------------------
 
-[26]
+[27]
 --------------------------------------------------------------------------------
 Copyright (c) 2019 Carl Lerche
 
@@ -2272,7 +2301,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 --------------------------------------------------------------------------------
 
-[27]
+[28]
 --------------------------------------------------------------------------------
 Copyright (c) 2018 Madono Haru <madonoharu@gmail.com>
 
@@ -2301,7 +2330,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 --------------------------------------------------------------------------------
 
-[28]
+[29]
 --------------------------------------------------------------------------------
 UNICODE LICENSE V3
 
@@ -2344,7 +2373,7 @@ dealings in these Data Files or Software without prior written
 authorization of the copyright holder.
 --------------------------------------------------------------------------------
 
-[29]
+[30]
 --------------------------------------------------------------------------------
 Licensed under the Apache License, Version 2.0
 <LICENSE-APACHE or
@@ -2355,7 +2384,7 @@ notice may not be copied, modified, or distributed except
 according to those terms.
 --------------------------------------------------------------------------------
 
-[30]
+[31]
 --------------------------------------------------------------------------------
 Copyright (c) 2015 The Rust Project Developers
 
@@ -2384,7 +2413,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 --------------------------------------------------------------------------------
 
-[31]
+[32]
 --------------------------------------------------------------------------------
                                  Apache License
                            Version 2.0, January 2004
@@ -2589,7 +2618,7 @@ DEALINGS IN THE SOFTWARE.
    limitations under the License.
 --------------------------------------------------------------------------------
 
-[32]
+[33]
 --------------------------------------------------------------------------------
     MIT License
 
@@ -2614,7 +2643,7 @@ DEALINGS IN THE SOFTWARE.
     SOFTWARE
 --------------------------------------------------------------------------------
 
-[33]
+[34]
 --------------------------------------------------------------------------------
 Short version for non-lawyers:
 
@@ -2652,7 +2681,7 @@ covers the subset of source code used in the Rust Standard Library, as opposed
 to the toolchain as a whole.
 --------------------------------------------------------------------------------
 
-[34]
+[35]
 --------------------------------------------------------------------------------
 Copyright (c) The Rust Project Contributors
 
@@ -2681,7 +2710,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 --------------------------------------------------------------------------------
 
-[35]
+[36]
 --------------------------------------------------------------------------------
 UNICODE LICENSE V3
 
@@ -2724,7 +2753,7 @@ dealings in these Data Files or Software without prior written
 authorization of the copyright holder.
 --------------------------------------------------------------------------------
 
-[36]
+[37]
 --------------------------------------------------------------------------------
 wasi-libc as a whole is multi-licensed under the
 Apache License v2.0 with LLVM Exceptions, the Apache License v2.0, and
@@ -2745,7 +2774,7 @@ Apache License v2.0 with LLVM Exceptions, the Apache License v2.0,
 the MIT License, and the original licenses of the third-party works.
 --------------------------------------------------------------------------------
 
-[37]
+[38]
 --------------------------------------------------------------------------------
 Copyright (c) 2015-2017 Nuxi (https://nuxi.nl/) and contributors.
 
@@ -2771,7 +2800,7 @@ OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 SUCH DAMAGE.
 --------------------------------------------------------------------------------
 
-[38]
+[39]
 --------------------------------------------------------------------------------
   This is a version (aka dlmalloc) of malloc/free/realloc written by
   Doug Lea and released to the public domain, as explained at
@@ -2779,7 +2808,7 @@ SUCH DAMAGE.
   comments, complaints, performance data, etc to dl@cs.oswego.edu
 --------------------------------------------------------------------------------
 
-[39]
+[40]
 --------------------------------------------------------------------------------
 Emscripten is available under 2 licenses, the MIT license and the
 University of Illinois/NCSA Open Source License.
@@ -2884,7 +2913,7 @@ used by default, but certain options use it (e.g., the optional closure compiler
 flag will run closure compiler from third_party/).
 --------------------------------------------------------------------------------
 
-[40]
+[41]
 --------------------------------------------------------------------------------
 musl as a whole is licensed under the following standard MIT license:
 
@@ -3081,7 +3110,7 @@ permissive licensing, and of not having licensing issues being an
 obstacle to adoption, that text has been removed.
 --------------------------------------------------------------------------------
 
-[41]
+[42]
 --------------------------------------------------------------------------------
 Copyright (c) 1989, 1993
    The Regents of the University of California.  All rights reserved.
@@ -3111,7 +3140,7 @@ OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 SUCH DAMAGE.
 --------------------------------------------------------------------------------
 
-[42]
+[43]
 --------------------------------------------------------------------------------
 MIT License
 

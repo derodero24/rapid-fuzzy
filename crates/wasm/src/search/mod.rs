@@ -147,6 +147,19 @@ pub struct SearchOptions {
     #[tsify(optional)]
     #[serde(default)]
     pub return_all_on_empty: Option<bool>,
+    /// Typos tolerated per query term, on top of the missing characters
+    /// fuzzy matching always tolerates: substituted, extra or swapped
+    /// characters (`tpyescript` finds "TypeScript"). A non-negative integer,
+    /// or `Infinity` for as many as each term allows; default 0. A term
+    /// tolerates at most one typo per four characters (so none in terms of
+    /// up to three characters), and only plain fuzzy terms tolerate typos,
+    /// not `'exact`, `^prefix`, `suffix$` or `!negated` ones. Matches without
+    /// typos keep the score they have without this option; matches with
+    /// typos score below a perfect match. NaN, negative and fractional values
+    /// throw.
+    #[tsify(optional)]
+    #[serde(default, deserialize_with = "deserialize_max_typos")]
+    pub max_typos: Option<u32>,
 }
 
 impl SearchOptions {
@@ -358,6 +371,19 @@ pub struct KeySearchOptions {
     #[tsify(optional)]
     #[serde(default)]
     pub return_all_on_empty: Option<bool>,
+    /// Typos tolerated per query term, on top of the missing characters
+    /// fuzzy matching always tolerates: substituted, extra or swapped
+    /// characters (`tpyescript` finds "TypeScript"). A non-negative integer,
+    /// or `Infinity` for as many as each term allows; default 0. A term
+    /// tolerates at most one typo per four characters (so none in terms of
+    /// up to three characters), and only plain fuzzy terms tolerate typos,
+    /// not `'exact`, `^prefix`, `suffix$` or `!negated` ones. Matches without
+    /// typos keep the score they have without this option; matches with
+    /// typos score below a perfect match. NaN, negative and fractional values
+    /// throw.
+    #[tsify(optional)]
+    #[serde(default, deserialize_with = "deserialize_max_typos")]
+    pub max_typos: Option<u32>,
     /// How the per-key scores (`keyScores`) of an item are combined into its
     /// `score`. Only keys with a positive weight take part:
     ///
@@ -442,6 +468,7 @@ impl KeySearchOptions {
             return_all_on_empty: self.return_all_on_empty,
             score_mode: self.score_mode.map(Into::into),
             match_mode: self.match_mode.map(Into::into),
+            max_typos: self.max_typos.map(typos_of),
         }
     }
 }
@@ -460,6 +487,11 @@ pub struct KeyClosestOptions {
     #[tsify(optional)]
     #[serde(default, deserialize_with = "deserialize_min_score")]
     pub min_score: Option<f64>,
+    /// Typos tolerated per query term, as in `KeySearchOptions.maxTypos`.
+    /// NaN, negative and fractional values throw.
+    #[tsify(optional)]
+    #[serde(default, deserialize_with = "deserialize_max_typos")]
+    pub max_typos: Option<u32>,
     /// How the per-key scores of an item are combined into its score:
     /// `"weighted"` (default), `"matched"` or `"max"`, as in
     /// `KeySearchOptions.scoreMode`. Any other value throws a `TypeError`.
@@ -494,6 +526,7 @@ impl KeyClosestOptions {
             min_score: self.min_score,
             score_mode: self.score_mode.map(Into::into),
             match_mode: self.match_mode.map(Into::into),
+            max_typos: self.max_typos.map(typos_of),
             ..core::SearchKeysOptions::default()
         }
     }
@@ -509,6 +542,26 @@ fn deserialize_max_results<'de, D: Deserializer<'de>>(
         Some(value) => core::check_max_results(value).map_err(serde::de::Error::custom),
         None => Ok(None),
     }
+}
+
+/// Read a `maxTypos` option like the Node.js binding does (see
+/// [`core::check_max_typos`]): `Infinity` means as many as each term allows,
+/// and NaN, negative or fractional values are rejected.
+fn deserialize_max_typos<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<u32>, D::Error> {
+    match Option::<f64>::deserialize(deserializer)? {
+        Some(value) => core::check_max_typos(value)
+            .map(|typos| Some(u32::from(typos)))
+            .map_err(serde::de::Error::custom),
+        None => Ok(None),
+    }
+}
+
+/// The number of typos a `maxTypos` option allows (at most `u16::MAX`, see
+/// [`deserialize_max_typos`]).
+pub(crate) fn typos_of(max_typos: u32) -> u16 {
+    u16::try_from(max_typos).unwrap_or(u16::MAX)
 }
 
 /// Read a `minScore` option like the Node.js binding does (see
@@ -596,14 +649,18 @@ pub fn search(
         return to_js(&results);
     }
 
-    let results = search_impl(
-        query,
-        items,
+    let results: Vec<SearchResult> = core::search_over_items_with_typos(
+        &query,
+        &items,
         max_results,
         min_score,
         include_positions,
         case_matching,
-    );
+        opts.max_typos.map_or(0, typos_of),
+    )
+    .into_iter()
+    .map(SearchResult::from)
+    .collect();
     to_js(&results)
 }
 

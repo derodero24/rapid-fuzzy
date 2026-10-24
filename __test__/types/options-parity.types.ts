@@ -60,6 +60,11 @@ export type OptionTypeChecks = [
   Expect<Equal<Wasm.KeySearchOptions['scoreMode'], Wasm.KeyScoreMode | undefined>>,
   Expect<Equal<Wasm.KeySearchOptions['matchMode'], Wasm.KeyMatchMode | undefined>>,
   Expect<Equal<Wasm.KeyClosestOptions['minScore'], number | undefined>>,
+  Expect<Equal<Wasm.SearchOptions['maxTypos'], number | undefined>>,
+  Expect<Equal<Node.SearchOptions['maxTypos'], number | undefined>>,
+  Expect<Equal<Node.KeySearchOptions['maxTypos'], number | undefined>>,
+  Expect<Equal<Node.KeyClosestOptions['maxTypos'], number | undefined>>,
+  Expect<Equal<Node.ObjectIndexSearchOptions['maxTypos'], number | undefined>>,
   // Results are unchanged: an absent matchType is omitted, never undefined.
   Expect<Equal<AcceptsUndefined<Pick<Wasm.SearchResult, 'matchType'>>, false>>,
 ];

@@ -4,10 +4,11 @@ resolver = "2"
 
 [workspace.package]
 edition = "2024"
-# Minimum supported Rust version. napi/napi-derive/napi-build 3.x and
-# libloading 0.9 require 1.88 (the code also uses let-chains, stable since
-# 1.88 in edition 2024). CI checks the workspace with exactly this toolchain.
-rust-version = "1.88"
+# Minimum supported Rust version. frizbee 0.13 requires 1.89; napi/napi-derive/
+# napi-build 3.x and libloading 0.9 require 1.88 (the code also uses
+# let-chains, stable since 1.88 in edition 2024). CI checks the workspace with
+# exactly this toolchain.
+rust-version = "1.89"
 license = "MIT"
 repository = "https://github.com/derodero24/rapid-fuzzy"
 
@@ -23,6 +24,10 @@ rapidfuzz = "0.5"
 
 # Fuzzy matching (Helix editor's matcher, faster than fzf/skim)
 nucleo-matcher = "0.3"
+
+# Typo-tolerant matching (the `maxTypos` option): a SIMD Smith-Waterman
+# matcher that allows substituted, extra and swapped characters
+frizbee = "0.13"
 
 # Parallel scoring of large searches (native targets only)
 rayon = "1.11"

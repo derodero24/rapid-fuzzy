@@ -31,7 +31,7 @@ On lists of 1,000 items or more, a `FuzzyIndex` answered queries 150–200x fast
 rapid-fuzzy is not the best tool for every job:
 
 - **The smallest possible bundle** for a short list in the browser: fuzzysort, uFuzzy, match-sorter or `@nozbe/microfuzz` are a few kilobytes, while rapid-fuzzy's WebAssembly build is about 195 KB gzipped.
-- **Typo-tolerant search**, where `tpyescript` should find `TypeScript`: fuse.js's Bitap matching and its token search tolerate wrong and swapped letters. rapid-fuzzy's search only tolerates *missing* letters; you can combine it with a distance function (see [How matching works](/rapid-fuzzy/guides/matching-and-scoring/#what-matches)).
+- **Typo-tolerant search over long text**: fuse.js's Bitap matching and its token search (BM25-style weights) tolerate wrong and swapped letters anywhere in a long field. rapid-fuzzy tolerates typos per query term with `maxTypos` (since 2.3.0, see [Typos](/rapid-fuzzy/guides/matching-and-scoring/#typos)), and ranks short strings such as names, titles and paths better than fuse.js on our tests, but it has no token weighting for long text.
 - **Full-text search over documents**, with stemming, BM25 relevance and prefix search: use a search engine such as MiniSearch, FlexSearch or Orama. rapid-fuzzy matches characters in short strings, such as names, titles, commands and file paths.
 - **Simple, predictable ranking tiers** for UI lists (exact match, then starts-with, then contains): match-sorter.
 

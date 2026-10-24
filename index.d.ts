@@ -167,7 +167,7 @@ export declare class KeyedFuzzyIndex {
    *
    * Returns the index of the best match, or null if no match is found:
    * the index of the first result of
-   * `search(query, { maxResults: 1, minScore, scoreMode, matchMode })`.
+   * `search(query, { maxResults: 1, minScore, maxTypos, scoreMode, matchMode })`.
    *
    * The second argument accepts either a number (minScore shorthand) or a
    * KeyClosestOptions object: `minScore` makes it return null when the
@@ -463,6 +463,11 @@ export interface KeyClosestOptions {
    */
   minScore?: number | undefined
   /**
+   * Typos tolerated per query term, as in `KeySearchOptions.maxTypos`.
+   * NaN, negative and fractional values throw.
+   */
+  maxTypos?: number | undefined
+  /**
    * How the per-key scores of an item are combined into its score:
    * `'weighted'` (default), `'matched'` or `'max'`, as in
    * `KeySearchOptions.scoreMode`. Any other value throws an `InvalidArg`
@@ -513,6 +518,19 @@ export interface KeySearchOptions {
    * Default is false.
    */
   returnAllOnEmpty?: boolean | undefined
+  /**
+   * Typos tolerated per query term, on top of the missing characters
+   * fuzzy matching always tolerates: substituted, extra or swapped
+   * characters (`tpyescript` finds "TypeScript"). A non-negative integer,
+   * or `Infinity` for as many as each term allows; default 0. A term
+   * tolerates at most one typo per four characters (so none in terms of
+   * up to three characters), and only plain fuzzy terms tolerate typos,
+   * not `'exact`, `^prefix`, `suffix$` or `!negated` ones. Matches without
+   * typos keep the score they have without this option; matches with
+   * typos score below a perfect match. NaN, negative and fractional values
+   * throw.
+   */
+  maxTypos?: number | undefined
   /**
    * How the per-key scores (`keyScores`) of an item are combined into its
    * `score`. Only keys with a positive weight take part:
@@ -819,9 +837,10 @@ export declare function partialRatioManyF64(reference: string, candidates: Reado
  * Scores are normalized to a 0.0-1.0 range where 1.0 is a perfect match.
  * Uses the nucleo matcher (the one in the Helix editor): every character of
  * each query term must occur in the item in order, so letters missing from
- * the query are tolerated but substituted or swapped letters are not. Matches
- * at the start of the item, at word boundaries and in consecutive runs score
- * higher. Matching is smart case by default (see `SearchOptions`).
+ * the query are tolerated but substituted or swapped letters are not, unless
+ * `maxTypos` allows them (see `SearchOptions`). Matches at the start of the
+ * item, at word boundaries and in consecutive runs score higher. Matching is
+ * smart case by default (see `SearchOptions`).
  *
  * Terms are separated by any whitespace (including the ideographic space
  * U+3000). A query without any search term (empty, whitespace-only or only
@@ -891,6 +910,19 @@ export interface SearchOptions {
    * appear before the user starts typing. Default is false.
    */
   returnAllOnEmpty?: boolean | undefined
+  /**
+   * Typos tolerated per query term, on top of the missing characters
+   * fuzzy matching always tolerates: substituted, extra or swapped
+   * characters (`tpyescript` finds "TypeScript"). A non-negative integer,
+   * or `Infinity` for as many as each term allows; default 0. A term
+   * tolerates at most one typo per four characters (so none in terms of
+   * up to three characters), and only plain fuzzy terms tolerate typos,
+   * not `'exact`, `^prefix`, `suffix$` or `!negated` ones. Matches without
+   * typos keep the score they have without this option; matches with
+   * typos score below a perfect match. NaN, negative and fractional values
+   * throw.
+   */
+  maxTypos?: number | undefined
 }
 
 /** A single fuzzy search result with the matched item and its score. */

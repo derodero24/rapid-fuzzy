@@ -66,6 +66,12 @@ const TERM_QUERIES: [(&str, &str); 2] = [
     ("terms_miss", "handler zqxjv"),
 ];
 
+/// Queries with typos (`maxTypos: 1`):
+/// - `typo`: `handler` with two letters swapped, matched only with a typo;
+/// - `typo_exact`: matches without typos, so the typo matcher only runs on
+///   the items nucleo rejects.
+const TYPO_QUERIES: [(&str, &str); 2] = [("typo", "hnadler"), ("typo_exact", "handler")];
+
 /// Keystrokes of a user typing `handler`; each step may reuse the previous
 /// step's matches, and the next round starts over because "h" is shorter.
 const TYPING: [&str; 5] = ["h", "ha", "han", "hand", "handl"];
@@ -95,6 +101,20 @@ fn bench_fuzzy_index(c: &mut Criterion) {
             group.bench_function(BenchmarkId::new(format!("search_{name}"), size), |b| {
                 b.iter(|| {
                     index.search_impl(black_box(query), Some(10), None, false, CaseMatching::Smart)
+                });
+            });
+        }
+        for (name, query) in TYPO_QUERIES {
+            group.bench_function(BenchmarkId::new(format!("search_{name}"), size), |b| {
+                b.iter(|| {
+                    index.search_with_typos(
+                        black_box(query),
+                        Some(10),
+                        None,
+                        false,
+                        CaseMatching::Smart,
+                        1,
+                    )
                 });
             });
         }

@@ -164,7 +164,7 @@ describe('wasm-bindgen TypeScript declarations', () => {
       .split(';')
       .map((f) => f.trim())
       .filter(Boolean);
-    expect(fields.length).toBe(5);
+    expect(fields.length).toBe(6);
     for (const field of fields) {
       expect(field).toMatch(/^\w+\?: /);
     }
@@ -214,9 +214,9 @@ describe.skipIf(!wasmAvailable)('wasm-bindgen runtime', () => {
       const searchUnset = unsetOptions('SearchOptions');
       const keyUnset = unsetOptions('KeySearchOptions');
       const closestUnset = unsetOptions('KeyClosestOptions');
-      expect(Object.keys(searchUnset)).toHaveLength(5);
-      expect(Object.keys(keyUnset)).toHaveLength(7);
-      expect(Object.keys(closestUnset)).toEqual(['minScore', 'scoreMode', 'matchMode']);
+      expect(Object.keys(searchUnset)).toHaveLength(6);
+      expect(Object.keys(keyUnset)).toHaveLength(8);
+      expect(Object.keys(closestUnset)).toEqual(['minScore', 'maxTypos', 'scoreMode', 'matchMode']);
       const keyTexts = [FRUITS, FRUITS.map((f) => f.toUpperCase())];
       const index = new wasm.FuzzyIndex(FRUITS);
       const keyed = new wasm.KeyedFuzzyIndex(keyTexts, [2, 1]);
@@ -1322,5 +1322,33 @@ describe.skipIf(!wasmAvailable)('wasm-bindgen runtime', () => {
         wasmIndex.free();
       }
     });
+  });
+});
+
+describe.skipIf(!wasmAvailable)('wasm-bindgen maxTypos', () => {
+  const languages = ['TypeScript', 'JavaScript', 'PureScript', 'Café crème', 'Zürich'];
+
+  it('returns what the Node.js build returns', () => {
+    for (const query of ['tpyescript', 'zurihc', 'cafw', 'typescript', "'tpyescript"]) {
+      const options = { includePositions: true, maxTypos: 2 };
+      expect(wasm.search(query, languages, options)).toEqual(
+        napi.search(query, languages, options),
+      );
+      const index = new wasm.FuzzyIndex(languages);
+      expect(index.search(query, options)).toEqual(napi.search(query, languages, options));
+      index.free();
+    }
+    const columns = [languages, languages.map((l) => l.toLowerCase())];
+    expect(wasm.searchKeys('tpyescript', columns, [1, 1], { maxTypos: 2 })).toEqual(
+      napi.searchKeys('tpyescript', columns, [1, 1], { maxTypos: 2 }),
+    );
+  });
+
+  it('rejects maxTypos values the Node.js build rejects', () => {
+    for (const maxTypos of [-1, 0.5, Number.NaN]) {
+      expect(String(thrown(() => wasm.search('a', languages, { maxTypos })))).toContain(
+        'maxTypos must be a non-negative integer or Infinity',
+      );
+    }
   });
 });

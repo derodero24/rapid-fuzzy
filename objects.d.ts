@@ -126,7 +126,7 @@ export interface KeyConfig<T = unknown> {
  * Note: `includePositions` has no effect for multi-key search — match positions
  * are per-key and are not merged, so results have no `positions`/`matchType`.
  * All other fields (maxResults, minScore, isCaseSensitive, returnAllOnEmpty,
- * scoreMode, matchMode) apply.
+ * maxTypos, scoreMode, matchMode) apply.
  */
 export interface ObjectSearchOptions<T = unknown> extends KeySearchOptions {
   keys: ReadonlyArray<KeyPath<T> | KeyConfig<T>>;
@@ -268,6 +268,11 @@ export interface ObjectIndexSearchOptions {
   isCaseSensitive?: boolean | undefined;
   returnAllOnEmpty?: boolean | undefined;
   /**
+   * Typos (substituted, extra or swapped characters) tolerated per query
+   * term. Default 0. See {@link KeySearchOptions.maxTypos}.
+   */
+  maxTypos?: number | undefined;
+  /**
    * How the per-key scores are combined into the score: `'weighted'`
    * (default), `'matched'` or `'max'`. See {@link KeySearchOptions.scoreMode}.
    */
@@ -330,7 +335,7 @@ export declare class FuzzyObjectIndex<T, S extends string = string, C extends st
   /**
    * Find the closest matching object, or null if no match: the item of the
    * first result of
-   * `search(query, { maxResults: 1, minScore, scoreMode, matchMode })`.
+   * `search(query, { maxResults: 1, minScore, maxTypos, scoreMode, matchMode })`.
    *
    * The second argument accepts a number (minScore shorthand) or a
    * {@link KeyClosestOptions} object, whose `scoreMode` defaults to

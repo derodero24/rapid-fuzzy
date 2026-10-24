@@ -17,8 +17,9 @@ use napi::{Env, Status, ValueType};
 use napi_derive::napi;
 use nucleo_matcher::pattern::CaseMatching;
 use rapid_fuzzy_core::search::{
-    KeyMatchMode, KeyScoreMode, SearchKeysOptions, check_max_results, check_min_score,
-    check_remove_index, invalid_index_type, invalid_match_mode, invalid_score_mode, is_empty_query,
+    KeyMatchMode, KeyScoreMode, SearchKeysOptions, check_max_results, check_max_typos,
+    check_min_score, check_remove_index, invalid_index_type, invalid_match_mode,
+    invalid_score_mode, is_empty_query, search_over_items_with_typos,
 };
 
 // -------------------------
@@ -144,6 +145,17 @@ pub struct SearchOptions {
     /// ones). Useful for filter-as-you-type UIs where the full list should
     /// appear before the user starts typing. Default is false.
     pub return_all_on_empty: Option<bool>,
+    /// Typos tolerated per query term, on top of the missing characters
+    /// fuzzy matching always tolerates: substituted, extra or swapped
+    /// characters (`tpyescript` finds "TypeScript"). A non-negative integer,
+    /// or `Infinity` for as many as each term allows; default 0. A term
+    /// tolerates at most one typo per four characters (so none in terms of
+    /// up to three characters), and only plain fuzzy terms tolerate typos,
+    /// not `'exact`, `^prefix`, `suffix$` or `!negated` ones. Matches without
+    /// typos keep the score they have without this option; matches with
+    /// typos score below a perfect match. NaN, negative and fractional values
+    /// throw.
+    pub max_typos: Option<u32>,
 }
 
 /// Validate a `maxResults` value coming from JavaScript.
@@ -166,6 +178,24 @@ pub(crate) fn resolve_max_results(value: f64) -> napi::Result<Option<u32>> {
 /// error.
 pub(crate) fn resolve_min_score(value: Option<f64>) -> napi::Result<Option<f64>> {
     check_min_score(value).map_err(|message| napi::Error::new(Status::InvalidArg, message))
+}
+
+/// Validate a `maxTypos` value coming from JavaScript (see
+/// [`check_max_typos`], shared with the WebAssembly binding), read as a
+/// double for the reason given at [`resolve_max_results`].
+pub(crate) fn resolve_max_typos(value: Option<f64>) -> napi::Result<Option<u32>> {
+    value
+        .map(|value| {
+            check_max_typos(value)
+                .map(u32::from)
+                .map_err(|message| napi::Error::new(Status::InvalidArg, message))
+        })
+        .transpose()
+}
+
+/// The number of typos a resolved `maxTypos` option allows.
+pub(crate) fn typos_of(max_typos: Option<u32>) -> u16 {
+    max_typos.map_or(0, |typos| u16::try_from(typos).unwrap_or(u16::MAX))
 }
 
 /// The class of a JavaScript error thrown by [`throw_error`].
@@ -289,6 +319,7 @@ fn read_search_options(obj: &Object<'_>, type_name: &str) -> napi::Result<Search
         include_positions: optional_field(obj, type_name, "includePositions")?,
         is_case_sensitive: optional_field(obj, type_name, "isCaseSensitive")?,
         return_all_on_empty: optional_field(obj, type_name, "returnAllOnEmpty")?,
+        max_typos: resolve_max_typos(optional_field(obj, type_name, "maxTypos")?)?,
     })
 }
 
@@ -334,6 +365,17 @@ pub struct KeySearchOptions {
     /// then scores 1, in every `scoreMode`, and they come in index order.
     /// Default is false.
     pub return_all_on_empty: Option<bool>,
+    /// Typos tolerated per query term, on top of the missing characters
+    /// fuzzy matching always tolerates: substituted, extra or swapped
+    /// characters (`tpyescript` finds "TypeScript"). A non-negative integer,
+    /// or `Infinity` for as many as each term allows; default 0. A term
+    /// tolerates at most one typo per four characters (so none in terms of
+    /// up to three characters), and only plain fuzzy terms tolerate typos,
+    /// not `'exact`, `^prefix`, `suffix$` or `!negated` ones. Matches without
+    /// typos keep the score they have without this option; matches with
+    /// typos score below a perfect match. NaN, negative and fractional values
+    /// throw.
+    pub max_typos: Option<u32>,
     /// How the per-key scores (`keyScores`) of an item are combined into its
     /// `score`. Only keys with a positive weight take part:
     ///
@@ -428,6 +470,9 @@ pub struct KeyClosestOptions {
     /// Minimum combined score (0.0-1.0, see `scoreMode`): `closest()`
     /// returns null when the best match scores below it. NaN throws.
     pub min_score: Option<f64>,
+    /// Typos tolerated per query term, as in `KeySearchOptions.maxTypos`.
+    /// NaN, negative and fractional values throw.
+    pub max_typos: Option<u32>,
     /// How the per-key scores of an item are combined into its score:
     /// `'weighted'` (default), `'matched'` or `'max'`, as in
     /// `KeySearchOptions.scoreMode`. Any other value throws an `InvalidArg`
@@ -449,6 +494,7 @@ impl OptionsObject for KeyClosestOptions {
     fn read(obj: &Object<'_>) -> napi::Result<Self> {
         Ok(Self {
             min_score: resolve_min_score(optional_field(obj, Self::NAME, "minScore")?)?,
+            max_typos: resolve_max_typos(optional_field(obj, Self::NAME, "maxTypos")?)?,
             score_mode: read_score_mode(obj)?,
             match_mode: read_match_mode(obj)?,
         })
@@ -463,6 +509,7 @@ impl KeyClosestOptions {
             min_score: self.min_score,
             score_mode: self.score_mode,
             match_mode: self.match_mode,
+            max_typos: self.max_typos.map(|typos| typos_of(Some(typos))),
             ..SearchKeysOptions::default()
         }
     }
@@ -510,6 +557,7 @@ impl From<SearchOptions> for KeySearchOptions {
             include_positions: opts.include_positions,
             is_case_sensitive: opts.is_case_sensitive,
             return_all_on_empty: opts.return_all_on_empty,
+            max_typos: opts.max_typos,
             score_mode: None,
             match_mode: None,
         }
@@ -622,6 +670,7 @@ impl KeySearchOptionsArg {
                 return_all_on_empty: opts.return_all_on_empty,
                 score_mode: opts.score_mode,
                 match_mode: opts.match_mode,
+                max_typos: opts.max_typos.map(|typos| typos_of(Some(typos))),
             },
             Some(OptionsArg::MaxResults(max_results)) => SearchKeysOptions {
                 max_results,
@@ -639,6 +688,7 @@ pub(crate) struct ResolvedSearchOptions {
     pub include_positions: bool,
     pub case_matching: CaseMatching,
     pub return_all_on_empty: bool,
+    pub max_typos: u16,
 }
 
 impl ResolvedSearchOptions {
@@ -650,6 +700,7 @@ impl ResolvedSearchOptions {
                 include_positions: opts.include_positions.unwrap_or(false),
                 case_matching: resolve_case_matching(opts.is_case_sensitive),
                 return_all_on_empty: opts.return_all_on_empty.unwrap_or(false),
+                max_typos: typos_of(opts.max_typos),
             },
             Some(SearchOptionsArg::MaxResults(max_results)) => Self {
                 max_results,
@@ -661,6 +712,7 @@ impl ResolvedSearchOptions {
                 include_positions: false,
                 case_matching: CaseMatching::Smart,
                 return_all_on_empty: false,
+                max_typos: 0,
             },
         }
     }
@@ -695,9 +747,10 @@ pub(crate) fn search_impl(
 /// Scores are normalized to a 0.0-1.0 range where 1.0 is a perfect match.
 /// Uses the nucleo matcher (the one in the Helix editor): every character of
 /// each query term must occur in the item in order, so letters missing from
-/// the query are tolerated but substituted or swapped letters are not. Matches
-/// at the start of the item, at word boundaries and in consecutive runs score
-/// higher. Matching is smart case by default (see `SearchOptions`).
+/// the query are tolerated but substituted or swapped letters are not, unless
+/// `maxTypos` allows them (see `SearchOptions`). Matches at the start of the
+/// item, at word boundaries and in consecutive runs score higher. Matching is
+/// smart case by default (see `SearchOptions`).
 ///
 /// Terms are separated by any whitespace (including the ideographic space
 /// U+3000). A query without any search term (empty, whitespace-only or only
@@ -721,6 +774,7 @@ pub fn search(
         include_positions,
         case_matching,
         return_all_on_empty,
+        max_typos,
     } = ResolvedSearchOptions::new(options);
 
     if return_all_on_empty && is_empty_query(&query) {
@@ -739,14 +793,18 @@ pub fn search(
             .collect();
     }
 
-    search_impl(
-        query,
-        items,
+    search_over_items_with_typos(
+        &query,
+        &items,
         max_results,
         min_score,
         include_positions,
         case_matching,
+        max_typos,
     )
+    .into_iter()
+    .map(SearchResult::from)
+    .collect()
 }
 
 /// Find the closest matching string from a list.

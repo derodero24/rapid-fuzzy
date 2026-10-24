@@ -115,7 +115,7 @@ impl KeyedFuzzyIndex {
     ///
     /// Returns the index of the best match, or null if no match is found:
     /// the index of the first result of
-    /// `search(query, { maxResults: 1, minScore, scoreMode, matchMode })`.
+    /// `search(query, { maxResults: 1, minScore, maxTypos, scoreMode, matchMode })`.
     ///
     /// The second argument accepts either a number (minScore shorthand) or a
     /// KeyClosestOptions object: `minScore` makes it return null when the
@@ -254,6 +254,7 @@ mod tests {
     ) -> KeyClosestOptions {
         KeyClosestOptions {
             min_score,
+            max_typos: None,
             score_mode,
             match_mode,
         }
@@ -373,6 +374,7 @@ mod tests {
                 return_all_on_empty: None,
                 score_mode: None,
                 match_mode: None,
+                max_typos: None,
             })),
         );
         for r in &results {
@@ -393,6 +395,7 @@ mod tests {
                 return_all_on_empty: None,
                 score_mode: None,
                 match_mode: None,
+                max_typos: None,
             })),
         );
         assert!(results.len() <= 1);
@@ -524,6 +527,7 @@ mod tests {
                 return_all_on_empty: None,
                 score_mode: None,
                 match_mode: None,
+                max_typos: None,
             })),
         );
         // "xyz" should not appear since it can't reach 0.9 on any key
@@ -614,6 +618,7 @@ mod tests {
             return_all_on_empty: None,
             score_mode: Some(score_mode),
             match_mode: None,
+            max_typos: None,
         })
     }
 
@@ -689,6 +694,7 @@ mod tests {
                 return_all_on_empty: None,
                 score_mode: Some(KeyScoreMode::Max),
                 match_mode,
+                max_typos: None,
             });
             index
                 .search(query.to_string(), Some(options))

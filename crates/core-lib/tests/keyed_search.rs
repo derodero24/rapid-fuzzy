@@ -75,6 +75,7 @@ impl Opts {
             return_all_on_empty: Some(self.return_all_on_empty),
             score_mode: Some(self.score_mode),
             match_mode: Some(self.match_mode),
+            max_typos: None,
         }
     }
 }
@@ -730,6 +731,7 @@ fn the_default_score_mode_is_weighted() {
             return_all_on_empty: None,
             score_mode: None,
             match_mode: None,
+            max_typos: None,
         }),
     ] {
         let unset = search_keys_impl("apple", &key_texts, &weights, options).unwrap();
