@@ -183,7 +183,13 @@ import { DATASETS } from './datasets';
     setUpTabs(scope);
     const status = element<HTMLElement>(scope, '[data-status]');
     const started = performance.now();
-    const rf: RapidFuzzy = await import('rapid-fuzzy');
+    let rf: RapidFuzzy;
+    try {
+      rf = await import('rapid-fuzzy');
+    } catch (error) {
+      status.textContent = `The WebAssembly build failed to load: ${error instanceof Error ? error.message : String(error)}. Your browser may block WebAssembly; try another browser.`;
+      return;
+    }
     status.textContent = `WebAssembly build loaded in ${formatTime(performance.now() - started)}. Everything runs in your browser.`;
     setUpSearch(scope, rf);
     setUpObjects(scope, rf);
@@ -251,8 +257,12 @@ import { DATASETS } from './datasets';
       list.innerHTML = found.length === 0 ? '<li class="empty">No results</li>' : found.map((item) => `<li>${escapeHtml(item)}</li>`).join('');
     };
 
+    // Each run gets a number, so a run that awaited the competitor libraries
+    // does not render after a newer run has started.
+    let latestRun = 0;
     const run = async (): Promise<void> => {
       if (index === undefined) return;
+      const runId = ++latestRun;
       const q = query.value;
       const maxResults = Math.max(1, Math.min(100, Math.trunc(Number(maxResultsInput.value)) || 10));
       const minScore = Math.max(0, Math.min(1, Number(minScoreInput.value) || 0));
@@ -282,6 +292,7 @@ import { DATASETS } from './datasets';
         return;
       }
       const c = await loadCompetitors();
+      if (runId !== latestRun) return;
       const sorted = measure(() => c.fuzzysort.go(q, c.snapshot, { limit: maxResults, threshold: 0 }));
       time.fuzzysort.textContent = formatTime(sorted.ms);
       renderPlain(out.fuzzysort, [...sorted.result].map((r) => r.target));

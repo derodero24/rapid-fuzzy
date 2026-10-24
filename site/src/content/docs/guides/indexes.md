@@ -24,9 +24,9 @@ index.searchIndices('typscript', { maxResults: 5 });
 index.add('Rust');
 index.addMany(['Go', 'Zig']);
 index.remove(2); // swap-remove: the last item moves to position 2; false if out of range
-
-index.destroy(); // free the Rust-side memory now
 ```
+
+When you no longer need it, `index.destroy()` frees its Rust-side memory right away (see [Memory](#memory)).
 
 `index.search(query, options)` always returns the same results as `search(query, items, options)` over the same items. Prefer `searchIndices()` in hot paths: it avoids copying item strings and reduces garbage-collection pressure.
 

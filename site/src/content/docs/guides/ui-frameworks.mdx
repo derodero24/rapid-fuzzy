@@ -48,19 +48,32 @@ Build the index once per data set and search it on every keystroke. `destroy()` 
   <TabItem label="Vue">
     ```vue
     <script setup lang="ts">
-    import { computed, onUnmounted, ref } from 'vue';
+    import { computed, onWatcherCleanup, ref, shallowRef, watchEffect } from 'vue';
     import { FuzzyObjectIndex } from 'rapid-fuzzy/objects';
 
-    const props = defineProps<{ users: { name: string; email: string }[] }>();
+    interface User {
+      name: string;
+      email: string;
+    }
+
+    const props = defineProps<{ users: User[] }>();
     const query = ref('');
 
-    const index = new FuzzyObjectIndex(props.users, {
-      keys: [{ name: 'name', weight: 2 }, 'email'],
+    // Rebuild the index when the users change, and free the previous one
+    // (and the last one on unmount).
+    const index = shallowRef<FuzzyObjectIndex<User>>();
+    watchEffect(() => {
+      const built = new FuzzyObjectIndex(props.users, {
+        keys: [{ name: 'name', weight: 2 }, 'email'],
+      });
+      index.value = built;
+      onWatcherCleanup(() => built.destroy());
     });
-    onUnmounted(() => index.destroy());
 
     const results = computed(() =>
-      query.value ? index.search(query.value, 20).map((r) => r.item) : props.users,
+      query.value && index.value
+        ? index.value.search(query.value, 20).map((r) => r.item)
+        : props.users,
     );
     </script>
 
@@ -75,16 +88,20 @@ Build the index once per data set and search it on every keystroke. `destroy()` 
   <TabItem label="Svelte">
     ```svelte
     <script lang="ts">
-      import { onDestroy } from 'svelte';
       import { FuzzyObjectIndex } from 'rapid-fuzzy/objects';
 
       let { users }: { users: { name: string; email: string }[] } = $props();
       let query = $state('');
 
-      const index = new FuzzyObjectIndex(users, {
-        keys: [{ name: 'name', weight: 2 }, 'email'],
+      // Rebuilt when users changes; the effect frees the previous index
+      // (and the last one when the component is destroyed).
+      const index = $derived(
+        new FuzzyObjectIndex(users, { keys: [{ name: 'name', weight: 2 }, 'email'] }),
+      );
+      $effect(() => {
+        const current = index;
+        return () => current.destroy();
       });
-      onDestroy(() => index.destroy());
 
       const results = $derived(query ? index.search(query, 20).map((r) => r.item) : users);
     </script>

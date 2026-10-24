@@ -3,7 +3,7 @@ title: Benchmarks
 description: rapid-fuzzy compared with fuse.js, fuzzysort, uFuzzy, fastest-levenshtein, leven, string-similarity and fuzzball on the same data and queries.
 ---
 
-These benchmarks compare rapid-fuzzy with popular JavaScript libraries on the same data and queries. Run them on your own hardware with `pnpm bench:readme` in a clone of the repository; your data and queries matter more than these numbers. To try your own data in the browser, open the [Playground](/rapid-fuzzy/playground/), which times rapid-fuzzy, fuse.js and fuzzysort side by side.
+These benchmarks compare rapid-fuzzy with popular JavaScript libraries on the same data and queries. Run them on your own hardware in a clone of the repository with `pnpm bench:readme`, which rewrites the tables, then `pnpm bench:charts`, which redraws the charts from them; your data and queries matter more than these numbers. To try your own data in the browser, open the [Playground](/rapid-fuzzy/playground/), which times rapid-fuzzy, fuse.js and fuzzysort side by side.
 
 <!-- bench:env:start -->
 Measured on 2026-10-04 with Node.js v22.22.0 on linux x64 (Intel(R) Xeon(R) Processor @ 2.10GHz, 4 logical CPUs, a shared cloud VM), using the release build of the native addon and [Vitest bench](https://vitest.dev/guide/benchmarking). Numbers vary by up to about ±10% between runs; treat them as relative, not absolute.

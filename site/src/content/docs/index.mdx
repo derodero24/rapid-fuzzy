@@ -24,6 +24,11 @@ import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
 ```ts
 import { FuzzyIndex, searchObjects, levenshtein } from 'rapid-fuzzy';
 
+const users = [
+  { name: 'John Smith', city: 'Tokyo' },
+  { name: 'Jane Doe', city: 'Osaka' },
+];
+
 const index = new FuzzyIndex(['TypeScript', 'JavaScript', 'Python', 'Rust']);
 index.search('typscript'); // → [{ item: 'TypeScript', score: 0.86, index: 0, … }]
 

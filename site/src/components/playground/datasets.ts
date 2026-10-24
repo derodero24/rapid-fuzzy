@@ -448,13 +448,17 @@ const NAMES = [
 const EXTENSIONS = ['.ts', '.tsx', '.js', '.json', '.css', '.md'];
 
 function filePaths(count: number): string[] {
+  // Every directory and name once per round, so every path is unique; the
+  // extension rotates through all of EXTENSIONS.
   const paths: string[] = [];
-  for (let i = 0; paths.length < count; i++) {
-    const dir = DIRS[i % DIRS.length];
-    const name = NAMES[(i * 7) % NAMES.length];
-    const ext = EXTENSIONS[(i * 3) % EXTENSIONS.length];
-    const round = Math.floor(i / (DIRS.length * NAMES.length));
-    paths.push(`${dir}/${name}${round === 0 ? '' : round}${ext}`);
+  for (let round = 0; paths.length < count; round++) {
+    for (const [d, dir] of DIRS.entries()) {
+      for (const [n, name] of NAMES.entries()) {
+        if (paths.length === count) return paths;
+        const ext = EXTENSIONS[(d + n + round) % EXTENSIONS.length] ?? '';
+        paths.push(`${dir}/${name}${round === 0 ? '' : round}${ext}`);
+      }
+    }
   }
   return paths;
 }
