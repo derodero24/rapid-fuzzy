@@ -1,6 +1,6 @@
 {
   "name": "rapid-fuzzy-wasm32-wasi",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "main": "rapid-fuzzy.wasi.cjs",
   "files": [
     "rapid-fuzzy.wasm32-wasi.wasm",

@@ -5,7 +5,7 @@ sidebar:
   label: MiniSearch
 ---
 
-[MiniSearch](https://www.npmjs.com/package/minisearch) is a lightweight full-text search library with prefix search and fuzzy matching. rapid-fuzzy provides fuzzy matching of short strings (names, titles, file paths, commands) plus distance functions. The two tolerate different kinds of typos: MiniSearch's `fuzzy` option allows a number of edits per term, while rapid-fuzzy's search matches items containing the query's characters in order — missing letters and abbreviations match, substituted or swapped letters do not.
+[MiniSearch](https://www.npmjs.com/package/minisearch) is a lightweight full-text search library with prefix search and fuzzy matching. rapid-fuzzy provides fuzzy matching of short strings (names, titles, file paths, commands) plus distance functions. The two tolerate different kinds of typos: MiniSearch's `fuzzy` option allows a number of edits per term, while rapid-fuzzy's search matches items containing the query's characters in order — missing letters and abbreviations match, and substituted or swapped letters match too with `maxTypos` (since 2.3.0).
 
 ## When to switch
 
@@ -20,7 +20,6 @@ sidebar:
 - You search structured documents with multiple fields and need field-level boosting
 - You rely on prefix matching for autocomplete on exact prefixes
 - You need custom tokenizers or term processing pipelines
-- You need search results that tolerate substituted or swapped letters
 
 ## Installation
 

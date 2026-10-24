@@ -180,6 +180,8 @@ function assertOptions(options, shorthand, type) {
  * @param {number} [options.maxResults] - Maximum results to return.
  * @param {number} [options.minScore] - Minimum score threshold.
  * @param {boolean} [options.isCaseSensitive] - Enable case-sensitive matching.
+ * @param {number} [options.maxTypos] - Typos tolerated per query term
+ *   (default 0).
  * @param {'weighted' | 'matched' | 'max'} [options.scoreMode] - How the
  *   per-key scores are combined (default `'weighted'`).
  * @param {'perKey' | 'crossKey'} [options.matchMode] - How the query is
@@ -266,7 +268,7 @@ class FuzzyObjectIndex {
   /**
    * Search the index for objects matching the query.
    * @param {string} query
-   * @param {number | { maxResults?: number; minScore?: number; isCaseSensitive?: boolean; returnAllOnEmpty?: boolean; scoreMode?: 'weighted' | 'matched' | 'max'; matchMode?: 'perKey' | 'crossKey' } | null} [options]
+   * @param {number | { maxResults?: number; minScore?: number; isCaseSensitive?: boolean; returnAllOnEmpty?: boolean; maxTypos?: number; scoreMode?: 'weighted' | 'matched' | 'max'; matchMode?: 'perKey' | 'crossKey' } | null} [options]
    *   A KeySearchOptions object, or a number as a shorthand for `maxResults`.
    * @returns {Array<{ item: T; index: number; score: number; keyScores: number[] }>}
    */
@@ -282,9 +284,9 @@ class FuzzyObjectIndex {
 
   /**
    * Find the closest matching object: the item of the first result of
-   * `search(query, { maxResults: 1, minScore, scoreMode, matchMode })`.
+   * `search(query, { maxResults: 1, minScore, maxTypos, scoreMode, matchMode })`.
    * @param {string} query
-   * @param {number | { minScore?: number; scoreMode?: 'weighted' | 'matched' | 'max'; matchMode?: 'perKey' | 'crossKey' } | null} [options]
+   * @param {number | { minScore?: number; maxTypos?: number; scoreMode?: 'weighted' | 'matched' | 'max'; matchMode?: 'perKey' | 'crossKey' } | null} [options]
    *   A KeyClosestOptions object, or a number as a shorthand for `minScore`.
    *   `scoreMode` (default `'weighted'`) selects how the per-key scores are
    *   combined, `matchMode` (default `'perKey'`) how the query is matched

@@ -375,6 +375,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1"
 
 [[package]]
+name = "frizbee"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "19435f276a44d90570cb403d22fbe4b20c80eabc134f718d6ec0ae888eb47edc"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "futures"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -818,7 +827,7 @@ dependencies = [
 
 [[package]]
 name = "rapid-fuzzy"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "napi",
  "napi-build",
@@ -844,6 +853,7 @@ dependencies = [
 name = "rapid-fuzzy-core"
 version = "1.1.1"
 dependencies = [
+ "frizbee",
  "nucleo-matcher",
  "rapidfuzz",
  "rayon",

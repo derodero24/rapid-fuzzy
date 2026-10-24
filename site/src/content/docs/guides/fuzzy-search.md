@@ -61,7 +61,7 @@ closest('tsc', ['TypeScript', 'JavaScript', 'Python']); // → 'TypeScript'
 closest('xyz', items, 0.5); // → null
 ```
 
-`closest()` finds the best fuzzy match, not the string with the smallest edit distance. To find the nearest string by edit distance (for "did you mean?" suggestions with typos), use a [distance function](/rapid-fuzzy/guides/string-similarity/) such as `levenshteinMany`.
+`closest()` finds the best fuzzy match, not the string with the smallest edit distance. For "did you mean?" suggestions with typos, use `search(query, items, { maxResults: 1, maxTypos: 2 })` (see [Typos](#typos)), or a [distance function](/rapid-fuzzy/guides/string-similarity/) such as `levenshteinMany` to find the nearest string by edit distance.
 
 ## Query syntax
 
@@ -85,4 +85,13 @@ The syntax applies to every search function: `search()`, `closest()`, `FuzzyInde
 
 ## Typos
 
-Search matches a term when its characters appear in the item in order. A query that leaves letters out still matches (`typscript` finds `TypeScript`), but one with swapped or wrong letters does not (`tpyescript` finds nothing). See [How matching works](/rapid-fuzzy/guides/matching-and-scoring/) for the details, and for how to handle typos with the distance functions.
+Search matches a term when its characters appear in the item in order. A query that leaves letters out still matches (`typscript` finds `TypeScript`), but by default one with swapped or wrong letters does not (`tpyescript` finds nothing).
+
+Set `maxTypos` (since 2.3.0) to also tolerate wrong, extra and swapped letters:
+
+```ts
+search('tpyescript', ['TypeScript', 'JavaScript']); // []
+search('tpyescript', ['TypeScript', 'JavaScript'], { maxTypos: 2 }); // [{ item: 'TypeScript', ... }]
+```
+
+`maxTypos` works in every search function: `search()`, `FuzzyIndex`, `searchObjects()`, `FuzzyObjectIndex`, `searchKeys()` and `KeyedFuzzyIndex`. Matches without typos keep exactly the scores they have without the option, and typo matches are added below a perfect match. See [How matching works](/rapid-fuzzy/guides/matching-and-scoring/#typos) for the details.

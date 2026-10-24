@@ -148,6 +148,7 @@ impl FuzzyIndex {
             include_positions,
             case_matching,
             return_all_on_empty,
+            max_typos,
         } = ResolvedSearchOptions::new(options);
 
         if return_all_on_empty && is_empty_query(&query) {
@@ -167,13 +168,18 @@ impl FuzzyIndex {
                 .collect();
         }
 
-        self.search_impl(
-            &query,
-            max_results,
-            min_score,
-            include_positions,
-            case_matching,
-        )
+        self.core
+            .search_with_typos(
+                &query,
+                max_results,
+                min_score,
+                include_positions,
+                case_matching,
+                max_typos,
+            )
+            .into_iter()
+            .map(SearchResult::from)
+            .collect()
     }
 
     /// Find the closest matching string in the index.
@@ -212,6 +218,7 @@ impl FuzzyIndex {
             include_positions,
             case_matching,
             return_all_on_empty,
+            max_typos,
         } = ResolvedSearchOptions::new(options);
 
         if return_all_on_empty && is_empty_query(&query) {
@@ -228,13 +235,18 @@ impl FuzzyIndex {
                 .collect();
         }
 
-        self.search_indices_impl(
-            &query,
-            max_results,
-            min_score,
-            include_positions,
-            case_matching,
-        )
+        self.core
+            .search_indices_with_typos(
+                &query,
+                max_results,
+                min_score,
+                include_positions,
+                case_matching,
+                max_typos,
+            )
+            .into_iter()
+            .map(IndexSearchResult::from)
+            .collect()
     }
 
     /// Add a single item to the index.
@@ -346,6 +358,7 @@ impl FuzzyIndex {
             .collect()
     }
 
+    #[cfg(test)]
     fn search_indices_impl(
         &self,
         query: &str,

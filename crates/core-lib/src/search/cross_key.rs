@@ -4,18 +4,22 @@
 //! for the semantics, which this module implements for both the standalone
 //! search and `KeyedFuzzyIndexCore`.
 
-use nucleo_matcher::pattern::{Atom, Pattern};
+use nucleo_matcher::pattern::Atom;
 use nucleo_matcher::{Matcher, Utf32Str};
 
 use super::keys::{ActiveKeys, KeyScoreMode, KeyedCorpus, Selection};
-use super::{atom_char_mask, atom_max_score};
+use super::{MaskFilter, QueryPlan, atom_char_mask, atom_max_score};
 
 /// A term of the query.
 struct Term<'p> {
     atom: &'p Atom,
-    /// Character mask of the term's needle (see [`atom_char_mask`]): a text
-    /// lacking one of its bits cannot match the needle.
-    mask: u64,
+    /// The query the term belongs to, and the term's position in it (for
+    /// matching with typos, see [`QueryPlan::atom_score`]).
+    plan: &'p QueryPlan,
+    index: usize,
+    /// Pre-filter of the term's needle (see [`atom_char_mask`]): a text
+    /// lacking its characters cannot match the needle.
+    mask: MaskFilter,
     /// For a positive term, the raw score of a perfect match (`m(t)` in the
     /// module documentation, at least 1); the term's score on a key is
     /// capped at it. 0 for a negative term.
@@ -27,9 +31,9 @@ impl Term<'_> {
     /// the term does not match it.
     #[inline]
     fn score(&self, haystack: Utf32Str<'_>, matcher: &mut Matcher) -> u32 {
-        self.atom
-            .score(haystack, matcher)
-            .map_or(0, |raw| u32::from(raw).min(self.cap))
+        self.plan
+            .atom_score(self.index, haystack, matcher)
+            .map_or(0, |raw| raw.min(self.cap))
     }
 
     /// Whether the needle of a negative term (`!term`) matches `haystack`.
@@ -63,18 +67,29 @@ fn item_haystack<'b, C: KeyedCorpus>(
 /// contained in the character mask of one of `active_keys` (each term may
 /// match one of its keys), or `None`. Kept out of line for the reason given
 /// at [`first_may_match`](super::keys::first_may_match).
+///
+/// `EXACT` must be true exactly when no term allows typos: the check then
+/// compiles to a plain subset test of the masks, as it did before typos.
 #[inline(never)]
-fn first_may_match_all<C: KeyedCorpus>(
+fn first_may_match_all<C: KeyedCorpus, const EXACT: bool>(
     corpus: &C,
     active_keys: &[usize],
-    term_masks: &[u64],
+    term_masks: &[MaskFilter],
     start: usize,
 ) -> Option<usize> {
     let num_items = corpus.key_texts().first().map_or(0, Vec::len);
     (start..num_items).find(|&i| {
-        term_masks
-            .iter()
-            .all(|&mask| active_keys.iter().any(|&k| corpus.may_match(k, i, mask)))
+        term_masks.iter().all(|&filter| {
+            let filter = if EXACT {
+                MaskFilter {
+                    mask: filter.mask,
+                    allowed_missing: 0,
+                }
+            } else {
+                filter
+            };
+            active_keys.iter().any(|&k| corpus.may_match(k, i, filter))
+        })
     })
 }
 
@@ -179,22 +194,26 @@ pub(super) struct CrossKeyPlan<'p> {
 }
 
 impl<'p> CrossKeyPlan<'p> {
-    /// Prepare the terms of `pattern`, parsed like every search parses its
-    /// query.
-    pub(super) fn new(pattern: &'p Pattern, matcher: &mut Matcher) -> Self {
+    /// Prepare the terms of `plan`'s pattern, parsed like every search
+    /// parses its query.
+    pub(super) fn new(plan: &'p QueryPlan, matcher: &mut Matcher) -> Self {
         let mut positive = Vec::new();
         let mut negative = Vec::new();
-        for atom in &pattern.atoms {
+        for (index, atom) in plan.pattern.atoms.iter().enumerate() {
             if atom.negative {
                 negative.push(Term {
                     atom,
-                    mask: atom_char_mask(atom),
+                    plan,
+                    index,
+                    mask: plan.atom_mask_filter(index, atom_char_mask(atom)),
                     cap: 0,
                 });
             } else {
                 positive.push(Term {
                     atom,
-                    mask: atom_char_mask(atom),
+                    plan,
+                    index,
+                    mask: plan.atom_mask_filter(index, atom_char_mask(atom)),
                     // At least 1, so that a match never makes the term
                     // count as unmatched; for a term of one character or
                     // more it is at least 16 anyway.
@@ -320,14 +339,20 @@ impl<C: KeyedCorpus> Scan<'_, '_, C> {
         // first use.
         let mut bufs = vec![Vec::new(); num_active];
         let mut prepared = vec![false; num_active];
-        let term_masks: Vec<u64> = plan.positive.iter().map(|term| term.mask).collect();
+        let term_masks: Vec<MaskFilter> = plan.positive.iter().map(|term| term.mask).collect();
+        let exact = term_masks.iter().all(|filter| filter.allowed_missing == 0);
 
         let mut next = 0;
         'items: while next < num_items {
             // Every positive term must be able to match an active key: a
             // cheap check of the character masks first.
             let i = if C::HAS_CHAR_MASKS {
-                match first_may_match_all(corpus, active_keys, &term_masks, next) {
+                let found = if exact {
+                    first_may_match_all::<C, true>(corpus, active_keys, &term_masks, next)
+                } else {
+                    first_may_match_all::<C, false>(corpus, active_keys, &term_masks, next)
+                };
+                match found {
                     Some(i) => i,
                     None => break,
                 }

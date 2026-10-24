@@ -33,9 +33,10 @@ interface User {
   city: string;
 }
 
-/** The documented shape: the three `KeySearchOptions` fields closest() reads. */
+/** The documented shape: the four `KeySearchOptions` fields closest() reads. */
 interface ClosestOptionsShape {
   minScore?: number | undefined;
+  maxTypos?: number | undefined;
   scoreMode?: KeyScoreMode | undefined;
   matchMode?: KeyMatchMode | undefined;
 }
@@ -43,9 +44,15 @@ interface ClosestOptionsShape {
 type ClosestParameters<Options> = [query: string, options?: number | Options | undefined | null];
 
 export type ClosestOptionsChecks = [
-  // Exactly minScore, scoreMode and matchMode, typed like their KeySearchOptions fields.
+  // Exactly minScore, maxTypos, scoreMode and matchMode, typed like their
+  // KeySearchOptions fields.
   Expect<Equal<KeyClosestOptions, ClosestOptionsShape>>,
-  Expect<Equal<KeyClosestOptions, Pick<KeySearchOptions, 'minScore' | 'scoreMode' | 'matchMode'>>>,
+  Expect<
+    Equal<
+      KeyClosestOptions,
+      Pick<KeySearchOptions, 'minScore' | 'maxTypos' | 'scoreMode' | 'matchMode'>
+    >
+  >,
   Expect<Equal<IndexMjs.KeyClosestOptions, KeyClosestOptions>>,
   Expect<Equal<NonNullable<KeyClosestOptions['scoreMode']>, 'weighted' | 'matched' | 'max'>>,
   Expect<Equal<NonNullable<KeyClosestOptions['matchMode']>, 'perKey' | 'crossKey'>>,
