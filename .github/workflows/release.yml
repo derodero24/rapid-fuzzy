@@ -165,7 +165,7 @@ jobs:
 
       - name: Install cargo-zigbuild
         if: ${{ matrix.settings.use-zig }}
-        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
         with:
           tool: cargo-zigbuild@0.23.4
 
@@ -304,7 +304,7 @@ jobs:
           shared-key: build-wasm-bindgen
       - run: pnpm install --frozen-lockfile
       - name: Install wasm-pack
-        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
         with:
           tool: wasm-pack@0.15.0
       - name: Install binaryen
