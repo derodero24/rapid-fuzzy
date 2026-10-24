@@ -4,8 +4,10 @@ import { describe, expect, it } from 'vitest';
 // Handles both missing binary (not built) and stale binary (outdated build).
 let wasmAvailable = false;
 let wasmLoadError: unknown;
-// biome-ignore lint/suspicious/noExplicitAny: WASM module has dynamic exports
-let wasm: Record<string, any> = {};
+// The WASI build exposes the same API as the native addon, so index.d.ts
+// types both (index.js falls back to the WASI build).
+type Binding = typeof import('../index.js');
+let wasm = {} as Binding;
 try {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const mod = require('../rapid-fuzzy.wasi.cjs');
@@ -76,8 +78,9 @@ describe.skipIf(!wasmAvailable)('wasm', () => {
         'weightedRatioMany',
       ];
 
+      const exports: Record<string, unknown> = wasm;
       for (const name of expectedExports) {
-        expect(typeof wasm[name]).toBe('function');
+        expect(typeof exports[name]).toBe('function');
       }
     });
   });
@@ -416,9 +419,8 @@ describe.skipIf(!wasmAvailable)('wasm', () => {
       const results = wasm.search('type', ['TypeScript', 'JavaScript', 'Python', 'TypeSpec']);
       expect(results.length).toBeGreaterThan(0);
       // Verify results are sorted by score descending
-      for (let i = 1; i < results.length; i++) {
-        expect(results[i - 1].score).toBeGreaterThanOrEqual(results[i].score);
-      }
+      const scores = results.map((r) => r.score);
+      expect(scores).toEqual(scores.toSorted((a, b) => b - a));
       expect(results[0]).toHaveProperty('score');
       expect(results[0]).toHaveProperty('index');
     });
@@ -447,7 +449,7 @@ describe.skipIf(!wasmAvailable)('wasm', () => {
   describe('native parity', () => {
     // Import native module for comparison
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const native = require('../index.js');
+    const native: Binding = require('../index.js');
 
     const testPairs: [string, string][] = [
       ['hello', 'hello'],
@@ -590,6 +592,7 @@ describe.skipIf(!wasmAvailable)('wasm', () => {
         }
       }
       expect(w.closest('john tokyo', { scoreMode: 'max', matchMode: 'crossKey' })).toBe(0);
+      // @ts-expect-error: 'cross' is not a KeyMatchMode
       expect(() => w.closest('john', { matchMode: 'cross' })).toThrow(
         'matchMode must be "perKey" or "crossKey", got "cross"',
       );
@@ -602,7 +605,7 @@ describe.skipIf(!wasmAvailable)('wasm', () => {
       'hammingMany',
       'levenshteinManyU32',
       'hammingManyU32',
-    ])('%s validates maxDistance like native (no modulo-2^32 wrapping)', (name) => {
+    ] as const)('%s validates maxDistance like native (no modulo-2^32 wrapping)', (name) => {
       const cands = ['kitten', 'sitting', 'kitchen'];
       const plain = Array.from(wasm[name]('kitten', cands));
       for (const maxDistance of [Number.POSITIVE_INFINITY, 2 ** 32, 2 ** 32 + 2]) {
@@ -683,13 +686,15 @@ describe.skipIf(!wasmAvailable)('wasm', () => {
         [null, TypeError],
         ['1', TypeError],
       ])('throws for %s like native and removes nothing', (value, errorClass) => {
+        // Deliberately not a valid index: the call must throw.
+        const index = value as number;
         const nativeIndexes = create(native);
-        create(wasm).forEach((index, i) => {
-          const wasmError = errorOf(() => index.remove(value));
+        for (const [i, wasmIndex] of create(wasm).entries()) {
+          const wasmError = errorOf(() => wasmIndex.remove(index));
           expect(wasmError[0]).toBe(errorClass);
-          expect(wasmError).toEqual(errorOf(() => nativeIndexes[i].remove(value)));
-          expect(index.size).toBe(3);
-        });
+          expect(wasmError).toEqual(errorOf(() => nativeIndexes[i]?.remove(index)));
+          expect(wasmIndex.size).toBe(3);
+        }
       });
 
       it('returns false for out-of-range integers', () => {
