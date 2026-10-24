@@ -186,20 +186,20 @@ importers:
         specifier: ^21.2.0
         version: 21.2.4
       '@emnapi/core':
-        specifier: 2.0.0-alpha.6
-        version: 2.0.0-alpha.6
+        specifier: 2.0.0-beta.2
+        version: 2.0.0-beta.2
       '@emnapi/runtime':
-        specifier: 2.0.0-alpha.6
-        version: 2.0.0-alpha.6
+        specifier: 2.0.0-beta.2
+        version: 2.0.0-beta.2
       '@leeoniya/ufuzzy':
         specifier: ^1.0.19
         version: 1.0.19
       '@napi-rs/cli':
         specifier: ^3.9.1
-        version: 3.10.8(@emnapi/core@2.0.0-alpha.6)(@emnapi/runtime@2.0.0-alpha.6)(@types/node@24.19.2)(emnapi@2.0.0-alpha.6)
+        version: 3.10.9(@emnapi/core@2.0.0-beta.2)(@emnapi/runtime@2.0.0-beta.2)(@types/node@24.19.2)(emnapi@2.0.0-beta.2)
       '@napi-rs/wasm-runtime':
         specifier: ^1.1.6
-        version: 1.2.5(@emnapi/core@2.0.0-alpha.6)(@emnapi/runtime@2.0.0-alpha.6)
+        version: 1.2.5(@emnapi/core@2.0.0-beta.2)(@emnapi/runtime@2.0.0-beta.2)
       '@playwright/test':
         specifier: ^1.61.1
         version: 1.64.1
@@ -222,8 +222,8 @@ importers:
         specifier: ^5.0.3
         version: 5.0.5(vitest@5.0.5)
       emnapi:
-        specifier: 2.0.0-alpha.6
-        version: 2.0.0-alpha.6
+        specifier: 2.0.0-beta.2
+        version: 2.0.0-beta.2
       fastest-levenshtein:
         specifier: ^1.0.16
         version: 1.0.16
@@ -508,8 +508,8 @@ packages:
   '@emnapi/core@1.9.2':
     resolution: {integrity: sha512-UC+ZhH3XtczQYfOlu3lNEkdW/p4dsJ1r/bP7H8+rhao3TTTMO1ATq/4DdIi23XuGoFY+Cz0JmCbdVl0hz9jZcA==}
 
-  '@emnapi/core@2.0.0-alpha.6':
-    resolution: {integrity: sha512-MNVvMV7WtEJMgqaWJMvCyupK7Oi8sZctUIgPRZTsiS3cVvefk8DXPflOU3MSBddtj/rrYHygpYgpHDgwXnI3+w==}
+  '@emnapi/core@2.0.0-beta.2':
+    resolution: {integrity: sha512-MzCVoWtcg4Pm2B3je5mMvYMvj3MmBKw+fU7vbsJc9/iT8ip6/eYIHo/Dsm/mr+wsHB6SEyJDuxB09Yy6r/8+4A==}
 
   '@emnapi/runtime@1.11.2':
     resolution: {integrity: sha512-kyOl3X0DuTiT1h2ft8r2fYO8JYtU9a9Xis/zBSiGArNaagCOWx90N1k2wxp18czFDH+OgcWGb5ZP/XMt3dcyPA==}
@@ -517,8 +517,8 @@ packages:
   '@emnapi/runtime@1.9.2':
     resolution: {integrity: sha512-3U4+MIWHImeyu1wnmVygh5WlgfYDtyf0k8AbLhMFxOipihf6nrWC4syIm/SwEeec0mNSafiiNnMJwbza/Is6Lw==}
 
-  '@emnapi/runtime@2.0.0-alpha.6':
-    resolution: {integrity: sha512-5ZR49ZsZ3cLvu5lkrVj6CMpHRgZjYz7XSlqK23GYYpyEqp749RVuIH0bEUKaGNghMh2pXRhIC3cnVrH28Y1j1Q==}
+  '@emnapi/runtime@2.0.0-beta.2':
+    resolution: {integrity: sha512-JcrSPzPvZuNZvJqPTF9Fw25LbOJ8avzFVlaf2grmH4Cku0oGP47tRgqPZadcfj3YoZMHkFVnCYFbQM8I+i5QEw==}
 
   '@emnapi/wasi-threads@1.2.1':
     resolution: {integrity: sha512-uTII7OYF+/Mes/MrcIOYp5yOtSMLBWSIoLPpcgwipoiKbli6k322tcoFsxoIIxPDqW01SQGAgko4EzZi2BNv2w==}
@@ -688,8 +688,8 @@ packages:
     resolution: {integrity: sha512-6QEf6yqFbETdwGITKq57aYoPfX/3K8XFNwsAlx0C1M7o8cb79sv1M3w+tWuWvIcSbNqrLF7OD7YpZMVVz335hQ==}
     engines: {node: '>=20.0.0'}
 
-  '@napi-rs/cli@3.10.8':
-    resolution: {integrity: sha512-hg7m8VwECTIIHxNzajDG8QgtTOEVAKiIVLCLCW90Th6Z5R/ijWjh16iaQrRvXj4ve/S2fcXYo5cctCWJ8aVxIg==}
+  '@napi-rs/cli@3.10.9':
+    resolution: {integrity: sha512-RpzJrTDlSxUi2Deo+dh4bmDTKklAVe295aSQjZspwbZyUBG7twbXbiKskL2w/bL4kNg3DdkrwbI/iQwI9kgQaQ==}
     engines: {node: ^20.17.0 || ^22.13.0 || >= 23.5.0}
     hasBin: true
     peerDependencies:
@@ -1502,8 +1502,8 @@ packages:
     resolution: {integrity: sha512-Btj2BOOO83o3WyH59e8MgXsxEQVcarkUOpEYrubB0urwnN10yQ364rsiByU11nZlqWYZm05i/of7io4mzihBtQ==}
     engines: {node: '>=8'}
 
-  emnapi@2.0.0-alpha.6:
-    resolution: {integrity: sha512-+A54DE5YkbMVOa/0GDs3jhRmu2KnAFvOjEgAYuaPWdmF7A822PtB2znC23QbQ4l/qcC1ZFOrmvXVIuo9xWX2bg==}
+  emnapi@2.0.0-beta.2:
+    resolution: {integrity: sha512-ZO2KS7bFQNo8zcDl5nWW55nvZBfC+msrGRezZn6OoJJQKXGOWVp6RYw25wdJkDIIADrAJjf4XEQAbtancmeH7w==}
     peerDependencies:
       node-addon-api: '>= 6.1.0'
     peerDependenciesMeta:
@@ -2396,7 +2396,7 @@ snapshots:
       tslib: 2.8.1
     optional: true
 
-  '@emnapi/core@2.0.0-alpha.6':
+  '@emnapi/core@2.0.0-beta.2':
     dependencies:
       '@emnapi/wasi-threads': 2.2.0
       tslib: 2.8.1
@@ -2411,7 +2411,7 @@ snapshots:
       tslib: 2.8.1
     optional: true
 
-  '@emnapi/runtime@2.0.0-alpha.6':
+  '@emnapi/runtime@2.0.0-beta.2':
     dependencies:
       tslib: 2.8.1
 
@@ -2574,7 +2574,7 @@ snapshots:
       tinyglobby: 0.2.17
       yaml: 2.9.1
 
-  '@napi-rs/cli@3.10.8(@emnapi/core@2.0.0-alpha.6)(@emnapi/runtime@2.0.0-alpha.6)(@types/node@24.19.2)(emnapi@2.0.0-alpha.6)':
+  '@napi-rs/cli@3.10.9(@emnapi/core@2.0.0-beta.2)(@emnapi/runtime@2.0.0-beta.2)(@types/node@24.19.2)(emnapi@2.0.0-beta.2)':
     dependencies:
       '@inquirer/prompts': 8.7.3(@types/node@24.19.2)
       '@napi-rs/cross-toolchain': 1.0.3
@@ -2589,9 +2589,9 @@ snapshots:
       typanion: 3.14.0
       typescript: 6.0.3
     optionalDependencies:
-      '@emnapi/core': 2.0.0-alpha.6
-      '@emnapi/runtime': 2.0.0-alpha.6
-      emnapi: 2.0.0-alpha.6
+      '@emnapi/core': 2.0.0-beta.2
+      '@emnapi/runtime': 2.0.0-beta.2
+      emnapi: 2.0.0-beta.2
     transitivePeerDependencies:
       - '@napi-rs/cross-toolchain-arm64-target-aarch64'
       - '@napi-rs/cross-toolchain-arm64-target-armv7'
@@ -2774,10 +2774,10 @@ snapshots:
       '@tybys/wasm-util': 0.10.4
     optional: true
 
-  '@napi-rs/wasm-runtime@1.2.5(@emnapi/core@2.0.0-alpha.6)(@emnapi/runtime@2.0.0-alpha.6)':
+  '@napi-rs/wasm-runtime@1.2.5(@emnapi/core@2.0.0-beta.2)(@emnapi/runtime@2.0.0-beta.2)':
     dependencies:
-      '@emnapi/core': 2.0.0-alpha.6
-      '@emnapi/runtime': 2.0.0-alpha.6
+      '@emnapi/core': 2.0.0-beta.2
+      '@emnapi/runtime': 2.0.0-beta.2
       '@tybys/wasm-util': 0.10.4
 
   '@napi-rs/wasm-tools-android-arm-eabi@1.1.0':
@@ -3166,7 +3166,7 @@ snapshots:
 
   detect-libc@2.1.2: {}
 
-  emnapi@2.0.0-alpha.6: {}
+  emnapi@2.0.0-beta.2: {}
 
   emoji-regex@10.6.0: {}
 
