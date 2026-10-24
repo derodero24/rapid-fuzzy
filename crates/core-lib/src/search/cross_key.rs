@@ -67,8 +67,11 @@ fn item_haystack<'b, C: KeyedCorpus>(
 /// contained in the character mask of one of `active_keys` (each term may
 /// match one of its keys), or `None`. Kept out of line for the reason given
 /// at [`first_may_match`](super::keys::first_may_match).
+///
+/// `EXACT` must be true exactly when no term allows typos: the check then
+/// compiles to a plain subset test of the masks, as it did before typos.
 #[inline(never)]
-fn first_may_match_all<C: KeyedCorpus>(
+fn first_may_match_all<C: KeyedCorpus, const EXACT: bool>(
     corpus: &C,
     active_keys: &[usize],
     term_masks: &[MaskFilter],
@@ -76,9 +79,17 @@ fn first_may_match_all<C: KeyedCorpus>(
 ) -> Option<usize> {
     let num_items = corpus.key_texts().first().map_or(0, Vec::len);
     (start..num_items).find(|&i| {
-        term_masks
-            .iter()
-            .all(|&mask| active_keys.iter().any(|&k| corpus.may_match(k, i, mask)))
+        term_masks.iter().all(|&filter| {
+            let filter = if EXACT {
+                MaskFilter {
+                    mask: filter.mask,
+                    allowed_missing: 0,
+                }
+            } else {
+                filter
+            };
+            active_keys.iter().any(|&k| corpus.may_match(k, i, filter))
+        })
     })
 }
 
@@ -329,13 +340,19 @@ impl<C: KeyedCorpus> Scan<'_, '_, C> {
         let mut bufs = vec![Vec::new(); num_active];
         let mut prepared = vec![false; num_active];
         let term_masks: Vec<MaskFilter> = plan.positive.iter().map(|term| term.mask).collect();
+        let exact = term_masks.iter().all(|filter| filter.allowed_missing == 0);
 
         let mut next = 0;
         'items: while next < num_items {
             // Every positive term must be able to match an active key: a
             // cheap check of the character masks first.
             let i = if C::HAS_CHAR_MASKS {
-                match first_may_match_all(corpus, active_keys, &term_masks, next) {
+                let found = if exact {
+                    first_may_match_all::<C, true>(corpus, active_keys, &term_masks, next)
+                } else {
+                    first_may_match_all::<C, false>(corpus, active_keys, &term_masks, next)
+                };
+                match found {
                     Some(i) => i,
                     None => break,
                 }
