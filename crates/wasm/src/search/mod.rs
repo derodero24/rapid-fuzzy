@@ -139,9 +139,11 @@ pub struct SearchOptions {
     #[tsify(optional)]
     #[serde(default)]
     pub is_case_sensitive: Option<bool>,
-    /// If true, return all items when the query is empty (or whitespace-only).
-    /// Useful for filter-as-you-type UIs where the full list should appear
-    /// before the user starts typing. Default is false.
+    /// If true, return all items when the query has no search term: empty,
+    /// whitespace-only, or only query syntax such as `^` or `!`. They come in
+    /// index order, each with score 1 (`maxResults` then keeps the first
+    /// ones). Useful for filter-as-you-type UIs where the full list should
+    /// appear before the user starts typing. Default is false.
     #[tsify(optional)]
     #[serde(default)]
     pub return_all_on_empty: Option<bool>,
@@ -351,7 +353,8 @@ pub struct KeySearchOptions {
     pub is_case_sensitive: Option<bool>,
     /// If true, return all items when the query has no search term: empty,
     /// whitespace-only, or only query syntax such as `^` or `!`. Every item
-    /// then scores 1, in every `scoreMode`. Default is false.
+    /// then scores 1, in every `scoreMode`, and they come in index order.
+    /// Default is false.
     #[tsify(optional)]
     #[serde(default)]
     pub return_all_on_empty: Option<bool>,

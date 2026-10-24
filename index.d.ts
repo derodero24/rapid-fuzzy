@@ -509,7 +509,8 @@ export interface KeySearchOptions {
   /**
    * If true, return all items when the query has no search term: empty,
    * whitespace-only, or only query syntax such as `^` or `!`. Every item
-   * then scores 1, in every `scoreMode`. Default is false.
+   * then scores 1, in every `scoreMode`, and they come in index order.
+   * Default is false.
    */
   returnAllOnEmpty?: boolean | undefined
   /**
@@ -884,9 +885,10 @@ export interface SearchOptions {
   isCaseSensitive?: boolean | undefined
   /**
    * If true, return all items when the query has no search term: empty,
-   * whitespace-only, or only query syntax such as `^` or `!`.
-   * Useful for filter-as-you-type UIs where the full list should appear
-   * before the user starts typing. Default is false.
+   * whitespace-only, or only query syntax such as `^` or `!`. They come in
+   * index order, each with score 1 (`maxResults` then keeps the first
+   * ones). Useful for filter-as-you-type UIs where the full list should
+   * appear before the user starts typing. Default is false.
    */
   returnAllOnEmpty?: boolean | undefined
 }
