@@ -90,8 +90,8 @@ Search matches a term when its characters appear in the item in order. A query t
 Set `maxTypos` (since 2.3.0) to also tolerate wrong, extra and swapped letters:
 
 ```ts
-search('tpyescript', languages); // []
-search('tpyescript', languages, { maxTypos: 2 }); // [{ item: 'TypeScript', ... }]
+search('tpyescript', ['TypeScript', 'JavaScript']); // []
+search('tpyescript', ['TypeScript', 'JavaScript'], { maxTypos: 2 }); // [{ item: 'TypeScript', ... }]
 ```
 
 `maxTypos` works in every search function: `search()`, `FuzzyIndex`, `searchObjects()`, `FuzzyObjectIndex`, `searchKeys()` and `KeyedFuzzyIndex`. Matches without typos keep exactly the scores they have without the option, and typo matches are added below a perfect match. See [How matching works](/rapid-fuzzy/guides/matching-and-scoring/#typos) for the details.

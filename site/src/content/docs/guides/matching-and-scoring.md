@@ -11,7 +11,7 @@ A query term matches an item when all of its characters occur in the item **in o
 
 - `tsc` matches `TypeScript`.
 - `typscript` matches `TypeScript`: the query only leaves out a letter.
-- `tpyescript` (swapped letters) and `typozcript` (a wrong letter) find nothing in `['TypeScript']`, unless you set `maxTypos` (see [Typos](#typos)).
+- `tpyescript` (swapped letters) and `typoscript` (a wrong letter) find nothing in `['TypeScript']`, unless you set `maxTypos` (see [Typos](#typos)).
 
 ## Typos
 
@@ -19,7 +19,7 @@ With `maxTypos` (since 2.3.0), a term that does not match as a subsequence is ma
 
 ```ts
 search('tpyescript', ['TypeScript'], { maxTypos: 2 }); // finds TypeScript
-search('typozcript', ['TypeScript'], { maxTypos: 1 }); // finds TypeScript
+search('typoscript', ['TypeScript'], { maxTypos: 1 }); // finds TypeScript
 ```
 
 - A term tolerates at most one typo per four characters, and never more than `maxTypos`: none in terms of up to three characters, one in terms of four to seven, two in terms of eight to eleven. A typo in a two-letter term would match almost anything.

@@ -20,7 +20,6 @@ sidebar:
 - You search structured documents with multiple fields and need field-level boosting
 - You rely on prefix matching for autocomplete on exact prefixes
 - You need custom tokenizers or term processing pipelines
-- You need search results that tolerate substituted or swapped letters
 
 ## Installation
 

@@ -1,7 +1,7 @@
 //! Typo-tolerant matching (the `maxTypos` search option).
 //!
 //! nucleo only tolerates characters *missing* from a query: `tpyescript`
-//! (two letters swapped) or `typozcript` (a wrong letter) match nothing in
+//! (two letters swapped) or `typoscript` (a wrong letter) match nothing in
 //! `TypeScript`. With `maxTypos` set, a fuzzy term that nucleo does not match
 //! is matched again with [frizbee](https://docs.rs/frizbee), a Smith-Waterman
 //! matcher that allows a number of typos (substituted, extra or swapped
