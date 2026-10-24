@@ -148,10 +148,10 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
-      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           targets: ${{ matrix.settings.target }}
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           shared-key: release-${{ matrix.settings.target }}
 
@@ -165,7 +165,7 @@ jobs:
 
       - name: Install cargo-zigbuild
         if: ${{ matrix.settings.use-zig }}
-        uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2.87.26
+        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
         with:
           tool: cargo-zigbuild@0.23.4
 
@@ -274,7 +274,7 @@ jobs:
 
       - name: Load the binding (Alpine, musl)
         if: ${{ matrix.settings.alpine }}
-        uses: docker://node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1
+        uses: docker://node:24-alpine@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53
         with:
           entrypoint: node
           args: .github/scripts/smoke-test.cjs ${{ matrix.settings.binding }}
@@ -296,15 +296,15 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
-      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           targets: wasm32-unknown-unknown
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           shared-key: build-wasm-bindgen
       - run: pnpm install --frozen-lockfile
       - name: Install wasm-pack
-        uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2.87.26
+        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
         with:
           tool: wasm-pack@0.15.0
       - name: Install binaryen
@@ -354,7 +354,7 @@ jobs:
           test "$(npm --version)" = "${NPM_VERSION}"
           echo "node $(node --version), npm $(npm --version) at $(command -v npm)"
         env:
-          NPM_VERSION: 11.21.0
+          NPM_VERSION: 11.21.1
 
       - run: pnpm install --frozen-lockfile
 
