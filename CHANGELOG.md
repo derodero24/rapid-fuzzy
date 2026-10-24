@@ -1,5 +1,15 @@
 # rapid-fuzzy
 
+## 2.3.0
+
+### Minor Changes
+
+- 417a604: New `maxTypos` search option for typo-tolerant search: `search('tpyescript', items, { maxTypos: 2 })` finds `TypeScript`. A query term that does not match as a subsequence is matched again with frizbee, a Smith-Waterman matcher that tolerates wrong, extra and swapped letters. A term tolerates at most one typo per four characters, and only plain fuzzy terms tolerate typos (not `'exact`, `^prefix`, `suffix$` or `!excluded` terms). Matches without typos keep exactly the scores and positions they have without the option, and typo matches score below a perfect match. The option works in `search()`, `FuzzyIndex`, `searchKeys()`, `KeyedFuzzyIndex`, `searchObjects()` and `FuzzyObjectIndex` (including their `closest()` options), in both the Node.js and the WebAssembly builds. The minimum supported Rust version for building from source is now 1.89.
+
+### Patch Changes
+
+- 47b0a2c: New documentation website at https://derodero24.github.io/rapid-fuzzy/, with guides, runtime pages, the migration guides, a comparison with other libraries, an API reference generated from the type declarations, and a playground that searches your own data and times it against fuse.js and fuzzysort. The README is now a short overview that links to it, and the package's `homepage` points to the site.
+
 ## 2.2.0
 
 ### Minor Changes
