@@ -456,7 +456,7 @@ jobs:
           # The Codecov CLI release the action downloads (it defaults to the
           # latest one). Renovate updates it through the custom manager in
           # renovate.json, which matches the trailing comment.
-          version: v11.3.1 # codecov-cli
+          version: v11.3.2 # codecov-cli
           # Uploads reach codecov.io now (the repository is activated), so a
           # broken upload on develop turns the job red, while a Codecov outage
           # does not block pull requests.
