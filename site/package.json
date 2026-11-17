@@ -2,7 +2,7 @@
   "name": "rapid-fuzzy-site",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@12.20.0",
+  "packageManager": "pnpm@12.21.0",
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",
@@ -10,7 +10,7 @@
     "check": "astro check"
   },
   "dependencies": {
-    "@astrojs/starlight": "^0.42.7",
+    "@astrojs/starlight": "^0.43.0",
     "astro": "^7.4.2",
     "fuse.js": "^7.5.0",
     "fuzzysort": "^4.0.2",
