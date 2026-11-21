@@ -410,7 +410,7 @@ jobs:
           # not to the target/llvm-cov-target/ of a plain `cargo llvm-cov` run,
           # and an exact hit on the old cache would never be replaced.
           key: instrumented
-      - uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2.90.5
+      - uses: taiki-e/install-action@75a7c0f87bd666af3cdb75c5b9e9d03ab6044e6f # v2.90.6
         with:
           tool: cargo-llvm-cov
       - run: pnpm install --frozen-lockfile
@@ -484,7 +484,7 @@ jobs:
           shared-key: build-wasm-bindgen
       - run: pnpm install --frozen-lockfile
       - name: Install wasm-pack
-        uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2.90.5
+        uses: taiki-e/install-action@75a7c0f87bd666af3cdb75c5b9e9d03ab6044e6f # v2.90.6
         with:
           tool: wasm-pack@0.15.0
       - name: Install binaryen
