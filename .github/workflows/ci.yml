@@ -171,7 +171,7 @@ jobs:
       - name: Audit npm dependencies
         run: pnpm audit --audit-level=high
       - name: Audit Rust dependencies
-        uses: EmbarkStudios/cargo-deny-action@17aeb3c839e42274e2b8adf721c8c65edfdc74dd # v2
+        uses: EmbarkStudios/cargo-deny-action@81891abc19297b21343b15ef67dc61e4aea74fda # v2
 
   rust-lint:
     name: Rust Lint
