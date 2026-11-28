@@ -123,10 +123,6 @@ nucleo-matcher (MPL-2.0)
   https://crates.io/crates/nucleo-matcher and https://github.com/helix-editor/nucleo.
   License texts: [22] LICENSE
 
-once_cell (MIT OR Apache-2.0)
-  https://github.com/matklad/once_cell
-  License texts: [1] LICENSE-APACHE, [13] LICENSE-MIT
-
 pin-project-lite (Apache-2.0 OR MIT)
   https://github.com/taiki-e/pin-project-lite
   License texts: [23] LICENSE-APACHE, [13] LICENSE-MIT
